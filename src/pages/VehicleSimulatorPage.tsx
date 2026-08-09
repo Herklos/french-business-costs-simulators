@@ -55,6 +55,21 @@ export function VehicleSimulatorPage() {
     setInputs((prev) => ({ ...prev, personalTaxProfile: { ...prev.personalTaxProfile, [key]: value } }));
   }
 
+  function handleSituationFamilialeChange(situationFamiliale: "seul" | "couple") {
+    setInputs((prev) => ({
+      ...prev,
+      personalTaxProfile: {
+        ...prev.personalTaxProfile,
+        situationFamiliale,
+        // Par défaut, on suppose un conjoint au même salaire que le dirigeant (modifiable ensuite).
+        conjointSalaireNetImposableAnnuel:
+          situationFamiliale === "couple" && prev.personalTaxProfile.conjointSalaireNetImposableAnnuel === 0
+            ? prev.personalTaxProfile.salaireNetImposableAnnuel
+            : prev.personalTaxProfile.conjointSalaireNetImposableAnnuel,
+      },
+    }));
+  }
+
   function updateFinancing<M extends FinancingMode>(
     mode: M,
     patch: Partial<SimulationInputs["financing"][M]>,
@@ -409,9 +424,7 @@ export function VehicleSimulatorPage() {
                   <Field label="Situation familiale">
                     <select
                       value={inputs.personalTaxProfile.situationFamiliale}
-                      onChange={(e) =>
-                        updatePersonalTax("situationFamiliale", e.target.value as "seul" | "couple")
-                      }
+                      onChange={(e) => handleSituationFamilialeChange(e.target.value as "seul" | "couple")}
                     >
                       <option value="seul">Célibataire / divorcé(e) / veuf(ve)</option>
                       <option value="couple">Marié(e) / pacsé(e)</option>

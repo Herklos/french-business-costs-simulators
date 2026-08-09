@@ -69,7 +69,7 @@ export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
       loyerMensuel: Math.round((prixTTC * 0.018) * 100) / 100,
       dureeMois: 48,
       valeurOptionAchat: Math.round(prixTTC * 0.35 * 100) / 100,
-      leveeOption: false,
+      leveeOption: true,
     },
     lld: {
       premierLoyer: 0,
