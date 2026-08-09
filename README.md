@@ -28,10 +28,12 @@ avec leur période de validité et un indicateur de statut (en vigueur / expire 
 
 ```bash
 npm install
-npm run dev      # serveur de développement
-npm run build    # build de production (tsc + vite build)
-npm run lint     # oxlint
-npm run preview  # prévisualiser le build
+npm run dev        # serveur de développement
+npm run build      # build de production (tsc + vite build)
+npm run lint       # oxlint
+npm run test       # tests unitaires (vitest) — moteurs de calcul (src/lib/*.test.ts)
+npm run test:watch # tests en mode watch
+npm run preview    # prévisualiser le build
 ```
 
 ## Avertissement
