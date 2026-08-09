@@ -13,11 +13,38 @@ interface Metric {
   value: string;
 }
 
+/** Copie un texte dans le presse-papier de l'appareil, avec repli si l'API Clipboard est indisponible (contexte non sécurisé, ancien navigateur). */
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // on retente via le repli ci-dessous
+  }
+  try {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(textarea);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 interface SavedSimulationsPanelProps<T extends { id: string; name: string }> {
   kind: SimulatorKind;
   currentInputs: T;
   onLoad: (inputs: T) => void;
   metricsFor: (inputs: T) => Metric[];
+  exportText: (inputs: T) => string; // texte complet exporté vers le presse-papier
   version: number; // bump to force refresh after save
 }
 
@@ -26,6 +53,7 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
   currentInputs,
   onLoad,
   metricsFor,
+  exportText,
   version,
 }: SavedSimulationsPanelProps<T>) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -35,6 +63,8 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
   // the save button would appear to do nothing even though the write did succeed.
   const [refreshTick, setRefreshTick] = useState(0);
   const [justSaved, setJustSaved] = useState(false);
+  const [justCopiedId, setJustCopiedId] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState(false);
   const items = listSimulations<T>(kind);
   // version is read to satisfy the linter's dependency intuition; the list is re-read on every render
   void version;
@@ -46,10 +76,25 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
     return () => clearTimeout(timeout);
   }, [justSaved]);
 
+  useEffect(() => {
+    if (justCopiedId === null) return;
+    const timeout = setTimeout(() => {
+      setJustCopiedId(null);
+      setCopyFailed(false);
+    }, 2000);
+    return () => clearTimeout(timeout);
+  }, [justCopiedId]);
+
   function handleSave() {
     saveSimulation(kind, currentInputs);
     setRefreshTick((t) => t + 1);
     setJustSaved(true);
+  }
+
+  async function handleCopy(id: string, inputs: T) {
+    const ok = await copyToClipboard(exportText(inputs));
+    setCopyFailed(!ok);
+    setJustCopiedId(id);
   }
 
   function handleDelete(id: string) {
@@ -70,7 +115,15 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
         <button type="button" className="btn btn--primary" onClick={handleSave}>
           💾 Sauvegarder cette simulation
         </button>
+        <button type="button" className="btn btn--ghost" onClick={() => handleCopy("__current__", currentInputs)}>
+          📋 Copier cette simulation
+        </button>
         {justSaved && <span className="saved-panel__confirmation">✓ Sauvegardé</span>}
+        {justCopiedId === "__current__" && (
+          <span className={`saved-panel__confirmation ${copyFailed ? "saved-panel__confirmation--error" : ""}`}>
+            {copyFailed ? "✗ Échec de la copie" : "✓ Copié dans le presse-papier"}
+          </span>
+        )}
         <span className="saved-panel__count">{items.length} simulation(s) enregistrée(s) localement</span>
       </div>
 
@@ -92,6 +145,15 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
                 <span>Enregistrée le {formatDate(it.savedAt)}</span>
               </div>
               <div className="saved-list__actions">
+                {justCopiedId === it.inputs.id ? (
+                  <span className={`saved-panel__confirmation ${copyFailed ? "saved-panel__confirmation--error" : ""}`}>
+                    {copyFailed ? "✗ Échec" : "✓ Copié"}
+                  </span>
+                ) : (
+                  <button type="button" className="btn btn--ghost" onClick={() => handleCopy(it.inputs.id, it.inputs)}>
+                    📋 Copier
+                  </button>
+                )}
                 <button type="button" className="btn btn--ghost" onClick={() => onLoad(it.inputs)}>
                   Charger
                 </button>

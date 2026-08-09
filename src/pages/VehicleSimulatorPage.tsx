@@ -34,6 +34,50 @@ const SORT_LABELS: Record<SortCriterion, string> = {
   personnel: "Coût le plus bas côté dirigeant",
 };
 
+/** Résumé texte complet d'une simulation véhicule, destiné à être copié dans le presse-papier. */
+function buildVehicleExportText(sim: SimulationInputs): string {
+  const r = computeSimulation(sim);
+  const lines: string[] = [];
+  const push = (line = "") => lines.push(line);
+
+  push(`🚗 ${sim.name} — Simulateur véhicule de société`);
+  push(`Généré le ${new Date().toLocaleDateString("fr-FR")}`);
+  push("");
+  push("— Juridiction —");
+  push(`Pays : ${sim.country} · Forme juridique : ${sim.companyType} · Régime : ${sim.impositionSociete}`);
+  push(`Statut du dirigeant : ${r.dirigeantStatus === "TNS" ? "TNS" : "Assimilé salarié"}`);
+  push("");
+  push("— Véhicule —");
+  push(`Prix TTC : ${formatEUR(sim.vehiclePrice)} · Âge : ${sim.vehicleOverFiveYears ? "> 5 ans" : "≤ 5 ans"}`);
+  push(`Motorisation : ${sim.isElectric ? "100% électrique" : "Thermique/hybride"}${sim.isElectric ? ` · Éco-score éligible : ${sim.isEcoScoreEligible ? "Oui" : "Non"}` : ` · CO2 : ${sim.co2EmissionsGkm} g/km`}`);
+  push(`Usage privé : ${sim.privateUsePercent}% · Kilométrage annuel : ${sim.totalKmAnnual} km`);
+  push("");
+  push("— Résultats AEN (société) —");
+  push(`AEN brut : ${formatEUR(r.aenBrut)} · Abattement : ${formatEUR(r.abattement)} · AEN net : ${formatEUR(r.aenNet)}`);
+  push(`Cotisations sociales : ${formatEUR(r.cotisationsTNS)} · IR sur l'AEN : ${formatEUR(r.irEstimee)} (TMI ${formatPercent(r.tauxIRUtilise)})`);
+  push(`Coût net société : ${formatEUR(r.coutNetSociete)} · Coût cash dirigeant : ${formatEUR(r.coutTotalGerantSociete)}`);
+  push(`Coût global consolidé (société) : ${formatEUR(r.globalCostSociete)}/an`);
+  push("");
+  push("— Achat personnel + IK —");
+  push(`Km pro/privé : ${r.proKmAnnual.toFixed(0)}/${r.privateKmAnnual.toFixed(0)} km · Remboursement IK : ${formatEUR(r.ikReimbursement)}`);
+  push(`Coût net dirigeant : ${formatEUR(r.coutScenarioPersonnel)} · Coût global consolidé (personnel) : ${formatEUR(r.globalCostPersonnel)}/an`);
+  push("");
+  push(`🏆 Meilleure option : ${r.bestOption.label} — ${formatEUR(r.bestOption.globalCostAnnual)}/an`);
+  push("");
+  push("— Comparaison de toutes les options (coût global annuel) —");
+  for (const opt of r.allOptions) {
+    push(`  ${opt.label} : ${formatEUR(opt.globalCostAnnual)}/an (dont société ${formatEUR(opt.partSociete)} · dont dirigeant ${formatEUR(opt.partDirigeant)})`);
+  }
+  if (r.seuilPrivateUsePercent !== null) {
+    push("");
+    push(`Seuil de bascule société ⇄ personnel (modes sélectionnés) : ~${r.seuilPrivateUsePercent.toFixed(0)}% d'usage privé`);
+  }
+  push("");
+  push("Généré par le simulateur de coûts d'entreprise — outil d'aide à la décision, ne remplace pas l'avis d'un expert-comptable.");
+
+  return lines.join("\n");
+}
+
 const PERIOD_SUFFIX: Record<CostPeriod, string> = { annuel: "/an", mensuel: "/mois" };
 
 export function VehicleSimulatorPage() {
@@ -919,6 +963,7 @@ export function VehicleSimulatorPage() {
                   { label: "Coût global personnel (mode sélectionné)", value: formatEUR(r.globalCostPersonnel) },
                 ];
               }}
+              exportText={buildVehicleExportText}
             />
           </Section>
         </div>

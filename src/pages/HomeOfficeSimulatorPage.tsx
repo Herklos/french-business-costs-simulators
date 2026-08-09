@@ -13,6 +13,43 @@ import { formatEUR, formatPercent } from "../lib/format";
 
 const SURFACE_TOLERANCE = 0.3;
 
+/** Résumé texte complet d'une simulation bureau à domicile, destiné à être copié dans le presse-papier. */
+function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
+  const r = computeHomeOffice(sim);
+  const lines: string[] = [];
+  const push = (line = "") => lines.push(line);
+
+  push(`🏠 ${sim.name} — Simulateur bureau à domicile`);
+  push(`Généré le ${new Date().toLocaleDateString("fr-FR")}`);
+  push("");
+  push("— Logement —");
+  push(`Statut : ${sim.statutOccupant} · Surface totale : ${sim.surfaceTotaleM2} m² · Surface bureau : ${sim.surfaceBureauM2} m²`);
+  push(`Quote-part bureau : ${formatPercent(r.quotePartSurface)}`);
+  push("");
+  push("— Charges retenues —");
+  for (const c of sim.chargeLines) {
+    push(`  ${c.enabled ? "☑" : "☐"} ${c.label} : ${formatEUR(c.montantAnnuel)}/an`);
+  }
+  push(`Total charges retenues : ${formatEUR(r.totalChargesRetenuesAnnuel)}/an`);
+  push("");
+  push(`Formalisation : ${sim.formalisation === "bail_professionnel" ? "Bail professionnel réel" : "Indemnité d'occupation"}`);
+  push(`Régime foncier : ${sim.regimeFoncier === "micro" ? "Micro-foncier" : "Réel"}${!r.eligibleMicroFoncier ? " (plafond dépassé, régime réel appliqué)" : ""}`);
+  push("");
+  push("— Résultats —");
+  push(`Indemnité annuelle brute : ${formatEUR(r.indemniteAnnuelleBrute)}`);
+  push(`Base imposable foncière : ${formatEUR(r.baseImposableFonciere)} · IR : ${formatEUR(r.irDu)} (TMI ${formatPercent(r.tauxIRUtilise)}) · Prélèvements sociaux : ${formatEUR(r.prelevementsSociaux)}`);
+  push(`Gain net dirigeant (récurrent) : ${formatEUR(r.gainNetGerant)}`);
+  if (sim.formalisation === "bail_professionnel" && sim.fraisMiseEnPlaceBail > 0) {
+    push(`Gain net dirigeant — 1ère année (après frais de mise en place) : ${formatEUR(r.gainNetGerantAnnee1)}`);
+  }
+  push(`Coût net société (après économie d'impôt) : ${formatEUR(r.coutNetSociete)}`);
+  push(`Économie vs bureau externe : ${formatEUR(r.economieVsBureauExterne)}`);
+  push("");
+  push("Généré par le simulateur de coûts d'entreprise — outil d'aide à la décision, ne remplace pas l'avis d'un expert-comptable.");
+
+  return lines.join("\n");
+}
+
 export function HomeOfficeSimulatorPage() {
   const [inputs, setInputs] = useState<HomeOfficeInputs>(() => createDefaultHomeOfficeInputs());
   const [saveVersion, setSaveVersion] = useState(0);
@@ -344,6 +381,7 @@ export function HomeOfficeSimulatorPage() {
                   { label: "Économie vs bureau externe", value: formatEUR(r.economieVsBureauExterne) },
                 ];
               }}
+              exportText={buildHomeOfficeExportText}
             />
           </Section>
         </div>
