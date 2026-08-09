@@ -10,6 +10,7 @@ import {
 import { COUNTRIES } from "../lib/countries";
 import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/companyTypes";
 import { createDefaultFinancingInputs, type FinancingMode } from "../lib/financing";
+import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
@@ -335,8 +336,8 @@ export function VehicleSimulatorPage() {
                   />
                 </Field>
                 <p className="hint-block">
-                  Parts fiscales : <strong>{results.partsFiscales}</strong> · Revenu imposable retenu :{" "}
-                  <strong>{formatEUR(results.revenuImposableFoyer)}</strong> · TMI de la tranche :{" "}
+                  Parts fiscales : <strong>{results.partsFiscales}</strong> · Quotient familial (revenu ÷ parts) :{" "}
+                  <strong>{formatEUR(results.quotientFamilial)}</strong> · TMI de la tranche :{" "}
                   <strong>{formatPercent(results.tmiCalcule)}</strong> · Impôt du foyer après décote :{" "}
                   <strong>{formatEUR(results.impotFoyerApresDecote)}</strong>
                   {results.dansZoneDecote && (
@@ -346,6 +347,15 @@ export function VehicleSimulatorPage() {
                       <strong>{formatPercent(results.tauxMarginalEffectif)}</strong>
                     </>
                   )}
+                </p>
+                <p className="field__hint">
+                  Le barème est une fonction en escalier : le taux marginal ne change que si le quotient familial
+                  franchit une borne de tranche (
+                  {IR_BAREME_2026.slice(0, -1)
+                    .map((b) => formatEUR(b.upTo ?? 0))
+                    .join(" · ")}
+                  ). Un enfant de plus fait baisser le quotient mais pas forcément le taux, tant qu'il reste dans la
+                  même tranche.
                 </p>
                 <RuleNote ruleId="ir-bareme-2026" />
                 <RuleNote ruleId="ir-abattement-10-salaires" />

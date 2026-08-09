@@ -161,6 +161,7 @@ export interface SimulationResults {
   tauxIRUtilise: number; // taux effectivement retenu (manuel ou calculé)
   revenuImposableFoyer: number;
   partsFiscales: number;
+  quotientFamilial: number; // revenuImposableFoyer / partsFiscales — détermine seul la tranche/TMI applicable
   impotFoyerApresDecote: number; // impôt total du foyer après décote (indicatif)
   dansZoneDecote: boolean; // le foyer est-il dans la zone de dégressivité de la décote ?
   tauxMarginalEffectif: number; // taux marginal réel intégrant l'effet décote (utilisé si mode "calculé")
@@ -470,6 +471,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     tauxIRUtilise,
     revenuImposableFoyer: resolvedTax.revenuImposable,
     partsFiscales: resolvedTax.parts,
+    quotientFamilial: resolvedTax.quotient,
     impotFoyerApresDecote: resolvedTax.impotApresDecote,
     dansZoneDecote: resolvedTax.dansZoneDecote,
     tauxMarginalEffectif: resolvedTax.tauxMarginalEffectif,
