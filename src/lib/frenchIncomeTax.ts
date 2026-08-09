@@ -24,6 +24,22 @@ export type SituationFamiliale = "seul" | "couple";
 export const ABATTEMENT_10_MIN = 495; // plancher abattement forfaitaire 10% sur salaires (indicatif 2025)
 export const ABATTEMENT_10_MAX = 14171; // plafond abattement forfaitaire 10% sur salaires (indicatif 2025)
 
+// Décote 2026 (art. 197, I-4 CGI) : réduit voire annule l'impôt des foyers modestes.
+export const DECOTE_SEUIL_SEUL = 1982;
+export const DECOTE_SEUIL_COUPLE = 3277;
+export const DECOTE_MONTANT_SEUL = 897;
+export const DECOTE_MONTANT_COUPLE = 1483;
+export const DECOTE_TAUX = 0.4525;
+
+/** Applique la décote à l'impôt brut du foyer. Ne modifie pas le TMI marginal (cf. note dans ResolvedTaxProfile). */
+export function applyDecote(impotBrut: number, situation: SituationFamiliale): number {
+  const seuil = situation === "couple" ? DECOTE_SEUIL_COUPLE : DECOTE_SEUIL_SEUL;
+  const montant = situation === "couple" ? DECOTE_MONTANT_COUPLE : DECOTE_MONTANT_SEUL;
+  if (impotBrut >= seuil) return impotBrut;
+  const decote = Math.max(0, montant - impotBrut * DECOTE_TAUX);
+  return Math.max(0, impotBrut - decote);
+}
+
 /** Nombre de parts fiscales selon la situation familiale et le nombre d'enfants à charge (règles simplifiées, hors cas particuliers : parent isolé, invalidité, garde alternée...). */
 export function computeParts(situation: SituationFamiliale, nombreEnfants: number): number {
   let parts = situation === "couple" ? 2 : 1;
@@ -103,9 +119,16 @@ export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
 
 export interface ResolvedTaxProfile extends IRResult {
   tauxUtilise: number; // taux marginal effectivement appliqué à l'AEN (manuel ou calculé)
+  impotApresDecote: number; // impôt total du foyer après décote (indicatif — n'affecte pas tauxUtilise)
 }
 
-/** Résout le taux marginal à utiliser pour chiffrer l'IR supplémentaire dû à l'AEN. */
+/**
+ * Résout le taux marginal à utiliser pour chiffrer l'IR supplémentaire dû à l'AEN.
+ * Note : la décote (art. 197, I-4 CGI) réduit l'impôt total du foyer et est reflétée dans
+ * `impotApresDecote` à titre indicatif, mais n'est PAS répercutée dans `tauxUtilise` : dans la
+ * zone de décote, le taux marginal réel est mécaniquement majoré (~1,45× le taux de la tranche)
+ * du fait de la dégressivité de la décote elle-même, ce qui n'est pas modélisé ici par simplicité.
+ */
 export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): ResolvedTaxProfile {
   const parts = computeParts(profile.situationFamiliale, profile.nombreEnfants);
   const salaireApresAbattement = applyAbattement10(profile.salaireNetImposableAnnuel);
@@ -113,8 +136,9 @@ export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): Resolved
     profile.situationFamiliale === "couple" ? applyAbattement10(profile.conjointSalaireNetImposableAnnuel) : 0;
   const revenuImposable = salaireApresAbattement + conjointApresAbattement + profile.autresRevenusImposablesFoyer;
   const ir = computeIR(revenuImposable, parts);
+  const impotApresDecote = applyDecote(ir.impotTotal, profile.situationFamiliale);
 
   const tauxUtilise = profile.mode === "manuel" ? profile.tauxManuel : ir.tmi;
 
-  return { ...ir, tauxUtilise };
+  return { ...ir, tauxUtilise, impotApresDecote };
 }

@@ -8,6 +8,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   indemnites_kilometriques: "Indemnités kilométriques",
   revenus_fonciers: "Revenus fonciers",
   impot_societe: "Impôt sur les sociétés",
+  fiscalite_vehicule_societe: "Fiscalité du véhicule de société (taxes, plafonds, aides)",
 };
 
 const STATUS_LABEL: Record<string, string> = {

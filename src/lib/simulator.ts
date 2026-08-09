@@ -28,6 +28,7 @@ import {
   compareFinancingModes,
   createDefaultFinancingInputs,
 } from "./financing";
+import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
 
 export interface SimulationInputs {
   id: string;
@@ -41,10 +42,12 @@ export interface SimulationInputs {
   impositionSociete: ImpositionSociete; // IS ou IR
 
   // Véhicule
-  vehiclePrice: number; // Prix d'achat TTC
+  vehiclePrice: number; // Prix d'achat TTC (malus écologique déjà inclus dans le prix facturé)
   vehicleOverFiveYears: boolean; // > 5 ans => amortissement 10%, sinon 20% (véhicule acheté uniquement)
-  isElectric: boolean; // 100% électrique => électricité exclue du calcul
+  isElectric: boolean; // 100% électrique => électricité exclue du calcul, exonéré de taxes CO2/polluants
   isEcoScoreEligible: boolean; // éco-score >= 60 (liste ADEME) => abattement 50% (électrique uniquement)
+  co2EmissionsGkm: number; // émissions CO2 WLTP (g/km) — détermine le plafond de déduction fiscale et la taxe annuelle
+  annualVehicleTaxOverride: number | null; // surcharge manuelle de la taxe annuelle CO2+polluants (null = estimation automatique)
 
   // Usage
   privateUsePercent: number; // 0-100
@@ -102,6 +105,8 @@ export function createDefaultInputs(): SimulationInputs {
     vehicleOverFiveYears: false,
     isElectric: true,
     isEcoScoreEligible: true,
+    co2EmissionsGkm: 0,
+    annualVehicleTaxOverride: null,
 
     privateUsePercent: 50,
     totalKmAnnual: 15000,
@@ -151,13 +156,18 @@ export interface SimulationResults {
   tauxIRUtilise: number; // taux effectivement retenu (manuel ou calculé)
   revenuImposableFoyer: number;
   partsFiscales: number;
+  impotFoyerApresDecote: number; // impôt total du foyer après décote (indicatif)
 
   cotisationsTNS: number;
   irEstimee: number;
   coutTotalGerantSociete: number; // cash réellement supporté par le gérant (cotisations + IR) dans le scénario société
 
   // Société — mode de financement `financingMode`
-  companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien)
+  plafondAmortissementDeductible: number; // plafond fiscal (art. 39-4 CGI) selon les émissions de CO2
+  fractionFiscalementDeductible: number; // part de l'amortissement/loyer effectivement déductible (0-1)
+  reintegrationFiscaleCO2: number; // fraction de l'amortissement/loyer au-delà du plafond, non déductible
+  annualVehicleTax: number; // taxes annuelles CO2 + polluants (ex-TVS), 0 si électrique
+  companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes)
   quotePartProfessionnelleDeductible: number;
   quotePartPrivéeNonDeductible: number;
   economieImpotQuotePartPro: number; // économie d'IS (régime IS) ou d'IR foyer (régime IR, société translucide)
@@ -240,10 +250,25 @@ function computeSocieteForMode(
   const irEstimee = aenNet * tauxIRUtilise;
   const coutTotalGerantSociete = cotisationsTNS + irEstimee;
 
-  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien.
-  const companyCashBaseAnnual = financingAnnual + inputs.annualInsurance + inputs.annualMaintenance;
+  // Plafond de déduction fiscale de l'amortissement (ou du loyer LOA/LLD au prorata) selon les
+  // émissions de CO2 — art. 39-4 CGI. La fraction excédentaire doit être réintégrée au résultat
+  // fiscal, y compris sur sa quote-part professionnelle.
+  const plafondAmortissementDeductible = getPlafondAmortissementDeductible(inputs.co2EmissionsGkm, inputs.isElectric);
+  const fractionFiscalementDeductible =
+    inputs.vehiclePrice > 0 ? Math.min(1, plafondAmortissementDeductible / inputs.vehiclePrice) : 1;
+  const composantPlafonnee = mode === "comptant" || mode === "credit" ? amortAnnual : financingAnnual;
+  const reintegrationFiscaleCO2 = composantPlafonnee * (1 - fractionFiscalementDeductible);
+
+  // Taxes annuelles sur l'affectation des véhicules de tourisme (ex-TVS : composante CO2 + polluants),
+  // exonérées pour les véhicules 100% électriques/hydrogène.
+  const annualVehicleTax =
+    inputs.annualVehicleTaxOverride ?? estimateAnnualVehicleTax(inputs.co2EmissionsGkm, inputs.isElectric);
+
+  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes.
+  const companyCashBaseAnnual = financingAnnual + inputs.annualInsurance + inputs.annualMaintenance + annualVehicleTax;
   const quotePartPrivéeNonDeductible = companyCashBaseAnnual * ratio;
-  const quotePartProfessionnelleDeductible = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
+  const quotePartProfessionnelleBrute = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
+  const quotePartProfessionnelleDeductible = Math.max(0, quotePartProfessionnelleBrute - reintegrationFiscaleCO2);
   const tauxEconomie = computeTauxEconomie(inputs, tauxIRUtilise);
   const economieImpotQuotePartPro = quotePartProfessionnelleDeductible * tauxEconomie;
   const coutNetSociete = companyCashBaseAnnual - economieImpotQuotePartPro;
@@ -263,6 +288,10 @@ function computeSocieteForMode(
     cotisationsTNS,
     irEstimee,
     coutTotalGerantSociete,
+    plafondAmortissementDeductible,
+    fractionFiscalementDeductible,
+    reintegrationFiscaleCO2,
+    annualVehicleTax,
     companyCashBaseAnnual,
     quotePartProfessionnelleDeductible,
     quotePartPrivéeNonDeductible,
@@ -411,6 +440,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     tauxIRUtilise,
     revenuImposableFoyer: resolvedTax.revenuImposable,
     partsFiscales: resolvedTax.parts,
+    impotFoyerApresDecote: resolvedTax.impotApresDecote,
     ...personnel,
     allOptions,
     bestOption,

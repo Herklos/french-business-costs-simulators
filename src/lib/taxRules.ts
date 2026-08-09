@@ -16,7 +16,8 @@ export type RuleCategory =
   | "impot_revenu"
   | "indemnites_kilometriques"
   | "revenus_fonciers"
-  | "impot_societe";
+  | "impot_societe"
+  | "fiscalite_vehicule_societe";
 
 export interface TaxRule {
   id: string;
@@ -126,6 +127,20 @@ export const TAX_RULES: TaxRule[] = [
     notes: "Applicable aux revenus perçus en 2026, déclarés en 2027. Revalorisé chaque année en loi de finances.",
   },
   {
+    id: "ir-decote",
+    category: "impot_revenu",
+    label: "Décote de l'impôt sur le revenu",
+    value: "897 € (seul) / 1 483 € (couple) − 45,25 % × impôt brut, si impôt brut < 1 982 € / 3 277 €",
+    legalReference: "Art. 197, I-4 CGI",
+    sourceLabel: "economie.gouv.fr",
+    sourceUrl:
+      "https://www.economie.gouv.fr/particuliers/impots-et-fiscalite/gerer-mon-impot-sur-le-revenu/pouvez-vous-beneficier-de-la-decote-de-limpot-sur-le-revenu",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Réduit voire annule l'impôt des foyers modestes. Affichée à titre indicatif sur l'impôt total du foyer ; non répercutée dans le taux marginal (TMI) utilisé pour chiffrer l'AEN, qui reste celui de la tranche (simplification — le taux marginal réel est mécaniquement majoré dans la zone de décote).",
+  },
+  {
     id: "ir-abattement-10-salaires",
     category: "impot_revenu",
     label: "Abattement forfaitaire de 10 % sur les salaires (frais professionnels)",
@@ -165,6 +180,79 @@ export const TAX_RULES: TaxRule[] = [
     sourceLabel: "BOFiP-Impôts",
     validFrom: "2018-01-01",
     validUntil: null,
+  },
+  {
+    id: "plafond-amortissement-vehicule",
+    category: "fiscalite_vehicule_societe",
+    label: "Plafond de déduction fiscale de l'amortissement (ou du loyer LOA/LLD au prorata)",
+    value: "30 000 € (<20 g/km) | 20 300 € (20-49 g/km) | 18 300 € (50-160 g/km) | 9 900 € (>160 g/km)",
+    legalReference: "Art. 39-4 CGI",
+    sourceLabel: "BOFiP-Impôts",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "La fraction du prix d'achat (ou du loyer, au prorata) au-delà du plafond n'est pas déductible du résultat fiscal et doit être réintégrée, y compris sur sa quote-part professionnelle. S'applique aussi bien à l'achat qu'à la LOA/LLD.",
+  },
+  {
+    id: "taxe-annuelle-co2-polluants",
+    category: "fiscalite_vehicule_societe",
+    label: "Taxes annuelles sur l'affectation des véhicules de tourisme (ex-TVS)",
+    value: "Barème progressif CO2 (ex. 100 g/km ≈ 213 €/an) + taxe polluants — exonération totale si 100% électrique/H2",
+    legalReference: "Art. L421-94 et s. du code des impositions sur les biens et services",
+    sourceLabel: "Service-Public Entreprendre",
+    sourceUrl: "https://entreprendre.service-public.gouv.fr/vosdroits/F22203?lang=fr",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "A remplacé l'ex-TVS depuis 2023 (taxe CO2 + taxe polluants atmosphériques). Depuis 2025, les hybrides ne sont plus exonérés de la composante CO2. Le simulateur utilise une estimation simplifiée par paliers, à vérifier/ajuster manuellement (champ de surcharge) avant application stricte.",
+  },
+  {
+    id: "malus-ecologique",
+    category: "fiscalite_vehicule_societe",
+    label: "Malus écologique (CO2 + poids) à l'achat d'un véhicule neuf",
+    value: "Malus CO2 dès 108 g/km (jusqu'à 80 000 €) + malus au poids dès 1 500 kg (10 €/kg) — cumulables",
+    legalReference: "Art. 1012 ter et 1012 ter A CGI",
+    sourceLabel: "malus-ecologique.fr",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Coût ponctuel généralement déjà inclus dans le prix TTC facturé par le concessionnaire : non recalculé séparément par le simulateur — à vérifier que le « prix d'achat TTC » saisi l'intègre bien. Les véhicules 100% électriques sont exonérés du malus au poids sur toute l'année 2026.",
+  },
+  {
+    id: "bonus-ecologique",
+    category: "fiscalite_vehicule_societe",
+    label: "Bonus écologique (aide à l'achat d'un véhicule électrique)",
+    value: "Jusqu'à 5 700 € pour les entreprises (prix < 47 000 € TTC, masse < 2,4 t) + surbonus batterie UE",
+    legalReference: "Décret n° 2014-1672 modifié ; dispositif désormais financé via les CEE depuis le 01/07/2025",
+    sourceLabel: "Autosphere",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Réduit le prix d'achat effectif si perçu par la société. Non intégré automatiquement au calcul : à déduire manuellement du « prix d'achat TTC » saisi si la société en bénéficie.",
+  },
+  {
+    id: "tva-vehicule-carburant",
+    category: "fiscalite_vehicule_societe",
+    label: "TVA récupérable sur véhicule et carburant",
+    value: "Véhicule de tourisme : 0% récupérable (sauf mise à disposition avec participation financière réelle depuis le 30/04/2025) · Carburant : 80% récupérable (100% si utilitaire)",
+    legalReference: "Art. 206, IV, 2, 6° annexe II CGI",
+    sourceLabel: "Qonto / Légifiscal",
+    validFrom: "2025-04-30",
+    validUntil: "2026-12-31",
+    notes:
+      "Non modélisé dans le simulateur (les montants saisis sont considérés TTC nets de toute récupération) — impact potentiel à vérifier au cas par cas, notamment si une participation financière réelle du dirigeant est mise en place (cf. section Optimisations).",
+  },
+  {
+    id: "aen-forfaitaire-assimile-salarie",
+    category: "aen_vehicule",
+    label: "Méthode forfaitaire — alternative disponible pour les dirigeants assimilés salariés",
+    value: "15%/20% (acheté) ou 50%/67% (loué) du prix ou du coût annuel, ou 30%/40% avec carburant payé par l'employeur",
+    legalReference: "Arrêté du 25 février 2025 (barèmes forfaitaires AEN véhicule)",
+    sourceLabel: "URSSAF",
+    validFrom: "2025-02-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Contrairement aux gérants TNS (méthode réelle obligatoire), un président de SASU/SAS assimilé salarié peut légalement opter pour le barème forfaitaire, parfois plus favorable. Le simulateur applique uniformément la méthode réelle pour les deux statuts par souci de cohérence ; comparer manuellement avec ce barème forfaitaire si le statut est « assimilé salarié ».",
   },
   {
     id: "is-taux-normal",

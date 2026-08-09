@@ -407,6 +407,10 @@ td {
   margin-bottom: 0.25rem;
 }
 
+.detail-list li.warning-inline {
+  color: var(--warn);
+}
+
 /* Financing */
 .financing-grid {
   display: grid;

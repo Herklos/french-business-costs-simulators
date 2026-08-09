@@ -141,6 +141,7 @@ export function VehicleSimulatorPage() {
               {companyTypeConfig?.description}
             </p>
             <RuleNote ruleId="aen-methode-reelle-obligatoire-tns" />
+            {dirigeantStatus === "ASSIMILE_SALARIE" && <RuleNote ruleId="aen-forfaitaire-assimile-salarie" />}
           </Section>
 
           <Section title="Véhicule">
@@ -167,8 +168,15 @@ export function VehicleSimulatorPage() {
                 </select>
               </Field>
             </div>
+            {!inputs.isElectric && (
+              <Field label="Émissions de CO2 (g/km, WLTP)" hint="Détermine le plafond de déduction fiscale (art. 39-4 CGI) et les taxes annuelles CO2/polluants.">
+                <NumberInput value={inputs.co2EmissionsGkm} onChange={(e) => update("co2EmissionsGkm", Number(e.target.value))} />
+              </Field>
+            )}
             <RuleNote ruleId="aen-amortissement-taux" />
             <RuleNote ruleId="aen-vehicule-loue-taux" />
+            <RuleNote ruleId="malus-ecologique" />
+            <RuleNote ruleId="bonus-ecologique" />
             {inputs.isElectric && (
               <Field label="Véhicule éligible à l'éco-score renforcé (≥ 60 pts, liste ADEME) ?">
                 <select
@@ -218,6 +226,20 @@ export function VehicleSimulatorPage() {
                 </Field>
               )}
             </div>
+            {!inputs.isElectric && (
+              <Field
+                label="Taxes annuelles CO2 + polluants — surcharge manuelle (€, laisser vide pour l'estimation automatique)"
+                hint="Estimation simplifiée par paliers à partir des émissions de CO2 saisies ci-dessus ; à vérifier avec le barème officiel."
+              >
+                <NumberInput
+                  value={inputs.annualVehicleTaxOverride ?? ""}
+                  placeholder="Estimation automatique"
+                  onChange={(e) => update("annualVehicleTaxOverride", e.target.value === "" ? null : Number(e.target.value))}
+                />
+              </Field>
+            )}
+            <RuleNote ruleId="taxe-annuelle-co2-polluants" />
+            <RuleNote ruleId="tva-vehicule-carburant" />
           </Section>
 
           <Section
@@ -315,10 +337,12 @@ export function VehicleSimulatorPage() {
                 <p className="hint-block">
                   Parts fiscales : <strong>{results.partsFiscales}</strong> · Revenu imposable retenu :{" "}
                   <strong>{formatEUR(results.revenuImposableFoyer)}</strong> · TMI calculé :{" "}
-                  <strong>{formatPercent(results.tmiCalcule)}</strong>
+                  <strong>{formatPercent(results.tmiCalcule)}</strong> · Impôt du foyer après décote :{" "}
+                  <strong>{formatEUR(results.impotFoyerApresDecote)}</strong>
                 </p>
                 <RuleNote ruleId="ir-bareme-2026" />
                 <RuleNote ruleId="ir-abattement-10-salaires" />
+                <RuleNote ruleId="ir-decote" />
               </>
             )}
           </Section>
@@ -562,11 +586,25 @@ export function VehicleSimulatorPage() {
             </div>
             <ul className="detail-list">
               <li>Base réelle retenue pour l'AEN : {formatEUR(results.aenBaseAnnualCosts)}</li>
-              <li>Décaissement réel annuel société (financement + assurance + entretien) : {formatEUR(results.companyCashBaseAnnual)}</li>
+              <li>Taxes annuelles CO2 + polluants (ex-TVS) : {formatEUR(results.annualVehicleTax)}</li>
+              <li>
+                Décaissement réel annuel société (financement + assurance + entretien + taxes) :{" "}
+                {formatEUR(results.companyCashBaseAnnual)}
+              </li>
+              <li>
+                Plafond de déduction fiscale (art. 39-4 CGI) : {formatEUR(results.plafondAmortissementDeductible)} — fraction
+                déductible : {formatPercent(results.fractionFiscalementDeductible)}
+              </li>
+              {results.reintegrationFiscaleCO2 > 0 && (
+                <li className="warning-inline">
+                  Réintégration fiscale (dépassement du plafond) : {formatEUR(results.reintegrationFiscaleCO2)}/an
+                </li>
+              )}
               <li>Quote-part professionnelle déductible : {formatEUR(results.quotePartProfessionnelleDeductible)}</li>
               <li>Quote-part privée réintégrée (non déductible) : {formatEUR(results.quotePartPrivéeNonDeductible)}</li>
               <li>Économie d'impôt sur la quote-part pro : {formatEUR(results.economieImpotQuotePartPro)}</li>
             </ul>
+            <RuleNote ruleId="plafond-amortissement-vehicule" />
           </Section>
 
           <Section
