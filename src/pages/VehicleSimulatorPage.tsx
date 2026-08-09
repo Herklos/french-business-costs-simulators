@@ -12,7 +12,7 @@ import { COUNTRIES } from "../lib/countries";
 import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/companyTypes";
 import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMode } from "../lib/financing";
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
-import { VEHICLE_MODELS } from "../lib/vehicleModels";
+import { VEHICLE_MODELS, getVehicleModel } from "../lib/vehicleModels";
 import { DEFAULT_DEPRECIATION_RATE_ANNUAL } from "../lib/vehicleDepreciation";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
@@ -99,6 +99,8 @@ export function VehicleSimulatorPage() {
   const companyTypeConfig = getCompanyType(inputs.country, inputs.companyType);
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
   const defaultCotisationRate = companyTypeConfig?.defaultCotisationRate ?? DEFAULT_TNS_RATE;
+  const selectedVehicleModel = inputs.vehicleModelId ? getVehicleModel(inputs.vehicleModelId) : undefined;
+  const lldToutCompris = selectedVehicleModel?.defaultLldOffer?.toutComprisEntretienAssurance ?? false;
 
   function update<K extends keyof SimulationInputs>(key: K, value: SimulationInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));
@@ -676,6 +678,13 @@ export function VehicleSimulatorPage() {
 
               <div className="financing-card">
                 <h4>LLD</h4>
+                {lldToutCompris && (
+                  <p className="warning-block">
+                    ⚠️ Cette offre LLD est « tout compris » (assurance et entretien inclus dans le loyer). Pensez à
+                    réduire ou mettre à 0 les champs Assurance/Entretien annuels (section « Charges annuelles
+                    réelles ») pour ce mode, sinon ils seront comptés en double.
+                  </p>
+                )}
                 <Field label="1er loyer (€)">
                   <NumberInput
                     value={inputs.financing.lld.premierLoyer}
@@ -887,6 +896,14 @@ export function VehicleSimulatorPage() {
                 </select>
               </Field>
             </div>
+            {dirigeantStatus === "TNS" && inputs.isElectric && (
+              <p className="field__hint">
+                ℹ️ Abattement électrique plafonné à 50% de l'AEN (max. 2 026,30€) : c'est le plafond de la{" "}
+                <strong>méthode réelle</strong>, seule autorisée pour un dirigeant TNS. L'abattement forfaitaire de
+                70% (max. 4 641,60€) ne s'applique qu'à la méthode forfaitaire, elle-même interdite aux TNS — ce
+                n'est donc pas une erreur si l'abattement affiché ci-dessous semble plus faible que ce chiffre.
+              </p>
+            )}
             <div className="stat-grid">
               <StatCard label="AEN brut" value={formatEUR(results.aenBrut)} />
               <StatCard label="Abattement électrique" value={formatEUR(results.abattement)} tone={results.abattement > 0 ? "good" : "neutral"} />

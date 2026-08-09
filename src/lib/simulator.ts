@@ -155,10 +155,12 @@ export function createDefaultInputs(): SimulationInputs {
 
 /**
  * Applique le modèle de véhicule sélectionné : motorisation/éligibilité éco-score, et — quand le
- * modèle dispose d'une offre LOA constructeur réelle connue (ex. Tesla Model Y, cf.
+ * modèle dispose d'offres LOA/LLD constructeur réelles connues (ex. Tesla Model Y, cf.
  * vehicleModels.ts) — le prix TTC de référence et les paramètres de financement (« Mode
- * d'acquisition du véhicule », section LOA) sont eux aussi réappliqués pour rester cohérents avec
- * l'offre réelle plutôt que de garder une estimation générique ou un prix précédemment saisi.
+ * d'acquisition du véhicule ») sont eux aussi réappliqués pour rester cohérents avec l'offre
+ * réelle plutôt que de garder une estimation générique ou un prix précédemment saisi. Comparer une
+ * offre LOA réelle (souvent promotionnelle) à une LLD purement générique fausserait le comparatif
+ * des modes de financement : les deux sont donc sourcées réellement quand c'est possible.
  */
 export function applyVehicleModel(inputs: SimulationInputs, modelId: string): SimulationInputs {
   const model = getVehicleModel(modelId);
@@ -172,6 +174,16 @@ export function applyVehicleModel(inputs: SimulationInputs, modelId: string): Si
     const financing = createDefaultFinancingInputs(model.defaultPrice);
     if (model.defaultLoaOffer) {
       financing.loa = { prixTTC: model.defaultPrice, ...model.defaultLoaOffer, leveeOption: true };
+    }
+    if (model.defaultLldOffer) {
+      financing.lld = {
+        premierLoyer: model.defaultLldOffer.premierLoyer,
+        loyerMensuel: model.defaultLldOffer.loyerMensuel,
+        dureeMois: model.defaultLldOffer.dureeMois,
+        kmInclusAnnuel: model.defaultLldOffer.kmInclusAnnuel,
+        kmReelAnnuel: next.totalKmAnnual,
+        coutKmSupplementaire: financing.lld.coutKmSupplementaire,
+      };
     }
     next = { ...next, vehiclePrice: model.defaultPrice, financing };
   }

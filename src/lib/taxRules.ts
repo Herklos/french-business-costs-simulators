@@ -68,6 +68,8 @@ export const TAX_RULES: TaxRule[] = [
     sourceLabel: "BOFiP-Impôts / URSSAF",
     validFrom: "2020-01-01",
     validUntil: null,
+    notes:
+      "Confirmé par plusieurs sources professionnelles 2026 (Dougs, LégiSocial, Archipel Lyon...) : l'interdiction du barème forfaitaire s'applique aussi à l'abattement électrique associé — un TNS ne peut donc jamais bénéficier de l'abattement forfaitaire renforcé de 70% (plafond 4 641,60€), réservé aux dirigeants assimilés salariés en méthode forfaitaire. Seul l'abattement réel de 50% (plafond 2 026,30€, cf. règle dédiée) s'applique à un TNS, quelle que soit la valeur du véhicule.",
   },
   {
     id: "aen-abattement-vehicule-electrique-taux",

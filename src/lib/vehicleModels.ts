@@ -15,6 +15,15 @@ export interface VehicleLoaOffer {
   tauxAnnuelIndicatif?: number; // TAEG affiché par le constructeur, déjà intégré dans les loyers (pas de champ dédié en LOA)
 }
 
+/** Offre LLD constructeur réelle associée à un modèle, réappliquée automatiquement à la sélection du modèle. */
+export interface VehicleLldOffer {
+  premierLoyer: number;
+  loyerMensuel: number; // souvent "tout compris" (entretien/assurance inclus) — cf. `toutComprisEntretienAssurance`
+  dureeMois: number;
+  kmInclusAnnuel: number;
+  toutComprisEntretienAssurance?: boolean; // si vrai, penser à réduire/annuler les champs assurance/entretien du simulateur pour éviter un double comptage
+}
+
 export interface VehicleModel {
   id: string;
   label: string;
@@ -23,6 +32,7 @@ export interface VehicleModel {
   notes: string;
   defaultPrice?: number; // prix TTC de référence, réappliqué à la sélection du modèle
   defaultLoaOffer?: VehicleLoaOffer; // offre LOA réelle publiée, réappliquée à la sélection du modèle
+  defaultLldOffer?: VehicleLldOffer; // offre LLD réelle publiée, réappliquée à la sélection du modèle
 }
 
 export const VEHICLE_MODELS: VehicleModel[] = [
@@ -39,6 +49,14 @@ export const VEHICLE_MODELS: VehicleModel[] = [
       dureeMois: 36,
       valeurOptionAchat: 25804,
       tauxAnnuelIndicatif: 0.0099,
+    },
+    defaultLldOffer: {
+      // Offre LLD professionnelle constatée 2026 (48 mois / 60 000 km, entretien + assurance inclus).
+      premierLoyer: 0,
+      loyerMensuel: 592,
+      dureeMois: 48,
+      kmInclusAnnuel: 15000,
+      toutComprisEntretienAssurance: true,
     },
   },
   {

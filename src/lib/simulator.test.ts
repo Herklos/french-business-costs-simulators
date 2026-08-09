@@ -190,6 +190,13 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     expect(next.financing.loa.dureeMois).toBe(36);
     expect(next.financing.loa.valeurOptionAchat).toBe(25804);
     expect(next.financing.loa.leveeOption).toBe(true);
+
+    // L'offre LLD réelle (et non plus l'estimation générique) doit également être appliquée,
+    // pour éviter de comparer une LOA réelle à une LLD synthétique (écart artificiel).
+    expect(next.financing.lld.loyerMensuel).toBe(592);
+    expect(next.financing.lld.dureeMois).toBe(48);
+    expect(next.financing.lld.premierLoyer).toBe(0);
+    expect(next.financing.lld.kmInclusAnnuel).toBe(15000);
   });
 
   it("réapplique le prix et l'offre LOA réelle du Tesla Model 3", () => {
@@ -232,10 +239,12 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     expect(next.vehiclePrice).toBe(base.vehiclePrice);
   });
 
-  it("createDefaultInputs applique bien l'offre LOA réelle du Model Y par défaut", () => {
+  it("createDefaultInputs applique bien les offres LOA et LLD réelles du Model Y par défaut", () => {
     const inputs = createDefaultInputs();
     expect(inputs.financing.loa.loyerMensuel).toBe(308);
     expect(inputs.financing.loa.dureeMois).toBe(36);
+    expect(inputs.financing.lld.loyerMensuel).toBe(592);
+    expect(inputs.financing.lld.dureeMois).toBe(48);
   });
 });
 

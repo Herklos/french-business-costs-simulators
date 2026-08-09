@@ -57,9 +57,29 @@ describe("vehicleModels", () => {
     expect(scenic?.defaultLoaOffer).toBeUndefined();
   });
 
-  it("le modèle « autre » n'a ni prix ni offre LOA de référence", () => {
+  it("le Tesla Model Y porte aussi une offre LLD réelle « tout compris » (592€/mois, 48 mois)", () => {
+    const modelY = getVehicleModel("tesla-model-y-berlin");
+    expect(modelY?.defaultLldOffer).toEqual({
+      premierLoyer: 0,
+      loyerMensuel: 592,
+      dureeMois: 48,
+      kmInclusAnnuel: 15000,
+      toutComprisEntretienAssurance: true,
+    });
+  });
+
+  it("les autres modèles n'ont pas d'offre LLD constructeur codée en dur", () => {
+    for (const m of VEHICLE_MODELS) {
+      if (m.id !== "tesla-model-y-berlin") {
+        expect(m.defaultLldOffer).toBeUndefined();
+      }
+    }
+  });
+
+  it("le modèle « autre » n'a ni prix ni offre LOA/LLD de référence", () => {
     const autre = getVehicleModel("autre");
     expect(autre?.defaultPrice).toBeUndefined();
     expect(autre?.defaultLoaOffer).toBeUndefined();
+    expect(autre?.defaultLldOffer).toBeUndefined();
   });
 });
