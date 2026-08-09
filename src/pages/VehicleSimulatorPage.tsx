@@ -54,6 +54,25 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`Motorisation : ${sim.isElectric ? "100% électrique" : "Thermique/hybride"}${sim.isElectric ? ` · Éco-score éligible : ${sim.isEcoScoreEligible ? "Oui" : "Non"}` : ` · CO2 : ${sim.co2EmissionsGkm} g/km`}`);
   push(`Usage privé : ${sim.privateUsePercent}% · Kilométrage annuel : ${sim.totalKmAnnual} km`);
   push("");
+  push("— Charges annuelles réelles (hypothèses) —");
+  push(`Assurance : ${formatEUR(sim.annualInsurance)}/an · Entretien : ${formatEUR(sim.annualMaintenance)}/an${!sim.isElectric ? ` · Carburant usage privé : ${formatEUR(sim.annualFuelPrivateCost)}/an` : ""}`);
+  push(`Taux de décote annuel estimé (valeur résiduelle) : ${formatPercent(sim.tauxDeprecationAnnuel)}/an`);
+  push("");
+  push("— Cotisations & fiscalité (hypothèses) —");
+  push(`Taux de charges sociales sur l'AEN : ${formatPercent(sim.tnsContributionRate)} · Taux d'IS normal : ${formatPercent(sim.corporateTaxRate)}`);
+  push(`Bénéfice imposable prévisionnel avant charges véhicule : ${formatEUR(sim.beneficeAvantChargePrevisionnel)}${sim.impositionSociete === "IS" ? ` (éligible taux réduit 15% : ${sim.eligibleTauxReduitPME ? "Oui" : "Non"})` : ""}`);
+  push(`Participation financière mensuelle du dirigeant : ${formatEUR(sim.monthlyParticipation)} · Barème IK de base : ${sim.ikRatePerKm} €/km`);
+  push("");
+  push("— Modes de financement (paramètres, hypothèses) —");
+  push(`Comptant : durée de détention ${sim.financing.comptant.dureeDetentionMois} mois, taux d'opportunité ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an`);
+  push(`Crédit : apport ${formatEUR(sim.financing.credit.apport)}, TAEG ${formatPercent(sim.financing.credit.tauxAnnuel, 3)}, durée ${sim.financing.credit.dureeMois} mois`);
+  push(
+    `LOA : 1er loyer majoré ${formatEUR(sim.financing.loa.premierLoyerMajore)}, loyer mensuel ${formatEUR(sim.financing.loa.loyerMensuel)}, durée ${sim.financing.loa.dureeMois} mois, option d'achat ${formatEUR(sim.financing.loa.valeurOptionAchat)} (${sim.financing.loa.leveeOption ? "levée" : "non levée"})`,
+  );
+  push(
+    `LLD : 1er loyer ${formatEUR(sim.financing.lld.premierLoyer)}, loyer mensuel ${formatEUR(sim.financing.lld.loyerMensuel)}, durée ${sim.financing.lld.dureeMois} mois, km inclus/an ${sim.financing.lld.kmInclusAnnuel}, dépassement ${sim.financing.lld.coutKmSupplementaire} €/km`,
+  );
+  push("");
   push("— Résultats AEN (société) —");
   push(`AEN brut : ${formatEUR(r.aenBrut)} · Abattement : ${formatEUR(r.abattement)} · AEN net : ${formatEUR(r.aenNet)}`);
   push(`Cotisations sociales : ${formatEUR(r.cotisationsTNS)} · IR sur l'AEN : ${formatEUR(r.irEstimee)} (TMI ${formatPercent(r.tauxIRUtilise)})`);
@@ -68,7 +87,8 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push("");
   push("— Comparaison de toutes les options (coût global annuel) —");
   for (const opt of r.allOptions) {
-    push(`  ${opt.label} : ${formatEUR(opt.globalCostAnnual)}/an (dont société ${formatEUR(opt.partSociete)} · dont dirigeant ${formatEUR(opt.partDirigeant)})`);
+    const residuel = opt.devientProprietaire ? `, valeur résiduelle fin de période ${formatEUR(opt.valeurResiduelleEstimee)}` : ", véhicule restitué (rien)";
+    push(`  ${opt.label} : ${formatEUR(opt.globalCostAnnual)}/an (dont société ${formatEUR(opt.partSociete)} · dont dirigeant ${formatEUR(opt.partDirigeant)}${residuel})`);
   }
   if (r.seuilPrivateUsePercent !== null) {
     push("");
