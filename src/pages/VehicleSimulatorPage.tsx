@@ -336,9 +336,16 @@ export function VehicleSimulatorPage() {
                 </Field>
                 <p className="hint-block">
                   Parts fiscales : <strong>{results.partsFiscales}</strong> · Revenu imposable retenu :{" "}
-                  <strong>{formatEUR(results.revenuImposableFoyer)}</strong> · TMI calculé :{" "}
+                  <strong>{formatEUR(results.revenuImposableFoyer)}</strong> · TMI de la tranche :{" "}
                   <strong>{formatPercent(results.tmiCalcule)}</strong> · Impôt du foyer après décote :{" "}
                   <strong>{formatEUR(results.impotFoyerApresDecote)}</strong>
+                  {results.dansZoneDecote && (
+                    <>
+                      {" "}
+                      · Taux marginal effectif retenu (zone de décote) :{" "}
+                      <strong>{formatPercent(results.tauxMarginalEffectif)}</strong>
+                    </>
+                  )}
                 </p>
                 <RuleNote ruleId="ir-bareme-2026" />
                 <RuleNote ruleId="ir-abattement-10-salaires" />
@@ -355,7 +362,10 @@ export function VehicleSimulatorPage() {
                   onChange={(e) => update("monthlyParticipation", Number(e.target.value))}
                 />
               </Field>
-              <Field label="Barème IK retenu (€/km) — scénario achat personnel">
+              <Field
+                label="Barème IK de base (€/km) — scénario achat personnel"
+                hint={inputs.isElectric ? `Majoré automatiquement de 20% (véhicule électrique) : ${results.effectiveIkRatePerKm.toFixed(3)} €/km retenu.` : undefined}
+              >
                 <ResetableNumberInput
                   step="0.001"
                   value={inputs.ikRatePerKm}
@@ -542,6 +552,9 @@ export function VehicleSimulatorPage() {
                     <td>
                       {idx === 0 && "🏆 "}
                       {opt.label}
+                      <div className="option-breakdown">
+                        dont société {formatEUR(opt.partSociete)} · dont dirigeant {formatEUR(opt.partDirigeant)}
+                      </div>
                     </td>
                     <td>{formatEUR(opt.globalCostAnnual)}</td>
                     <td>
@@ -636,7 +649,14 @@ export function VehicleSimulatorPage() {
             </div>
           </Section>
 
-          <Section title="Projection (coût global cumulé)">
+          <Section
+            title="Projection (coût global cumulé)"
+            subtitle={
+              results.anneeTransitionAmortissement !== null && inputs.projectionYears >= results.anneeTransitionAmortissement
+                ? `L'amortissement du véhicule (si acheté) passe de 20% à 10%/an à partir de l'année ${results.anneeTransitionAmortissement} (véhicule >5 ans) — l'AEN et les coûts société baissent en conséquence à partir de cette année.`
+                : undefined
+            }
+          >
             <table className="projection-table">
               <thead>
                 <tr>
@@ -647,8 +667,14 @@ export function VehicleSimulatorPage() {
               </thead>
               <tbody>
                 {results.projection.map((p) => (
-                  <tr key={p.year}>
-                    <td>{p.year}</td>
+                  <tr
+                    key={p.year}
+                    className={p.year === results.anneeTransitionAmortissement ? "row--selected" : undefined}
+                  >
+                    <td>
+                      {p.year}
+                      {p.year === results.anneeTransitionAmortissement ? " *" : ""}
+                    </td>
                     <td>{formatEUR(p.cumulSociete)}</td>
                     <td>{formatEUR(p.cumulPersonnel)}</td>
                   </tr>

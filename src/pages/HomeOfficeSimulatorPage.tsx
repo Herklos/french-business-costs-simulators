@@ -72,6 +72,32 @@ export function HomeOfficeSimulatorPage() {
             </p>
           </Section>
 
+          <Section
+            title="Formalisation de la mise à disposition"
+            subtitle="Même traitement fiscal de fond ; le bail réel est plus robuste juridiquement mais implique des frais de mise en place."
+          >
+            <div className="grid grid--2">
+              <Field label="Formalisation retenue">
+                <select
+                  value={inputs.formalisation}
+                  onChange={(e) => update("formalisation", e.target.value as HomeOfficeInputs["formalisation"])}
+                >
+                  <option value="indemnite">Indemnité d'occupation (convention simple)</option>
+                  <option value="bail_professionnel">Bail professionnel réel (plus robuste)</option>
+                </select>
+              </Field>
+              {inputs.formalisation === "bail_professionnel" && (
+                <Field label="Frais de mise en place du bail (rédaction, enregistrement) (€, ponctuel)">
+                  <NumberInput
+                    value={inputs.fraisMiseEnPlaceBail}
+                    onChange={(e) => update("fraisMiseEnPlaceBail", Number(e.target.value))}
+                  />
+                </Field>
+              )}
+            </div>
+            <RuleNote ruleId="domicile-formalisation-bail-vs-indemnite" />
+          </Section>
+
           <Section title="Fiscalité de l'indemnité (revenus fonciers du dirigeant)">
             <div className="grid grid--2">
               <Field label="Régime foncier">
@@ -201,7 +227,14 @@ export function HomeOfficeSimulatorPage() {
             <StatCard label="Base imposable foncière" value={formatEUR(results.baseImposableFonciere)} />
             <StatCard label="IR dû" value={formatEUR(results.irDu)} sub={`TMI : ${formatPercent(results.tauxIRUtilise)}`} />
             <StatCard label="Prélèvements sociaux (17,2 %)" value={formatEUR(results.prelevementsSociaux)} />
-            <StatCard label="Gain net pour le dirigeant" value={formatEUR(results.gainNetGerant)} tone="good" />
+            <StatCard label="Gain net pour le dirigeant (récurrent)" value={formatEUR(results.gainNetGerant)} tone="good" />
+            {inputs.formalisation === "bail_professionnel" && inputs.fraisMiseEnPlaceBail > 0 && (
+              <StatCard
+                label="Gain net — 1ère année (après frais de mise en place)"
+                value={formatEUR(results.gainNetGerantAnnee1)}
+                tone={results.gainNetGerantAnnee1 >= 0 ? "good" : "bad"}
+              />
+            )}
             <StatCard label="Coût net société (après économie d'impôt)" value={formatEUR(results.coutNetSociete)} tone="bad" />
             <StatCard
               label="Économie vs bureau externe"

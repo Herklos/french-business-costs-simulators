@@ -83,6 +83,7 @@ export const DEFAULT_ABATTEMENT_CAP = 2026.3; // plafond 2026 abattement véhicu
 export const DEFAULT_TNS_RATE = 0.43;
 export const DEFAULT_CORPORATE_TAX_RATE = 0.25;
 export const DEFAULT_IK_RATE = 0.5;
+export const IK_MAJORATION_ELECTRIQUE = 0.2; // majoration légale de 20% du barème IK pour les véhicules électriques
 export const ALL_FINANCING_MODES: FinancingMode[] = ["comptant", "credit", "loa", "lld"];
 
 export function createDefaultInputs(): SimulationInputs {
@@ -131,12 +132,16 @@ export function createDefaultInputs(): SimulationInputs {
   };
 }
 
-/** Coût global annualisé d'une combinaison {propriétaire, mode de financement} donnée. */
+/** Coût global annualisé d'une combinaison {propriétaire, mode de financement} donnée, avec le
+ * détail de la répartition entre ce que supporte réellement la société et ce que supporte
+ * réellement le dirigeant (les deux s'additionnent pour former globalCostAnnual). */
 export interface GlobalOption {
   owner: "societe" | "personnel";
   mode: FinancingMode;
   label: string;
   globalCostAnnual: number;
+  partSociete: number; // coût net réellement supporté par la société (après économies d'impôt)
+  partDirigeant: number; // coût net réellement supporté par le dirigeant (cash, après IK le cas échéant)
 }
 
 export interface SimulationResults {
@@ -157,6 +162,8 @@ export interface SimulationResults {
   revenuImposableFoyer: number;
   partsFiscales: number;
   impotFoyerApresDecote: number; // impôt total du foyer après décote (indicatif)
+  dansZoneDecote: boolean; // le foyer est-il dans la zone de dégressivité de la décote ?
+  tauxMarginalEffectif: number; // taux marginal réel intégrant l'effet décote (utilisé si mode "calculé")
 
   cotisationsTNS: number;
   irEstimee: number;
@@ -177,6 +184,7 @@ export interface SimulationResults {
   // Scénario "achat personnel + IK" — mode de financement `personalFinancingMode`
   proKmAnnual: number;
   privateKmAnnual: number;
+  effectiveIkRatePerKm: number; // barème IK effectivement appliqué (majoré de 20% si électrique)
   ikReimbursement: number;
   personalFinancingAnnual: number;
   coutScenarioPersonnel: number; // coût net réellement supporté par le dirigeant (après réception des IK)
@@ -193,6 +201,7 @@ export interface SimulationResults {
   seuilPrivateUsePercent: number | null; // % usage privé à partir duquel le scénario personnel devient globalement moins cher
 
   // Projection (coûts globaux cumulés)
+  anneeTransitionAmortissement: number | null; // année de la projection où l'amortissement passe de 20% à 10%/an (achat uniquement)
   projection: { year: number; cumulSociete: number; cumulPersonnel: number }[];
 }
 
@@ -312,7 +321,9 @@ function computePersonnelForMode(
   const ratio = Math.min(Math.max(privateUsePercent, 0), 100) / 100;
   const privateKmAnnual = inputs.totalKmAnnual * ratio;
   const proKmAnnual = inputs.totalKmAnnual - privateKmAnnual;
-  const ikReimbursement = proKmAnnual * inputs.ikRatePerKm;
+  // Majoration légale de 20% du barème IK pour les véhicules 100% électriques, appliquée automatiquement.
+  const effectiveIkRatePerKm = inputs.ikRatePerKm * (inputs.isElectric ? 1 + IK_MAJORATION_ELECTRIQUE : 1);
+  const ikReimbursement = proKmAnnual * effectiveIkRatePerKm;
 
   const personalFinancingAnnual = getFinancingAnnual(financingResults, mode);
   const grossCost = personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance;
@@ -326,6 +337,7 @@ function computePersonnelForMode(
   return {
     privateKmAnnual,
     proKmAnnual,
+    effectiveIkRatePerKm,
     ikReimbursement,
     personalFinancingAnnual,
     coutScenarioPersonnel,
@@ -395,27 +407,28 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
 
   // Toutes les combinaisons possibles, pour trouver l'option la moins coûteuse globalement — sans opposer
   // par principe société et personnel : on compare le coût total consolidé de chaque option entre elles.
-  const allOptions: GlobalOption[] = ALL_FINANCING_MODES.flatMap((mode) => [
-    {
-      owner: "societe" as const,
-      mode,
-      label: `Société — ${FINANCING_LABELS[mode]}`,
-      globalCostAnnual: computeSocieteForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise)
-        .globalCostSociete,
-    },
-    {
-      owner: "personnel" as const,
-      mode,
-      label: `Personnel + IK — ${FINANCING_LABELS[mode]}`,
-      globalCostAnnual: computePersonnelForMode(
-        inputs,
+  const allOptions: GlobalOption[] = ALL_FINANCING_MODES.flatMap((mode) => {
+    const s = computeSocieteForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise);
+    const p = computePersonnelForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise);
+    return [
+      {
+        owner: "societe" as const,
         mode,
-        inputs.privateUsePercent,
-        financingResults,
-        tauxIRUtilise,
-      ).globalCostPersonnel,
-    },
-  ]).sort((a, b) => a.globalCostAnnual - b.globalCostAnnual);
+        label: `Société — ${FINANCING_LABELS[mode]}`,
+        globalCostAnnual: s.globalCostSociete,
+        partSociete: s.coutNetSociete,
+        partDirigeant: s.coutTotalGerantSociete,
+      },
+      {
+        owner: "personnel" as const,
+        mode,
+        label: `Personnel + IK — ${FINANCING_LABELS[mode]}`,
+        globalCostAnnual: p.globalCostPersonnel,
+        partSociete: p.ikReimbursement - p.economieImpotIK,
+        partDirigeant: p.coutScenarioPersonnel,
+      },
+    ];
+  }).sort((a, b) => a.globalCostAnnual - b.globalCostAnnual);
 
   const bestOption = allOptions[0];
 
@@ -425,11 +438,28 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
 
   const seuilPrivateUsePercent = findBreakevenPercent(inputs, financingResults, tauxIRUtilise);
 
+  // Projection : le taux d'amortissement passe de 20% à 10%/an après 5 ans de détention (véhicule
+  // acheté). Si le véhicule est neuf (≤5 ans) au démarrage de la simulation, ce basculement est
+  // anticipé à partir de l'année 6 de la projection ; s'il est déjà >5 ans, le taux 10% s'applique
+  // dès l'année 1. Cela n'affecte que les modes "achetés" (comptant/crédit) : en LOA/LLD, la base
+  // AEN dépend du loyer, indépendant de l'âge du véhicule.
+  const anneeTransitionAmortissement = inputs.vehicleOverFiveYears ? null : 6;
+  const societeApresTransition = inputs.vehicleOverFiveYears
+    ? societe
+    : computeSocieteForMode(
+        { ...inputs, vehicleOverFiveYears: true },
+        inputs.financingMode,
+        inputs.privateUsePercent,
+        financingResults,
+        tauxIRUtilise,
+      );
+
   const projection: SimulationResults["projection"] = [];
   let cumulSociete = 0;
   let cumulPersonnel = 0;
   for (let year = 1; year <= inputs.projectionYears; year++) {
-    cumulSociete += societe.globalCostSociete;
+    const societeYear = anneeTransitionAmortissement !== null && year >= anneeTransitionAmortissement ? societeApresTransition : societe;
+    cumulSociete += societeYear.globalCostSociete;
     cumulPersonnel += personnel.globalCostPersonnel;
     projection.push({ year, cumulSociete, cumulPersonnel });
   }
@@ -441,12 +471,15 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     revenuImposableFoyer: resolvedTax.revenuImposable,
     partsFiscales: resolvedTax.parts,
     impotFoyerApresDecote: resolvedTax.impotApresDecote,
+    dansZoneDecote: resolvedTax.dansZoneDecote,
+    tauxMarginalEffectif: resolvedTax.tauxMarginalEffectif,
     ...personnel,
     allOptions,
     bestOption,
     difference,
     recommandation,
     seuilPrivateUsePercent,
+    anneeTransitionAmortissement,
     projection,
   };
 }

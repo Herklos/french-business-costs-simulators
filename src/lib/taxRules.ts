@@ -138,7 +138,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2026-01-01",
     validUntil: "2026-12-31",
     notes:
-      "Réduit voire annule l'impôt des foyers modestes. Affichée à titre indicatif sur l'impôt total du foyer ; non répercutée dans le taux marginal (TMI) utilisé pour chiffrer l'AEN, qui reste celui de la tranche (simplification — le taux marginal réel est mécaniquement majoré dans la zone de décote).",
+      "Réduit voire annule l'impôt des foyers modestes. Dans sa zone d'application, chaque euro de revenu marginal (ex. l'AEN) coûte 1,4525× le taux de la tranche en IR réel (dégressivité de la décote) : ce taux marginal effectif est utilisé par le simulateur en mode « calculer le TMI », au-delà du taux de tranche affiché.",
   },
   {
     id: "ir-abattement-10-salaires",
@@ -253,6 +253,19 @@ export const TAX_RULES: TaxRule[] = [
     validUntil: "2026-12-31",
     notes:
       "Contrairement aux gérants TNS (méthode réelle obligatoire), un président de SASU/SAS assimilé salarié peut légalement opter pour le barème forfaitaire, parfois plus favorable. Le simulateur applique uniformément la méthode réelle pour les deux statuts par souci de cohérence ; comparer manuellement avec ce barème forfaitaire si le statut est « assimilé salarié ».",
+  },
+  {
+    id: "domicile-formalisation-bail-vs-indemnite",
+    category: "revenus_fonciers",
+    label: "Formalisation de la mise à disposition du domicile : indemnité d'occupation vs bail professionnel réel",
+    value: "Même traitement fiscal de fond (revenu foncier) ; le bail réel offre une sécurité juridique accrue",
+    legalReference: "Jurisprudence et doctrine (pas d'article dédié) — cf. art. L145-1 et s. C. com. pour le bail commercial",
+    sourceLabel: "Compta-online / NS Avocats",
+    sourceUrl: "https://www.compta-online.com/societe-domiciliee-chez-soi-indemnite-occupation-ou-loyer-t50793",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Il n'est pas possible de louer l'intégralité de la résidence principale à sa société (changement de destination) : seule la pièce dédiée à l'usage professionnel peut faire l'objet d'un bail. Le bail professionnel réel formalise davantage la relation (obligations, révision) que la simple indemnité d'occupation, réduisant le risque de requalification en cas de contrôle, au prix de frais de mise en place (rédaction, enregistrement).",
   },
   {
     id: "is-taux-normal",
