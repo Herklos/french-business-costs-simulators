@@ -13,6 +13,7 @@ import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/
 import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMode } from "../lib/financing";
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
 import { VEHICLE_MODELS } from "../lib/vehicleModels";
+import { DEFAULT_DEPRECIATION_RATE_ANNUAL } from "../lib/vehicleDepreciation";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
@@ -87,6 +88,7 @@ export function VehicleSimulatorPage() {
   const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
+  const [showResidualValue, setShowResidualValue] = useState(false);
 
   function toPeriod(annualValue: number): number {
     return costPeriod === "mensuel" ? annualValue / 12 : annualValue;
@@ -576,6 +578,18 @@ export function VehicleSimulatorPage() {
             subtitle="Paramètres communs, utilisés à la fois si la société achète le véhicule et si le dirigeant l'achète à titre personnel."
           >
             <RuleNote ruleId="taux-usure-credit-personnel" />
+            <Field
+              label="Taux de décote annuel estimé du véhicule"
+              hint="Détermine la valeur résiduelle affichée en fin de période pour les options où le véhicule est possédé (comptant, crédit, LOA avec option d'achat levée) — nulle en LLD ou en LOA sans option, le véhicule étant restitué."
+            >
+              <ResetableNumberInput
+                step="0.01"
+                value={inputs.tauxDeprecationAnnuel}
+                defaultValue={DEFAULT_DEPRECIATION_RATE_ANNUAL}
+                formatDefault={(v) => formatPercent(v)}
+                onChange={(v) => update("tauxDeprecationAnnuel", v)}
+              />
+            </Field>
             <div className="financing-grid">
               <div className="financing-card">
                 <h4>Comptant</h4>
@@ -766,6 +780,14 @@ export function VehicleSimulatorPage() {
                   Mensuel
                 </button>
               </div>
+              <button
+                type="button"
+                className={`btn btn--ghost ${showResidualValue ? "btn--active" : ""}`}
+                onClick={() => setShowResidualValue((v) => !v)}
+                title="LLD : rien ne reste en fin de contrat. LOA (option levée), crédit, comptant : le dirigeant/la société devient propriétaire d'un véhicule dont la valeur a baissé avec le temps."
+              >
+                🚗💰 {showResidualValue ? "Masquer" : "Afficher"} la valeur résiduelle
+              </button>
             </div>
             <table className="projection-table">
               <thead>
@@ -773,6 +795,7 @@ export function VehicleSimulatorPage() {
                   <th>Option</th>
                   <th>Coût global {costPeriod === "annuel" ? "annuel" : "mensuel"}</th>
                   <th></th>
+                  {showResidualValue && <th>Valeur résiduelle en fin de période</th>}
                 </tr>
               </thead>
               <tbody>
@@ -805,10 +828,21 @@ export function VehicleSimulatorPage() {
                             {!isGlobalBest &&
                               `+${formatEUR(toPeriod(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual))}`}
                           </td>
+                          {showResidualValue && (
+                            <td>
+                              {opt.devientProprietaire ? (
+                                <span className="residual-value residual-value--owned">
+                                  🚗 {formatEUR(opt.valeurResiduelleEstimee)}
+                                </span>
+                              ) : (
+                                <span className="residual-value residual-value--none">— rien (restitué)</span>
+                              )}
+                            </td>
+                          )}
                         </tr>
                         {isExpanded && (
                           <tr className="option-detail-row">
-                            <td colSpan={3}>
+                            <td colSpan={showResidualValue ? 4 : 3}>
                               <p className="field__hint">Détail du calcul (valeurs annuelles) :</p>
                               <ul className="detail-list">
                                 {opt.detail.map((line) => (

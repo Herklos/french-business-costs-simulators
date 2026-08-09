@@ -238,3 +238,63 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     expect(inputs.financing.loa.dureeMois).toBe(36);
   });
 });
+
+describe("computeSimulation — valeur résiduelle en fin de période", () => {
+  it("LLD : aucune valeur résiduelle, véhicule jamais possédé", () => {
+    const r = computeSimulation(createDefaultInputs());
+    const societeLld = r.allOptions.find((o) => o.owner === "societe" && o.mode === "lld");
+    const persoLld = r.allOptions.find((o) => o.owner === "personnel" && o.mode === "lld");
+    expect(societeLld?.devientProprietaire).toBe(false);
+    expect(societeLld?.valeurResiduelleEstimee).toBe(0);
+    expect(persoLld?.devientProprietaire).toBe(false);
+    expect(persoLld?.valeurResiduelleEstimee).toBe(0);
+  });
+
+  it("Comptant/Crédit : le véhicule est possédé, avec une valeur résiduelle positive mais inférieure au prix neuf", () => {
+    const r = computeSimulation(createDefaultInputs());
+    for (const mode of ["comptant", "credit"] as const) {
+      const opt = r.allOptions.find((o) => o.owner === "societe" && o.mode === mode);
+      expect(opt?.devientProprietaire).toBe(true);
+      expect(opt?.valeurResiduelleEstimee).toBeGreaterThan(0);
+      expect(opt?.valeurResiduelleEstimee).toBeLessThan(createDefaultInputs().vehiclePrice);
+    }
+  });
+
+  it("LOA : valeur résiduelle uniquement si l'option d'achat est levée", () => {
+    const withOption: SimulationInputs = {
+      ...createDefaultInputs(),
+      financing: { ...createDefaultInputs().financing, loa: { ...createDefaultInputs().financing.loa, leveeOption: true } },
+    };
+    const withoutOption: SimulationInputs = {
+      ...createDefaultInputs(),
+      financing: { ...createDefaultInputs().financing, loa: { ...createDefaultInputs().financing.loa, leveeOption: false } },
+    };
+    const rWith = computeSimulation(withOption);
+    const rWithout = computeSimulation(withoutOption);
+
+    const optWith = rWith.allOptions.find((o) => o.owner === "societe" && o.mode === "loa");
+    const optWithout = rWithout.allOptions.find((o) => o.owner === "societe" && o.mode === "loa");
+
+    expect(optWith?.devientProprietaire).toBe(true);
+    expect(optWith?.valeurResiduelleEstimee).toBeGreaterThan(0);
+    expect(optWithout?.devientProprietaire).toBe(false);
+    expect(optWithout?.valeurResiduelleEstimee).toBe(0);
+  });
+
+  it("une durée de détention plus longue réduit la valeur résiduelle", () => {
+    const base = createDefaultInputs();
+    const courte: SimulationInputs = {
+      ...base,
+      financing: { ...base.financing, credit: { ...base.financing.credit, dureeMois: 24 } },
+    };
+    const longue: SimulationInputs = {
+      ...base,
+      financing: { ...base.financing, credit: { ...base.financing.credit, dureeMois: 84 } },
+    };
+    const rCourte = computeSimulation(courte);
+    const rLongue = computeSimulation(longue);
+    const optCourte = rCourte.allOptions.find((o) => o.owner === "societe" && o.mode === "credit");
+    const optLongue = rLongue.allOptions.find((o) => o.owner === "societe" && o.mode === "credit");
+    expect(optCourte!.valeurResiduelleEstimee).toBeGreaterThan(optLongue!.valeurResiduelleEstimee);
+  });
+});

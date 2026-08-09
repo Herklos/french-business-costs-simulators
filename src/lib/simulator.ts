@@ -31,6 +31,7 @@ import {
 import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
 import { computeEconomieImpotIS } from "./corporateTax";
 import { getVehicleModel } from "./vehicleModels";
+import { DEFAULT_DEPRECIATION_RATE_ANNUAL, estimateResidualValue } from "./vehicleDepreciation";
 
 export interface SimulationInputs {
   id: string;
@@ -51,6 +52,7 @@ export interface SimulationInputs {
   isEcoScoreEligible: boolean; // éco-score >= 60 (liste ADEME) => abattement 50% (électrique uniquement)
   co2EmissionsGkm: number; // émissions CO2 WLTP (g/km) — détermine le plafond de déduction fiscale et la taxe annuelle
   annualVehicleTaxOverride: number | null; // surcharge manuelle de la taxe annuelle CO2+polluants (null = estimation automatique)
+  tauxDeprecationAnnuel: number; // 0-1, taux de décote annuel estimé, pour chiffrer la valeur résiduelle en fin de période
 
   // Usage
   privateUsePercent: number; // 0-100
@@ -118,6 +120,7 @@ export function createDefaultInputs(): SimulationInputs {
     isEcoScoreEligible: true,
     co2EmissionsGkm: 0,
     annualVehicleTaxOverride: null,
+    tauxDeprecationAnnuel: DEFAULT_DEPRECIATION_RATE_ANNUAL,
 
     privateUsePercent: 50,
     totalKmAnnual: 15000,
@@ -190,6 +193,8 @@ export interface GlobalOption {
   globalCostAnnual: number;
   partSociete: number; // coût net réellement supporté par la société (après économies d'impôt)
   partDirigeant: number; // coût net réellement supporté par le dirigeant (cash, après IK le cas échéant)
+  devientProprietaire: boolean; // le véhicule est-il possédé à l'issue de la période (comptant/crédit, ou LOA option levée) ?
+  valeurResiduelleEstimee: number; // valeur de marché estimée du véhicule en fin de période — 0 si jamais possédé (LLD, LOA sans option)
   detail: GlobalOptionDetailLine[]; // détail du calcul, affiché au dépliage de l'option dans l'UI
 }
 
@@ -504,6 +509,30 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
       optionAchatUnique > 0
         ? [{ label: "Option d'achat LOA en fin de contrat (paiement unique, hors coût annuel ci-dessus)", value: optionAchatUnique }]
         : [];
+
+    // Valeur résiduelle : uniquement si le véhicule est effectivement possédé en fin de période
+    // (comptant, crédit, ou LOA avec option d'achat levée). En LLD, ou en LOA sans option levée,
+    // le véhicule est restitué : aucune valeur résiduelle (comme un loyer de logement).
+    const financingResult = financingResults.find((f) => f.mode === mode);
+    const devientProprietaire = financingResult?.devientProprietaire ?? false;
+    const dureeMoisParMode: Record<FinancingMode, number> = {
+      comptant: inputs.financing.comptant.dureeDetentionMois,
+      credit: inputs.financing.credit.dureeMois,
+      loa: inputs.financing.loa.dureeMois,
+      lld: 0,
+    };
+    const valeurResiduelleEstimee = devientProprietaire
+      ? estimateResidualValue(inputs.vehiclePrice, dureeMoisParMode[mode] / 12, inputs.tauxDeprecationAnnuel)
+      : 0;
+    const valeurResiduelleDetail: { label: string; value: number }[] = devientProprietaire
+      ? [
+          {
+            label: `Valeur résiduelle estimée du véhicule (possédé, ${(dureeMoisParMode[mode] / 12).toFixed(1)} ans, décote ${(inputs.tauxDeprecationAnnuel * 100).toFixed(0)}%/an)`,
+            value: valeurResiduelleEstimee,
+          },
+        ]
+      : [{ label: "Valeur résiduelle en fin de contrat (véhicule restitué, non possédé)", value: 0 }];
+
     return [
       {
         owner: "societe" as const,
@@ -512,6 +541,8 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         globalCostAnnual: s.globalCostSociete,
         partSociete: s.coutNetSociete,
         partDirigeant: s.coutTotalGerantSociete,
+        devientProprietaire,
+        valeurResiduelleEstimee,
         detail: [
           { label: "AEN brut", value: s.aenBrut },
           { label: "Abattement électrique", value: s.abattement },
@@ -529,6 +560,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
           { label: "Coût net société", value: s.coutNetSociete },
           { label: "Coût cash dirigeant", value: s.coutTotalGerantSociete },
+          ...valeurResiduelleDetail,
         ],
       },
       {
@@ -538,6 +570,8 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         globalCostAnnual: p.globalCostPersonnel,
         partSociete: p.ikReimbursement - p.economieImpotIK,
         partDirigeant: p.coutScenarioPersonnel,
+        devientProprietaire,
+        valeurResiduelleEstimee,
         detail: [
           { label: "Km professionnels/an", value: p.proKmAnnual },
           { label: "Km privés/an", value: p.privateKmAnnual },
@@ -550,6 +584,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Assurance annuelle (dirigeant)", value: inputs.annualInsurance },
           { label: "Entretien annuel (dirigeant)", value: inputs.annualMaintenance },
           ...optionAchatDetail,
+          ...valeurResiduelleDetail,
           {
             label: "= Coût brut avant IK (dirigeant)",
             value: p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance,
