@@ -242,7 +242,8 @@ export interface SimulationResults {
   reintegrationFiscaleCO2: number; // fraction de l'amortissement/loyer au-delà du plafond, non déductible
   annualVehicleTax: number; // taxes annuelles CO2 + polluants (ex-TVS), 0 si électrique
   financingAnnual: number; // coût annuel du financement seul (mensualités crédit, loyers LOA/LLD, ou coût comptant/opportunité)
-  companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes)
+  valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule (comptant/crédit) lissée sur la durée, déduite du décaissement — 0 sinon
+  companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes − valeur résiduelle annualisée)
   quotePartProfessionnelleDeductible: number;
   quotePartPrivéeNonDeductible: number;
   economieImpotQuotePartPro: number; // économie d'IS (régime IS) ou d'IR foyer (régime IR, société translucide)
@@ -255,6 +256,7 @@ export interface SimulationResults {
   effectiveIkRatePerKm: number; // barème IK effectivement appliqué (majoré de 20% si électrique)
   ikReimbursement: number;
   personalFinancingAnnual: number;
+  valeurResiduelleAnnualiseePersonnel: number; // valeur résiduelle du véhicule (comptant/crédit, scénario personnel) lissée sur la durée, déduite du coût — 0 sinon
   coutScenarioPersonnel: number; // coût net réellement supporté par le dirigeant (après réception des IK)
   economieImpotIK: number; // économie d'impôt société sur l'IK versée (déductible)
   globalCostPersonnel: number; // coût consolidé (société + dirigeant) du scénario personnel + IK
@@ -282,6 +284,51 @@ function getFinancingAnnual(financingResults: FinancingResult[], mode: Financing
 function getLoyerAnnuelMoyen(financingResults: FinancingResult[], mode: FinancingMode): number {
   const found = financingResults.find((f) => f.mode === mode);
   return found ? found.loyerAnnuelMoyen : 0;
+}
+
+/** Durée (mois) du montage retenu pour un mode de financement donné (0 pour la LLD, jamais possédée). */
+function getDureeMoisForMode(inputs: SimulationInputs, mode: FinancingMode): number {
+  switch (mode) {
+    case "comptant":
+      return inputs.financing.comptant.dureeDetentionMois;
+    case "credit":
+      return inputs.financing.credit.dureeMois;
+    case "loa":
+      return inputs.financing.loa.dureeMois;
+    case "lld":
+      return 0;
+  }
+}
+
+/**
+ * Valeur résiduelle du véhicule en fin de période, pour un mode de financement donné — uniquement
+ * si le véhicule est effectivement possédé à l'issue (comptant/crédit ; LOA avec option levée gérée
+ * séparément dans allOptions, cf. plus bas), sinon 0 (LLD, LOA sans option : véhicule restitué).
+ */
+function getResidualValue(inputs: SimulationInputs, mode: FinancingMode): number {
+  if (mode !== "comptant" && mode !== "credit") return 0;
+  const dureeAnnees = getDureeMoisForMode(inputs, mode) / 12;
+  if (dureeAnnees <= 0) return 0;
+  return estimateResidualValue(inputs.vehiclePrice, dureeAnnees, inputs.tauxDeprecationAnnuel);
+}
+
+/**
+ * Valeur résiduelle ANNUALISÉE (lissée sur la durée de détention) du véhicule acquis comptant ou à
+ * crédit — vient en déduction du décaissement annuel affiché.
+ *
+ * Pourquoi : le coût "comptant" immobilise tout le prix d'achat pendant la durée de détention (cf.
+ * computeComptant dans financing.ts, coût d'opportunité linéaire sur le prix total), sans jamais
+ * créditer le fait que le véhicule est finalement revendu/conservé avec une valeur résiduelle non
+ * nulle. Sans cette déduction, comptant et crédit ne sont pas comparés à armes égales : un crédit à
+ * un TAEG pourtant supérieur au taux d'opportunité du comptant peut apparaître — à tort — moins
+ * coûteux, simplement parce que ses intérêts ne portent que sur un capital restant dû dégressif,
+ * alors que le coût d'opportunité du comptant porte sur le prix plein pendant toute la période.
+ * Netter la valeur résiduelle (identique pour les deux, à durée égale) rend la comparaison cohérente.
+ */
+function getResidualValueAnnualized(inputs: SimulationInputs, mode: FinancingMode): number {
+  const dureeAnnees = getDureeMoisForMode(inputs, mode) / 12;
+  if (dureeAnnees <= 0) return 0;
+  return getResidualValue(inputs, mode) / dureeAnnees;
 }
 
 /** Base annuelle réelle retenue pour l'AEN : amortissement si le véhicule est acheté par la société,
@@ -366,8 +413,14 @@ function computeSocieteForMode(
   const annualVehicleTax =
     inputs.annualVehicleTaxOverride ?? estimateAnnualVehicleTax(inputs.co2EmissionsGkm, inputs.isElectric);
 
-  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes.
-  const companyCashBaseAnnual = financingAnnual + inputs.annualInsurance + inputs.annualMaintenance + annualVehicleTax;
+  // Valeur résiduelle annualisée (comptant/crédit uniquement) : cf. getResidualValueAnnualized —
+  // déduite du décaissement pour ne pas surestimer le coût réel d'un achat dont le véhicule garde
+  // de la valeur à l'issue de la période, contrairement à un loyer (LOA/LLD) définitivement perdu.
+  const valeurResiduelleAnnualisee = getResidualValueAnnualized(inputs, mode);
+
+  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes − valeur résiduelle annualisée (si véhicule possédé).
+  const companyCashBaseAnnual =
+    financingAnnual + inputs.annualInsurance + inputs.annualMaintenance + annualVehicleTax - valeurResiduelleAnnualisee;
   const quotePartPrivéeNonDeductible = companyCashBaseAnnual * ratio;
   const quotePartProfessionnelleBrute = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
   const quotePartProfessionnelleDeductible = Math.max(0, quotePartProfessionnelleBrute - reintegrationFiscaleCO2);
@@ -394,6 +447,7 @@ function computeSocieteForMode(
     reintegrationFiscaleCO2,
     annualVehicleTax,
     financingAnnual,
+    valeurResiduelleAnnualisee,
     companyCashBaseAnnual,
     quotePartProfessionnelleDeductible,
     quotePartPrivéeNonDeductible,
@@ -419,7 +473,15 @@ function computePersonnelForMode(
   const ikReimbursement = proKmAnnual * effectiveIkRatePerKm;
 
   const personalFinancingAnnual = getFinancingAnnual(financingResults, mode);
-  const grossCost = personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance;
+  // Valeur résiduelle annualisée (comptant/crédit uniquement) — cf. getResidualValueAnnualized :
+  // le dirigeant reste propriétaire du véhicule, sa revente future doit venir en déduction du coût.
+  // Nommée différemment de son équivalent côté société (cf. computeSocieteForMode) pour éviter toute
+  // collision lors de l'aplatissement final de `{ ...societe, ...personnel }` dans computeSimulation.
+  const valeurResiduelleAnnualiseePersonnel = getResidualValueAnnualized(inputs, mode);
+  const grossCost = Math.max(
+    0,
+    personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance - valeurResiduelleAnnualiseePersonnel,
+  );
   const coutScenarioPersonnel = Math.max(0, grossCost - ikReimbursement);
 
   // L'IK versée par la société est une charge déductible : elle génère une économie d'impôt côté société.
@@ -431,6 +493,7 @@ function computePersonnelForMode(
     proKmAnnual,
     effectiveIkRatePerKm,
     ikReimbursement,
+    valeurResiduelleAnnualiseePersonnel,
     personalFinancingAnnual,
     coutScenarioPersonnel,
     economieImpotIK,
@@ -527,19 +590,21 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     // le véhicule est restitué : aucune valeur résiduelle (comme un loyer de logement).
     const financingResult = financingResults.find((f) => f.mode === mode);
     const devientProprietaire = financingResult?.devientProprietaire ?? false;
-    const dureeMoisParMode: Record<FinancingMode, number> = {
-      comptant: inputs.financing.comptant.dureeDetentionMois,
-      credit: inputs.financing.credit.dureeMois,
-      loa: inputs.financing.loa.dureeMois,
-      lld: 0,
-    };
+    const dureeAnneesPourMode = getDureeMoisForMode(inputs, mode) / 12;
+    // Valeur résiduelle "brute" (fin de période), affichée à titre informatif pour toute option
+    // possédée (comptant, crédit, LOA avec option levée). Pour comptant/crédit uniquement, sa
+    // contrepartie ANNUALISÉE est en outre déjà déduite du décaissement ci-dessus (cf.
+    // getResidualValueAnnualized) — pour la LOA elle reste purement informative, cf. le
+    // commentaire sur loyerAnnuelMoyen dans financing.ts.
     const valeurResiduelleEstimee = devientProprietaire
-      ? estimateResidualValue(inputs.vehiclePrice, dureeMoisParMode[mode] / 12, inputs.tauxDeprecationAnnuel)
+      ? mode === "comptant" || mode === "credit"
+        ? getResidualValue(inputs, mode)
+        : estimateResidualValue(inputs.vehiclePrice, dureeAnneesPourMode, inputs.tauxDeprecationAnnuel)
       : 0;
     const valeurResiduelleDetail: { label: string; value: number }[] = devientProprietaire
       ? [
           {
-            label: `Valeur résiduelle estimée du véhicule (possédé, ${(dureeMoisParMode[mode] / 12).toFixed(1)} ans, décote ${(inputs.tauxDeprecationAnnuel * 100).toFixed(0)}%/an)`,
+            label: `Valeur résiduelle estimée du véhicule (possédé, ${dureeAnneesPourMode.toFixed(1)} ans, décote ${(inputs.tauxDeprecationAnnuel * 100).toFixed(0)}%/an)`,
             value: valeurResiduelleEstimee,
           },
         ]
@@ -565,6 +630,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Assurance annuelle", value: inputs.annualInsurance },
           { label: "Entretien annuel", value: inputs.annualMaintenance },
           { label: "Taxes annuelles CO2 + polluants (ex-TVS)", value: s.annualVehicleTax },
+          ...(s.valeurResiduelleAnnualisee > 0
+            ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: s.valeurResiduelleAnnualisee }]
+            : []),
           { label: "= Décaissement réel société (total annuel)", value: s.companyCashBaseAnnual },
           ...optionAchatDetail,
           { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },
@@ -595,11 +663,17 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           },
           { label: "Assurance annuelle (dirigeant)", value: inputs.annualInsurance },
           { label: "Entretien annuel (dirigeant)", value: inputs.annualMaintenance },
+          ...(p.valeurResiduelleAnnualiseePersonnel > 0
+            ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: p.valeurResiduelleAnnualiseePersonnel }]
+            : []),
           ...optionAchatDetail,
           ...valeurResiduelleDetail,
           {
             label: "= Coût brut avant IK (dirigeant)",
-            value: p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance,
+            value: Math.max(
+              0,
+              p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance - p.valeurResiduelleAnnualiseePersonnel,
+            ),
           },
           { label: "Coût net dirigeant (après IK)", value: p.coutScenarioPersonnel },
           { label: "Économie d'impôt société sur l'IK versée", value: p.economieImpotIK },

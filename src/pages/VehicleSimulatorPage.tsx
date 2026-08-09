@@ -72,6 +72,9 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(
     `LLD : 1er loyer ${formatEUR(sim.financing.lld.premierLoyer)}, loyer mensuel ${formatEUR(sim.financing.lld.loyerMensuel)}, durée ${sim.financing.lld.dureeMois} mois, km inclus/an ${sim.financing.lld.kmInclusAnnuel}, dépassement ${sim.financing.lld.coutKmSupplementaire} €/km`,
   );
+  push(
+    "Note : le comptant charge le coût d'opportunité sur la totalité du prix pendant toute la durée (capital récupéré en une fois, à la revente — déjà déduit ci-dessous en valeur résiduelle), tandis que le crédit ne facture des intérêts que sur le capital restant dû, dégressif. Un crédit peut donc coûter moins cher qu'un comptant même avec un TAEG supérieur au taux d'opportunité : ce n'est pas une erreur de calcul.",
+  );
   push("");
   push("— Résultats AEN (société) —");
   push(`AEN brut : ${formatEUR(r.aenBrut)} · Abattement : ${formatEUR(r.abattement)} · AEN net : ${formatEUR(r.aenNet)}`);
@@ -628,6 +631,15 @@ export function VehicleSimulatorPage() {
                     onChange={(e) => updateFinancing("comptant", { tauxOpportunite: Number(e.target.value) })}
                   />
                 </Field>
+                <p className="field__hint">
+                  Le coût du comptant inclut ce coût d'opportunité sur la <strong>totalité du prix</strong>, pendant{" "}
+                  <strong>toute la durée de détention</strong> (le capital n'est récupéré qu'à la revente, en une fois, en fin
+                  de période — déjà déduite ci-dessous de la valeur résiduelle). À l'inverse, sur un crédit, les intérêts ne
+                  portent que sur le capital restant dû, qui diminue chaque mois. Résultat : même avec un TAEG supérieur au
+                  taux d'opportunité (comme ici, 4 % vs 3 % par défaut), le crédit peut ressortir moins cher que le comptant —
+                  ce n'est pas une erreur, c'est l'effet mécanique d'un capital immobilisé en totalité (comptant) comparé à un
+                  capital restant dû dégressif (crédit).
+                </p>
               </div>
 
               <div className="financing-card">

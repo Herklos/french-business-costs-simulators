@@ -23,7 +23,15 @@ describe("computeSimulation — cohérence générale", () => {
 
   it("le coût global personnel = coût brut avant IK − économie d'impôt société sur l'IK", () => {
     const r = computeSimulation(createDefaultInputs());
-    const coutBrutAvantIk = r.personalFinancingAnnual + createDefaultInputs().annualInsurance + createDefaultInputs().annualMaintenance;
+    // Le coût brut avant IK déduit déjà la valeur résiduelle annualisée du véhicule (comptant/crédit
+    // uniquement) — cf. getResidualValueAnnualized dans simulator.ts.
+    const coutBrutAvantIk = Math.max(
+      0,
+      r.personalFinancingAnnual +
+        createDefaultInputs().annualInsurance +
+        createDefaultInputs().annualMaintenance -
+        r.valeurResiduelleAnnualiseePersonnel,
+    );
     expect(r.globalCostPersonnel).toBeCloseTo(Math.max(0, coutBrutAvantIk - r.economieImpotIK), 6);
   });
 
@@ -305,5 +313,41 @@ describe("computeSimulation — valeur résiduelle en fin de période", () => {
     const optCourte = rCourte.allOptions.find((o) => o.owner === "societe" && o.mode === "credit");
     const optLongue = rLongue.allOptions.find((o) => o.owner === "societe" && o.mode === "credit");
     expect(optCourte!.valeurResiduelleEstimee).toBeGreaterThan(optLongue!.valeurResiduelleEstimee);
+  });
+});
+
+describe("computeSimulation — la valeur résiduelle annualisée (comptant/crédit) est déduite du décaissement", () => {
+  it("LOA/LLD : aucune déduction de valeur résiduelle annualisée (hors périmètre comptant/crédit)", () => {
+    const r = computeSimulation(createDefaultInputs());
+    const societeLoa = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa");
+    const societeLld = r.allOptions.find((o) => o.owner === "societe" && o.mode === "lld");
+    expect(societeLoa?.detail.some((d) => d.label.includes("Valeur résiduelle annualisée"))).toBe(false);
+    expect(societeLld?.detail.some((d) => d.label.includes("Valeur résiduelle annualisée"))).toBe(false);
+  });
+
+  it("Comptant/Crédit société : le décaissement net est inférieur à ce qu'il serait sans déduction de la valeur résiduelle", () => {
+    const inputs = createDefaultInputs();
+    const r = computeSimulation(inputs);
+    for (const mode of ["comptant", "credit"] as const) {
+      const opt = r.allOptions.find((o) => o.owner === "societe" && o.mode === mode)!;
+      const financingLine = opt.detail.find((d) => d.label.startsWith("Financement du véhicule"))!;
+      const residuLine = opt.detail.find((d) => d.label.includes("Valeur résiduelle annualisée"))!;
+      const decaissementLine = opt.detail.find((d) => d.label.startsWith("= Décaissement réel société"))!;
+      expect(residuLine.value).toBeGreaterThan(0);
+      const decaissementSansDeduction =
+        financingLine.value + inputs.annualInsurance + inputs.annualMaintenance + opt.detail.find((d) => d.label.includes("Taxes annuelles"))!.value;
+      expect(decaissementLine.value).toBeCloseTo(decaissementSansDeduction - residuLine.value, 6);
+      expect(decaissementLine.value).toBeLessThan(decaissementSansDeduction);
+    }
+  });
+
+  it("Comptant vs Crédit société : les deux montages restent comparés à armes égales (déduction identique à durée égale)", () => {
+    const r = computeSimulation(createDefaultInputs());
+    const societeComptant = r.allOptions.find((o) => o.owner === "societe" && o.mode === "comptant")!;
+    const societeCredit = r.allOptions.find((o) => o.owner === "societe" && o.mode === "credit")!;
+    const residuComptant = societeComptant.detail.find((d) => d.label.includes("Valeur résiduelle annualisée"))!.value;
+    const residuCredit = societeCredit.detail.find((d) => d.label.includes("Valeur résiduelle annualisée"))!.value;
+    // Même durée de détention (60 mois) par défaut pour comptant et crédit → même valeur résiduelle annualisée.
+    expect(residuComptant).toBeCloseTo(residuCredit, 6);
   });
 });
