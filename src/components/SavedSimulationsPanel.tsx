@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type SavedSimulation,
   type SimulatorKind,
@@ -29,17 +29,33 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
   version,
 }: SavedSimulationsPanelProps<T>) {
   const [selected, setSelected] = useState<string[]>([]);
+  // `refreshTick` is bumped on every save/delete so this component re-renders and re-reads
+  // localStorage: writing to storage does NOT by itself trigger a React re-render, so without
+  // this the list (and the "N simulation(s) enregistrée(s)" count) would silently go stale —
+  // the save button would appear to do nothing even though the write did succeed.
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [justSaved, setJustSaved] = useState(false);
   const items = listSimulations<T>(kind);
   // version is read to satisfy the linter's dependency intuition; the list is re-read on every render
   void version;
+  void refreshTick;
+
+  useEffect(() => {
+    if (!justSaved) return;
+    const timeout = setTimeout(() => setJustSaved(false), 2000);
+    return () => clearTimeout(timeout);
+  }, [justSaved]);
 
   function handleSave() {
     saveSimulation(kind, currentInputs);
+    setRefreshTick((t) => t + 1);
+    setJustSaved(true);
   }
 
   function handleDelete(id: string) {
     deleteSimulation(kind, id);
     setSelected((s) => s.filter((x) => x !== id));
+    setRefreshTick((t) => t + 1);
   }
 
   function toggleSelect(id: string) {
@@ -54,6 +70,7 @@ export function SavedSimulationsPanel<T extends { id: string; name: string }>({
         <button type="button" className="btn btn--primary" onClick={handleSave}>
           💾 Sauvegarder cette simulation
         </button>
+        {justSaved && <span className="saved-panel__confirmation">✓ Sauvegardé</span>}
         <span className="saved-panel__count">{items.length} simulation(s) enregistrée(s) localement</span>
       </div>
 

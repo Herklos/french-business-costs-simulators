@@ -540,6 +540,12 @@ td {
   margin-bottom: 0.75rem;
 }
 
+.saved-panel__confirmation {
+  color: var(--good);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
 .saved-panel__count {
   font-size: 0.8rem;
   color: var(--text-muted);
