@@ -17,7 +17,8 @@ export type RuleCategory =
   | "indemnites_kilometriques"
   | "revenus_fonciers"
   | "impot_societe"
-  | "fiscalite_vehicule_societe";
+  | "fiscalite_vehicule_societe"
+  | "risques_juridiques";
 
 export interface TaxRule {
   id: string;
@@ -79,7 +80,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2025-02-01",
     validUntil: "2027-12-31",
     notes:
-      "Dispositif renforcé applicable aux véhicules mis à disposition entre le 1er février 2025 et le 31 décembre 2027. Condition d'éligibilité : éco-score ≥ 60 points (liste ADEME) au jour de la mise à disposition.",
+      "Dispositif renforcé applicable aux véhicules mis à disposition entre le 1er février 2025 et le 31 décembre 2027. Condition d'éligibilité : éco-score ≥ 60 points (liste ADEME) au jour de la mise à disposition. Modèles généralement éligibles : Tesla Model Y (assemblage Berlin), Renault Megane E-Tech, Renault Scenic E-Tech (assemblés en France). Modèle généralement non éligible : Tesla Model 3. Liste non exhaustive et évolutive — vérifier la liste ADEME officielle à jour.",
   },
   {
     id: "aen-abattement-vehicule-electrique-plafond",
@@ -270,12 +271,53 @@ export const TAX_RULES: TaxRule[] = [
   {
     id: "is-taux-normal",
     category: "impot_societe",
-    label: "Taux normal de l'impôt sur les sociétés",
-    value: "25 % (15 % jusqu'à 42 500 € de bénéfice sous conditions PME)",
-    legalReference: "Art. 219, I CGI",
+    label: "Taux normal de l'impôt sur les sociétés (barème progressif)",
+    value: "15 % jusqu'à 42 500 € de bénéfice (sous conditions PME) puis 25 % au-delà",
+    legalReference: "Art. 219, I-b CGI",
     sourceLabel: "BOFiP-Impôts",
     validFrom: "2022-01-01",
     validUntil: null,
+    notes:
+      "Taux réduit de 15% conditionné à : CA HT < 10 M€, capital entièrement libéré et détenu à ≥75% par des personnes physiques (généralement rempli pour une EURL/SARL/SASU familiale). Le simulateur applique ce barème progressif au bénéfice prévisionnel saisi et plafonne l'économie d'impôt générée par les charges déductibles (véhicule, indemnité d'occupation) au montant d'IS réellement dû sur ce bénéfice : une société déficitaire ou peu profitable ne récupère pas immédiatement tout le gain théorique — le surplus de charge ne fait qu'accroître un déficit reportable (avantage différé et incertain, non compté comme un gain immédiat).",
+  },
+  {
+    id: "risque-abus-biens-sociaux-usage-prive",
+    category: "risques_juridiques",
+    label: "Risque pénal si usage privé très majoritaire non justifié (abus de biens sociaux)",
+    value: "Jusqu'à 5 ans d'emprisonnement et 375 000 € d'amende — pas de seuil légal chiffré",
+    legalReference: "Art. L241-3 et L242-6 code de commerce",
+    sourceLabel: "Companeo / Portail PME",
+    sourceUrl: "https://www.companeo.com/automobile-vl-vul/guide/le-loi-et-l-utilisation-personnelle-des-vehicules-de-societe",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Il n'existe aucun pourcentage légal d'usage privé « interdit » : l'infraction se caractérise par l'intention (usage contraire à l'intérêt social, sans contrepartie), quel que soit le montant. Un usage privé proche de 100% rend toutefois très difficile la justification de l'achat par la société (le simulateur affiche un avertissement croissant au-delà de 80/90/100%). Se prémunir : AEN correctement déclaré, carnet de bord précis, participation financière du dirigeant.",
+  },
+  {
+    id: "taux-usure-credit-personnel",
+    category: "risques_juridiques",
+    label: "Taux d'usure (taux maximum légal) — prêts personnels",
+    value: "23,56 % (≤3 000€, T1 2026) · 15,87 % (3 000-6 000€, T1 2026) · 8,56 % (>6 000€, T3 2026)",
+    legalReference: "Art. L314-6 et L341-50 code de la consommation",
+    sourceLabel: "Banque de France",
+    sourceUrl: "https://www.banque-france.fr/fr/statistiques/taux-et-cours/taux-dusure-2026-q3",
+    validFrom: "2026-07-01",
+    validUntil: "2026-09-30",
+    notes:
+      "Révisé chaque trimestre par la Banque de France. Le dépasser constitue un délit d'usure (jusqu'à 2 ans d'emprisonnement et 300 000 € d'amende pour le prêteur). Le simulateur plafonne automatiquement le TAEG saisi pour le mode « Crédit » à ce seuil (tranche >6 000€, la plus fréquente pour un crédit auto) et affiche une alerte en cas de dépassement.",
+  },
+  {
+    id: "domicile-surface-bureau-tolerance-30-pourcent",
+    category: "risques_juridiques",
+    label: "Tolérance pratique de surface pour un bureau professionnel au domicile",
+    value: "≈ 30 % de la surface totale du logement — au-delà, justification renforcée nécessaire",
+    legalReference: "Doctrine/pratique professionnelle (pas de texte fixant un seuil légal strict)",
+    sourceLabel: "BailFacile / Terrae Patrimoine",
+    sourceUrl: "https://www.bailfacile.fr/guides/louer-partie-domicile-a-sa-societe",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Il reste possible de dépasser 30% si l'occupation professionnelle réelle est solidement justifiée (mais le risque de requalification augmente). Rappel : il n'est pas possible de louer l'intégralité d'un logement à usage principal d'habitation à sa société (changement de destination).",
   },
 ];
 

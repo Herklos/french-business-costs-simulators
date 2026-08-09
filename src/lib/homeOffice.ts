@@ -2,13 +2,15 @@
 // (bureau professionnel installé chez le dirigeant, domicile non loué par la société).
 //
 // Principe : la société verse au dirigeant une indemnité d'occupation correspondant à la
-// quote-part (surface bureau / surface totale) d'un loyer de marché + charges. Cette
-// indemnité est déductible du résultat de la société et constitue un revenu foncier
-// imposable pour le dirigeant (régime micro-foncier ou réel), soumis en outre aux
-// prélèvements sociaux sur revenus du patrimoine (17,2 %).
+// quote-part (surface bureau / surface totale) d'un loyer de marché + charges réelles du
+// logement (chacune activable/désactivable individuellement). Cette indemnité est déductible du
+// résultat de la société et constitue un revenu foncier imposable pour le dirigeant (régime
+// micro-foncier ou réel), soumis en outre aux prélèvements sociaux sur revenus du patrimoine
+// (17,2 %).
 
 import type { ImpositionSociete } from "./companyTypes";
 import { type PersonalTaxProfile, createDefaultPersonalTaxProfile, resolvePersonalTaxProfile } from "./frenchIncomeTax";
+import { computeEconomieImpotIS } from "./corporateTax";
 
 export const PRELEVEMENTS_SOCIAUX_FONCIER = 0.172;
 export const ABATTEMENT_MICRO_FONCIER = 0.3;
@@ -30,6 +32,25 @@ export type StatutOccupant = "locataire" | "proprietaire";
  */
 export type Formalisation = "indemnite" | "bail_professionnel";
 
+/** Un poste de charge du logement, inclus ou non dans la base de calcul de l'indemnité. */
+export interface ChargeLine {
+  id: string;
+  label: string;
+  montantAnnuel: number;
+  enabled: boolean;
+}
+
+export const DEFAULT_CHARGE_LINES: Omit<ChargeLine, "montantAnnuel">[] = [
+  { id: "loyer", label: "Loyer réel / valeur locative de marché", enabled: true },
+  { id: "electricite", label: "Électricité", enabled: true },
+  { id: "chauffage", label: "Chauffage", enabled: true },
+  { id: "eau", label: "Eau", enabled: true },
+  { id: "assuranceHabitation", label: "Assurance habitation", enabled: true },
+  { id: "taxeFonciere", label: "Taxe foncière", enabled: true },
+  { id: "entretienCopropriete", label: "Entretien / charges de copropriété", enabled: true },
+  { id: "internetTelephone", label: "Internet / téléphone (quote-part pro)", enabled: false },
+];
+
 export interface HomeOfficeInputs {
   id: string;
   name: string;
@@ -38,14 +59,16 @@ export interface HomeOfficeInputs {
   country: string;
   impositionSociete: ImpositionSociete;
   corporateTaxRate: number;
+  beneficeAvantChargePrevisionnel: number; // bénéfice imposable prévisionnel de la société avant l'indemnité
+  eligibleTauxReduitPME: boolean; // conditions art. 219 I-b CGI : CA<10M€, capital détenu ≥75% par des personnes physiques
 
   statutOccupant: StatutOccupant;
   surfaceTotaleM2: number;
   surfaceBureauM2: number;
 
-  // Si locataire : loyer réel payé. Si propriétaire : valeur locative de marché estimée.
-  loyerOuValeurLocativeMensuel: number;
-  chargesAnnuelles: number; // chauffage, électricité, assurance habitation, taxe foncière, entretien...
+  // Postes de charge du logement, chacun activable/désactivable (le loyer/valeur locative en fait
+  // partie et peut lui aussi être exclu si l'on souhaite ne rembourser que les charges réelles).
+  chargeLines: ChargeLine[];
 
   regimeFoncier: RegimeFoncier; // micro-foncier (abattement 30%) ou réel (charges réelles déduites)
   autresRevenusFonciersFoyer: number; // pour vérifier le plafond micro-foncier (15 000 €)
@@ -60,6 +83,17 @@ export interface HomeOfficeInputs {
 }
 
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
+  const montantsParDefaut: Record<string, number> = {
+    loyer: 900 * 12,
+    electricite: 900,
+    chauffage: 800,
+    eau: 300,
+    assuranceHabitation: 250,
+    taxeFonciere: 1200,
+    entretienCopropriete: 600,
+    internetTelephone: 360,
+  };
+
   return {
     id: crypto.randomUUID(),
     name: "Nouvelle simulation bureau",
@@ -67,11 +101,12 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     country: "FR",
     impositionSociete: "IS",
     corporateTaxRate: 0.25,
+    beneficeAvantChargePrevisionnel: 40000,
+    eligibleTauxReduitPME: true,
     statutOccupant: "proprietaire",
     surfaceTotaleM2: 80,
     surfaceBureauM2: 12,
-    loyerOuValeurLocativeMensuel: 900,
-    chargesAnnuelles: 2400,
+    chargeLines: DEFAULT_CHARGE_LINES.map((c) => ({ ...c, montantAnnuel: montantsParDefaut[c.id] ?? 0 })),
     regimeFoncier: "micro",
     autresRevenusFonciersFoyer: 0,
     formalisation: "indemnite",
@@ -83,6 +118,7 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
 
 export interface HomeOfficeResults {
   quotePartSurface: number;
+  totalChargesRetenuesAnnuel: number; // somme des postes activés
   indemniteAnnuelleBrute: number;
 
   eligibleMicroFoncier: boolean;
@@ -107,8 +143,10 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   const quotePartSurface =
     inputs.surfaceTotaleM2 > 0 ? Math.min(1, inputs.surfaceBureauM2 / inputs.surfaceTotaleM2) : 0;
 
-  const baseAnnuelle = inputs.loyerOuValeurLocativeMensuel * 12 + inputs.chargesAnnuelles;
-  const indemniteAnnuelleBrute = baseAnnuelle * quotePartSurface;
+  const totalChargesRetenuesAnnuel = inputs.chargeLines
+    .filter((c) => c.enabled)
+    .reduce((sum, c) => sum + c.montantAnnuel, 0);
+  const indemniteAnnuelleBrute = totalChargesRetenuesAnnuel * quotePartSurface;
 
   const totalRevenusFonciers = indemniteAnnuelleBrute + inputs.autresRevenusFonciersFoyer;
   const eligibleMicroFoncier = totalRevenusFonciers <= PLAFOND_MICRO_FONCIER;
@@ -121,13 +159,25 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
     abattementApplique = indemniteAnnuelleBrute * ABATTEMENT_MICRO_FONCIER;
     baseImposableFonciere = indemniteAnnuelleBrute - abattementApplique;
   } else {
-    // Régime réel : les charges (déjà intégrées dans l'indemnité au prorata) sont déduites explicitement.
-    const chargesDeductibles = inputs.chargesAnnuelles * quotePartSurface;
+    // Régime réel : les charges hors loyer (déjà intégrées dans l'indemnité au prorata) sont
+    // déduites explicitement — le loyer/valeur locative lui-même reste imposable.
+    const chargesHorsLoyer = inputs.chargeLines
+      .filter((c) => c.enabled && c.id !== "loyer")
+      .reduce((sum, c) => sum + c.montantAnnuel, 0);
+    const chargesDeductibles = chargesHorsLoyer * quotePartSurface;
     abattementApplique = chargesDeductibles;
     baseImposableFonciere = Math.max(0, indemniteAnnuelleBrute - chargesDeductibles);
   }
 
-  const resolvedTax = resolvePersonalTaxProfile(inputs.personalTaxProfile);
+  const resolvedTax = resolvePersonalTaxProfile(
+    inputs.impositionSociete === "IR"
+      ? {
+          ...inputs.personalTaxProfile,
+          autresRevenusImposablesFoyer:
+            inputs.personalTaxProfile.autresRevenusImposablesFoyer + inputs.beneficeAvantChargePrevisionnel,
+        }
+      : inputs.personalTaxProfile,
+  );
   const tauxIRUtilise = resolvedTax.tauxUtilise;
 
   const irDu = baseImposableFonciere * tauxIRUtilise;
@@ -137,8 +187,15 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   const fraisMiseEnPlace = inputs.formalisation === "bail_professionnel" ? inputs.fraisMiseEnPlaceBail : 0;
   const gainNetGerantAnnee1 = gainNetGerant - fraisMiseEnPlace;
 
-  const tauxEconomie = inputs.impositionSociete === "IS" ? inputs.corporateTaxRate : tauxIRUtilise;
-  const economieImpotSociete = indemniteAnnuelleBrute * tauxEconomie;
+  const economieImpotSociete =
+    inputs.impositionSociete === "IS"
+      ? computeEconomieImpotIS(
+          inputs.beneficeAvantChargePrevisionnel,
+          indemniteAnnuelleBrute,
+          inputs.eligibleTauxReduitPME,
+          inputs.corporateTaxRate,
+        )
+      : indemniteAnnuelleBrute * tauxIRUtilise;
   const coutNetSociete = indemniteAnnuelleBrute - economieImpotSociete;
 
   const coutBureauExterneAnnuel = inputs.loyerBureauExterneMensuel * 12;
@@ -146,6 +203,7 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
 
   return {
     quotePartSurface,
+    totalChargesRetenuesAnnuel,
     indemniteAnnuelleBrute,
     eligibleMicroFoncier,
     baseImposableFonciere,

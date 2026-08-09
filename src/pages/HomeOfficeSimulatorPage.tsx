@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import {
+  type ChargeLine,
   type HomeOfficeInputs,
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
@@ -10,6 +11,8 @@ import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { formatEUR, formatPercent } from "../lib/format";
 
+const SURFACE_TOLERANCE = 0.3;
+
 export function HomeOfficeSimulatorPage() {
   const [inputs, setInputs] = useState<HomeOfficeInputs>(() => createDefaultHomeOfficeInputs());
   const [saveVersion, setSaveVersion] = useState(0);
@@ -19,12 +22,22 @@ export function HomeOfficeSimulatorPage() {
     setInputs((prev) => ({ ...prev, [key]: value }));
   }
 
+  function updateChargeLine(id: string, patch: Partial<ChargeLine>) {
+    setInputs((prev) => ({
+      ...prev,
+      chargeLines: prev.chargeLines.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
+  }
+
   function updatePersonalTax<K extends keyof HomeOfficeInputs["personalTaxProfile"]>(
     key: K,
     value: HomeOfficeInputs["personalTaxProfile"][K],
   ) {
     setInputs((prev) => ({ ...prev, personalTaxProfile: { ...prev.personalTaxProfile, [key]: value } }));
   }
+
+  const surfaceRatio = inputs.surfaceTotaleM2 > 0 ? inputs.surfaceBureauM2 / inputs.surfaceTotaleM2 : 0;
+  const surfaceDepasseTolerance = surfaceRatio > SURFACE_TOLERANCE;
 
   return (
     <div className="page">
@@ -55,21 +68,48 @@ export function HomeOfficeSimulatorPage() {
                 <NumberInput value={inputs.surfaceBureauM2} onChange={(e) => update("surfaceBureauM2", Number(e.target.value))} />
               </Field>
             </div>
-            <div className="grid grid--2">
-              <Field label={inputs.statutOccupant === "locataire" ? "Loyer mensuel réel payé (€)" : "Valeur locative de marché estimée (€/mois)"}>
-                <NumberInput
-                  value={inputs.loyerOuValeurLocativeMensuel}
-                  onChange={(e) => update("loyerOuValeurLocativeMensuel", Number(e.target.value))}
-                />
-              </Field>
-              <Field label="Charges annuelles (chauffage, électricité, assurance, taxe foncière...) (€)">
-                <NumberInput value={inputs.chargesAnnuelles} onChange={(e) => update("chargesAnnuelles", Number(e.target.value))} />
-              </Field>
-            </div>
             <p className="hint-block">
-              Quote-part du bureau : <strong>{formatPercent(results.quotePartSurface)}</strong> · Indemnité annuelle
-              brute : <strong>{formatEUR(results.indemniteAnnuelleBrute)}</strong>
+              Quote-part du bureau : <strong>{formatPercent(results.quotePartSurface)}</strong> · Charges retenues
+              (postes activés) : <strong>{formatEUR(results.totalChargesRetenuesAnnuel)}</strong>/an · Indemnité
+              annuelle brute : <strong>{formatEUR(results.indemniteAnnuelleBrute)}</strong>
             </p>
+            {surfaceDepasseTolerance && (
+              <p className="warning-block">
+                ⚠️ Surface du bureau ({formatPercent(surfaceRatio)}) au-delà de la tolérance pratique de 30% de la
+                surface totale généralement admise sans justification renforcée. Restez en mesure de prouver la
+                réalité de cet usage professionnel (photos, plan, absence d'usage personnel de la pièce).
+              </p>
+            )}
+            <RuleNote ruleId="domicile-surface-bureau-tolerance-30-pourcent" />
+          </Section>
+
+          <Section
+            title="Charges du logement retenues dans l'indemnité"
+            subtitle="Chaque poste (y compris le loyer) est inclus par défaut mais peut être désactivé individuellement."
+          >
+            <ul className="charge-lines">
+              {inputs.chargeLines.map((c) => (
+                <li key={c.id} className="charge-line">
+                  <label className="charge-line__toggle">
+                    <input
+                      type="checkbox"
+                      checked={c.enabled}
+                      onChange={(e) => updateChargeLine(c.id, { enabled: e.target.checked })}
+                    />
+                    <span>
+                      {c.label}
+                      {c.id === "loyer" && (inputs.statutOccupant === "locataire" ? " (loyer réel)" : " (valeur locative de marché)")}
+                    </span>
+                  </label>
+                  <NumberInput
+                    disabled={!c.enabled}
+                    value={c.montantAnnuel}
+                    onChange={(e) => updateChargeLine(c.id, { montantAnnuel: Number(e.target.value) })}
+                  />
+                  <span className="charge-line__unit">€/an</span>
+                </li>
+              ))}
+            </ul>
           </Section>
 
           <Section
@@ -125,7 +165,10 @@ export function HomeOfficeSimulatorPage() {
             <RuleNote ruleId="foncier-prelevements-sociaux" />
           </Section>
 
-          <Section title="Régime fiscal & social de la société">
+          <Section
+            title="Régime fiscal & rentabilité de la société"
+            subtitle="Le bénéfice prévisionnel détermine l'économie d'impôt réelle générée par l'indemnité déductible."
+          >
             <div className="grid grid--2">
               <Field label="Régime d'imposition">
                 <select
@@ -136,7 +179,7 @@ export function HomeOfficeSimulatorPage() {
                   <option value="IR">Impôt sur le revenu (IR, société translucide)</option>
                 </select>
               </Field>
-              <Field label="Taux d'IS (si régime IS)">
+              <Field label="Taux d'IS normal (tranche &gt; 42 500€, si régime IS)">
                 <ResetableNumberInput
                   step="0.01"
                   value={inputs.corporateTaxRate}
@@ -146,6 +189,25 @@ export function HomeOfficeSimulatorPage() {
                 />
               </Field>
             </div>
+            {inputs.impositionSociete === "IS" && (
+              <div className="grid grid--2">
+                <Field label="Bénéfice imposable prévisionnel avant indemnité (€/an)">
+                  <NumberInput
+                    value={inputs.beneficeAvantChargePrevisionnel}
+                    onChange={(e) => update("beneficeAvantChargePrevisionnel", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Éligible au taux réduit IS 15% (CA&lt;10M€, capital détenu ≥75% par des personnes physiques)">
+                  <select
+                    value={inputs.eligibleTauxReduitPME ? "oui" : "non"}
+                    onChange={(e) => update("eligibleTauxReduitPME", e.target.value === "oui")}
+                  >
+                    <option value="oui">Oui</option>
+                    <option value="non">Non</option>
+                  </select>
+                </Field>
+              </div>
+            )}
             <RuleNote ruleId="is-taux-normal" />
           </Section>
 
@@ -201,6 +263,12 @@ export function HomeOfficeSimulatorPage() {
                       onChange={(e) => updatePersonalTax("conjointSalaireNetImposableAnnuel", Number(e.target.value))}
                     />
                   </Field>
+                )}
+                {inputs.impositionSociete === "IR" && (
+                  <p className="field__hint">
+                    Le bénéfice prévisionnel de la société (régime IR, translucide) est ajouté au revenu imposable du
+                    foyer pour déterminer le TMI réel.
+                  </p>
                 )}
               </>
             )}

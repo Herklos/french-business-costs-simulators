@@ -9,6 +9,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   revenus_fonciers: "Revenus fonciers",
   impot_societe: "Impôt sur les sociétés",
   fiscalite_vehicule_societe: "Fiscalité du véhicule de société (taxes, plafonds, aides)",
+  risques_juridiques: "Seuils et risques juridiques (usure, abus de biens sociaux, tolérances)",
 };
 
 const STATUS_LABEL: Record<string, string> = {

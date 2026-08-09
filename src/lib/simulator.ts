@@ -29,6 +29,7 @@ import {
   createDefaultFinancingInputs,
 } from "./financing";
 import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
+import { computeEconomieImpotIS } from "./corporateTax";
 
 export interface SimulationInputs {
   id: string;
@@ -42,6 +43,7 @@ export interface SimulationInputs {
   impositionSociete: ImpositionSociete; // IS ou IR
 
   // Véhicule
+  vehicleModelId: string | null; // référence dans le registre vehicleModels.ts (null = saisie manuelle)
   vehiclePrice: number; // Prix d'achat TTC (malus écologique déjà inclus dans le prix facturé)
   vehicleOverFiveYears: boolean; // > 5 ans => amortissement 10%, sinon 20% (véhicule acheté uniquement)
   isElectric: boolean; // 100% électrique => électricité exclue du calcul, exonéré de taxes CO2/polluants
@@ -60,7 +62,13 @@ export interface SimulationInputs {
 
   // Taux
   tnsContributionRate: number; // 0-1, taux de charges sociales appliqué à l'AEN net
-  corporateTaxRate: number; // 0-1, IS, défaut 0.25
+  corporateTaxRate: number; // 0-1, taux normal IS (tranche > 42 500€), défaut 0.25
+
+  // Rentabilité prévisionnelle de la société — détermine l'économie d'impôt RÉELLE générée par les
+  // charges déductibles liées au véhicule (barème IS progressif + plafonnement par le bénéfice réel).
+  beneficeAvantChargePrevisionnel: number; // bénéfice imposable prévisionnel de la société, avant les charges liées au véhicule
+  chiffreAffairesPrevisionnel: number; // CA prévisionnel — informatif, condition d'éligibilité au taux réduit (<10M€)
+  eligibleTauxReduitPME: boolean; // conditions art. 219 I-b CGI : CA<10M€, capital détenu ≥75% par des personnes physiques
 
   // Situation personnelle du dirigeant (pour affiner le TMI utilisé sur l'AEN et les revenus fonciers)
   personalTaxProfile: PersonalTaxProfile;
@@ -102,6 +110,7 @@ export function createDefaultInputs(): SimulationInputs {
     gerantMajoritaire: true,
     impositionSociete: companyTypeConfig?.defaultImposition ?? "IR",
 
+    vehicleModelId: "tesla-model-y-berlin",
     vehiclePrice,
     vehicleOverFiveYears: false,
     isElectric: true,
@@ -119,6 +128,10 @@ export function createDefaultInputs(): SimulationInputs {
     tnsContributionRate: companyTypeConfig?.defaultCotisationRate ?? DEFAULT_TNS_RATE,
     corporateTaxRate: DEFAULT_CORPORATE_TAX_RATE,
 
+    beneficeAvantChargePrevisionnel: 40000,
+    chiffreAffairesPrevisionnel: 150000,
+    eligibleTauxReduitPME: true,
+
     personalTaxProfile: createDefaultPersonalTaxProfile(),
 
     monthlyParticipation: 0,
@@ -135,6 +148,11 @@ export function createDefaultInputs(): SimulationInputs {
 /** Coût global annualisé d'une combinaison {propriétaire, mode de financement} donnée, avec le
  * détail de la répartition entre ce que supporte réellement la société et ce que supporte
  * réellement le dirigeant (les deux s'additionnent pour former globalCostAnnual). */
+export interface GlobalOptionDetailLine {
+  label: string;
+  value: number;
+}
+
 export interface GlobalOption {
   owner: "societe" | "personnel";
   mode: FinancingMode;
@@ -142,6 +160,7 @@ export interface GlobalOption {
   globalCostAnnual: number;
   partSociete: number; // coût net réellement supporté par la société (après économies d'impôt)
   partDirigeant: number; // coût net réellement supporté par le dirigeant (cash, après IK le cas échéant)
+  detail: GlobalOptionDetailLine[]; // détail du calcul, affiché au dépliage de l'option dans l'UI
 }
 
 export interface SimulationResults {
@@ -224,8 +243,24 @@ function computeAenBase(inputs: SimulationInputs, mode: FinancingMode, financing
   return { amortRate: 0, amortAnnual: 0, aenBaseAnnualCosts };
 }
 
-function computeTauxEconomie(inputs: SimulationInputs, tauxIRUtilise: number): number {
-  return inputs.impositionSociete === "IS" ? inputs.corporateTaxRate : tauxIRUtilise;
+/**
+ * Économie d'impôt réellement générée par une charge déductible donnée.
+ * Régime IS : barème progressif (15%/25%) appliqué au bénéfice prévisionnel, plafonné par ce
+ * bénéfice — une société déficitaire ou peu profitable ne récupère pas immédiatement tout le
+ * gain théorique (cf. corporateTax.ts).
+ * Régime IR (société translucide) : le bénéfice est déjà intégré au revenu imposable du foyer
+ * (cf. computeSimulation), donc le taux marginal du foyer (tauxIRUtilise) s'applique directement.
+ */
+function computeEconomieImpot(inputs: SimulationInputs, chargeDeductible: number, tauxIRUtilise: number): number {
+  if (inputs.impositionSociete === "IS") {
+    return computeEconomieImpotIS(
+      inputs.beneficeAvantChargePrevisionnel,
+      chargeDeductible,
+      inputs.eligibleTauxReduitPME,
+      inputs.corporateTaxRate,
+    );
+  }
+  return chargeDeductible * tauxIRUtilise;
 }
 
 /** Résultat complet côté société pour un mode de financement et un % d'usage privé donnés. */
@@ -279,8 +314,7 @@ function computeSocieteForMode(
   const quotePartPrivéeNonDeductible = companyCashBaseAnnual * ratio;
   const quotePartProfessionnelleBrute = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
   const quotePartProfessionnelleDeductible = Math.max(0, quotePartProfessionnelleBrute - reintegrationFiscaleCO2);
-  const tauxEconomie = computeTauxEconomie(inputs, tauxIRUtilise);
-  const economieImpotQuotePartPro = quotePartProfessionnelleDeductible * tauxEconomie;
+  const economieImpotQuotePartPro = computeEconomieImpot(inputs, quotePartProfessionnelleDeductible, tauxIRUtilise);
   const coutNetSociete = companyCashBaseAnnual - economieImpotQuotePartPro;
 
   const globalCostSociete = coutNetSociete + coutTotalGerantSociete;
@@ -331,8 +365,7 @@ function computePersonnelForMode(
   const coutScenarioPersonnel = Math.max(0, grossCost - ikReimbursement);
 
   // L'IK versée par la société est une charge déductible : elle génère une économie d'impôt côté société.
-  const tauxEconomie = computeTauxEconomie(inputs, tauxIRUtilise);
-  const economieImpotIK = ikReimbursement * tauxEconomie;
+  const economieImpotIK = computeEconomieImpot(inputs, ikReimbursement, tauxIRUtilise);
   const globalCostPersonnel = Math.max(0, grossCost - economieImpotIK);
 
   return {
@@ -388,7 +421,18 @@ const FINANCING_LABELS: Record<FinancingMode, string> = {
 
 export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const financingResults = compareFinancingModes(inputs.financing);
-  const resolvedTax = resolvePersonalTaxProfile(inputs.personalTaxProfile);
+  // Régime IR (société translucide) : le bénéfice de la société est directement imposé entre les
+  // mains du dirigeant (BIC/BNC) — il doit donc être intégré au revenu imposable du foyer pour
+  // déterminer le TMI réel, y compris celui appliqué à l'AEN elle-même.
+  const personalTaxProfileForCalc =
+    inputs.impositionSociete === "IR"
+      ? {
+          ...inputs.personalTaxProfile,
+          autresRevenusImposablesFoyer:
+            inputs.personalTaxProfile.autresRevenusImposablesFoyer + inputs.beneficeAvantChargePrevisionnel,
+        }
+      : inputs.personalTaxProfile;
+  const resolvedTax = resolvePersonalTaxProfile(personalTaxProfileForCalc);
   const tauxIRUtilise = resolvedTax.tauxUtilise;
 
   const societe = computeSocieteForMode(
@@ -419,6 +463,19 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         globalCostAnnual: s.globalCostSociete,
         partSociete: s.coutNetSociete,
         partDirigeant: s.coutTotalGerantSociete,
+        detail: [
+          { label: "AEN brut", value: s.aenBrut },
+          { label: "Abattement électrique", value: s.abattement },
+          { label: "AEN net", value: s.aenNet },
+          { label: "Cotisations sociales dirigeant", value: s.cotisationsTNS },
+          { label: "IR dirigeant sur l'AEN", value: s.irEstimee },
+          { label: "Décaissement réel société (financement + assurance + entretien + taxes)", value: s.companyCashBaseAnnual },
+          { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },
+          { label: "Quote-part professionnelle déductible", value: s.quotePartProfessionnelleDeductible },
+          { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
+          { label: "Coût net société", value: s.coutNetSociete },
+          { label: "Coût cash dirigeant", value: s.coutTotalGerantSociete },
+        ],
       },
       {
         owner: "personnel" as const,
@@ -427,6 +484,16 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         globalCostAnnual: p.globalCostPersonnel,
         partSociete: p.ikReimbursement - p.economieImpotIK,
         partDirigeant: p.coutScenarioPersonnel,
+        detail: [
+          { label: "Km professionnels/an", value: p.proKmAnnual },
+          { label: "Km privés/an", value: p.privateKmAnnual },
+          { label: "Barème IK effectif (€/km)", value: p.effectiveIkRatePerKm },
+          { label: "Remboursement IK perçu par le dirigeant", value: p.ikReimbursement },
+          { label: "Coût financement + assurance + entretien (dirigeant)", value: p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance },
+          { label: "Coût net dirigeant (après IK)", value: p.coutScenarioPersonnel },
+          { label: "Économie d'impôt société sur l'IK versée", value: p.economieImpotIK },
+          { label: "Coût net société sur l'IK", value: p.ikReimbursement - p.economieImpotIK },
+        ],
       },
     ];
   }).sort((a, b) => a.globalCostAnnual - b.globalCostAnnual);

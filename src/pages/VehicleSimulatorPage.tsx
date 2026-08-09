@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import {
   type SimulationInputs,
   DEFAULT_CORPORATE_TAX_RATE,
@@ -9,8 +9,9 @@ import {
 } from "../lib/simulator";
 import { COUNTRIES } from "../lib/countries";
 import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/companyTypes";
-import { createDefaultFinancingInputs, type FinancingMode } from "../lib/financing";
+import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMode } from "../lib/financing";
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
+import { VEHICLE_MODELS, getVehicleModel } from "../lib/vehicleModels";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
@@ -23,9 +24,19 @@ const FINANCING_LABELS: Record<FinancingMode, string> = {
   lld: "LLD",
 };
 
+type SortCriterion = "global" | "societe" | "personnel";
+
+const SORT_LABELS: Record<SortCriterion, string> = {
+  global: "Coût global (recommandé)",
+  societe: "Coût le plus bas côté société",
+  personnel: "Coût le plus bas côté dirigeant",
+};
+
 export function VehicleSimulatorPage() {
   const [inputs, setInputs] = useState<SimulationInputs>(() => createDefaultInputs());
   const [saveVersion, setSaveVersion] = useState(0);
+  const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
+  const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
 
   const results = useMemo(() => computeSimulation(inputs), [inputs]);
   const companyTypes = getCompanyTypes(inputs.country);
@@ -64,6 +75,30 @@ export function VehicleSimulatorPage() {
 
   function handleCountryChange(country: string) {
     setInputs((prev) => ({ ...prev, country }));
+  }
+
+  function handleVehicleModelChange(modelId: string) {
+    const model = getVehicleModel(modelId);
+    setInputs((prev) => ({
+      ...prev,
+      vehicleModelId: modelId,
+      ...(model && model.id !== "autre" ? { isElectric: model.isElectric, isEcoScoreEligible: model.ecoScoreEligible } : {}),
+    }));
+  }
+
+  function toggleExpandedOption(label: string) {
+    setExpandedOptions((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label);
+      else next.add(label);
+      return next;
+    });
+  }
+
+  function handleCreditTauxChange(raw: number) {
+    const montantEmprunte = Math.max(0, inputs.financing.credit.prixTTC - inputs.financing.credit.apport);
+    const seuil = getTauxUsureApplicable(montantEmprunte);
+    updateFinancing("credit", { tauxAnnuel: Math.min(raw, seuil) });
   }
 
   function handleCompanyTypeChange(code: string) {
@@ -179,15 +214,34 @@ export function VehicleSimulatorPage() {
             <RuleNote ruleId="malus-ecologique" />
             <RuleNote ruleId="bonus-ecologique" />
             {inputs.isElectric && (
-              <Field label="Véhicule éligible à l'éco-score renforcé (≥ 60 pts, liste ADEME) ?">
-                <select
-                  value={inputs.isEcoScoreEligible ? "oui" : "non"}
-                  onChange={(e) => update("isEcoScoreEligible", e.target.value === "oui")}
+              <>
+                <Field
+                  label="Modèle (référence indicative de la liste ADEME éco-score)"
+                  hint="Liste non exhaustive et non officielle : vérifiez la liste ADEME à jour au jour de la mise à disposition."
                 >
-                  <option value="oui">Oui (ex. Tesla Model Y Berlin — codes TVV validés)</option>
-                  <option value="non">Non (ex. Tesla Model 3, majoritairement)</option>
-                </select>
-              </Field>
+                  <select
+                    value={inputs.vehicleModelId ?? "autre"}
+                    onChange={(e) => handleVehicleModelChange(e.target.value)}
+                  >
+                    {VEHICLE_MODELS.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                {(inputs.vehicleModelId === "autre" || inputs.vehicleModelId === null) && (
+                  <Field label="Véhicule éligible à l'éco-score renforcé (≥ 60 pts, liste ADEME) ?">
+                    <select
+                      value={inputs.isEcoScoreEligible ? "oui" : "non"}
+                      onChange={(e) => update("isEcoScoreEligible", e.target.value === "oui")}
+                    >
+                      <option value="oui">Oui</option>
+                      <option value="non">Non</option>
+                    </select>
+                  </Field>
+                )}
+              </>
             )}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-taux" />}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-plafond" />}
@@ -208,6 +262,27 @@ export function VehicleSimulatorPage() {
                 <NumberInput value={inputs.totalKmAnnual} onChange={(e) => update("totalKmAnnual", Number(e.target.value))} />
               </Field>
             </div>
+            {inputs.privateUsePercent >= 100 && (
+              <p className="warning-block warning-block--danger">
+                🚫 Usage 100% privé : le véhicule n'a alors aucun usage professionnel documenté. L'achat/financement par
+                la société est très difficilement justifiable — risque élevé d'abus de biens sociaux (jusqu'à 5 ans
+                d'emprisonnement, 375 000 € d'amende) et de remise en cause totale de la déductibilité (acte anormal de
+                gestion). Il n'existe pas de seuil légal chiffré : c'est l'absence de justification qui est sanctionnée.
+              </p>
+            )}
+            {inputs.privateUsePercent >= 90 && inputs.privateUsePercent < 100 && (
+              <p className="warning-block warning-block--danger">
+                ⚠️ Usage privé très majoritaire (≥90%) : risque élevé de requalification en abus de biens sociaux si
+                l'usage professionnel réel n'est pas solidement documenté (carnet de bord, missions).
+              </p>
+            )}
+            {inputs.privateUsePercent >= 80 && inputs.privateUsePercent < 90 && (
+              <p className="warning-block">
+                Usage privé élevé (≥80%) : documentez précisément l'usage professionnel réel pour limiter le risque de
+                redressement.
+              </p>
+            )}
+            <RuleNote ruleId="risque-abus-biens-sociaux-usage-prive" />
           </Section>
 
           <Section title="Charges annuelles réelles">
@@ -257,7 +332,7 @@ export function VehicleSimulatorPage() {
                   onChange={(v) => update("tnsContributionRate", v)}
                 />
               </Field>
-              <Field label="Taux d'IS (si régime IS)">
+              <Field label="Taux d'IS normal (tranche &gt; 42 500€, si régime IS)">
                 <ResetableNumberInput
                   step="0.01"
                   value={inputs.corporateTaxRate}
@@ -266,6 +341,40 @@ export function VehicleSimulatorPage() {
                   onChange={(v) => update("corporateTaxRate", v)}
                 />
               </Field>
+            </div>
+            <div className="grid grid--3">
+              <Field
+                label="Bénéfice imposable prévisionnel avant charges véhicule (€/an)"
+                hint={
+                  inputs.impositionSociete === "IS"
+                    ? "Détermine l'économie d'impôt réelle (barème IS progressif, plafonnée par le bénéfice)."
+                    : "Ajouté au revenu imposable du foyer (société translucide)."
+                }
+              >
+                <NumberInput
+                  value={inputs.beneficeAvantChargePrevisionnel}
+                  onChange={(e) => update("beneficeAvantChargePrevisionnel", Number(e.target.value))}
+                />
+              </Field>
+              {inputs.impositionSociete === "IS" && (
+                <>
+                  <Field label="CA prévisionnel (€/an)" hint="Informatif : condition d'éligibilité au taux réduit (CA < 10M€).">
+                    <NumberInput
+                      value={inputs.chiffreAffairesPrevisionnel}
+                      onChange={(e) => update("chiffreAffairesPrevisionnel", Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Éligible au taux réduit IS 15% ?">
+                    <select
+                      value={inputs.eligibleTauxReduitPME ? "oui" : "non"}
+                      onChange={(e) => update("eligibleTauxReduitPME", e.target.value === "oui")}
+                    >
+                      <option value="oui">Oui (capital détenu ≥75% par des personnes physiques)</option>
+                      <option value="non">Non</option>
+                    </select>
+                  </Field>
+                </>
+              )}
             </div>
             <RuleNote ruleId={dirigeantStatus === "TNS" ? "cotisations-tns-taux-global" : "cotisations-assimile-salarie-taux"} />
             <RuleNote ruleId="is-taux-normal" />
@@ -357,6 +466,13 @@ export function VehicleSimulatorPage() {
                   ). Un enfant de plus fait baisser le quotient mais pas forcément le taux, tant qu'il reste dans la
                   même tranche.
                 </p>
+                {inputs.impositionSociete === "IR" && (
+                  <p className="field__hint">
+                    Régime IR (société translucide) : le bénéfice prévisionnel de la société (
+                    {formatEUR(inputs.beneficeAvantChargePrevisionnel)}) est ajouté au revenu imposable du foyer
+                    ci-dessus pour déterminer le TMI réel.
+                  </p>
+                )}
                 <RuleNote ruleId="ir-bareme-2026" />
                 <RuleNote ruleId="ir-abattement-10-salaires" />
                 <RuleNote ruleId="ir-decote" />
@@ -391,6 +507,7 @@ export function VehicleSimulatorPage() {
             title="Mode d'acquisition du véhicule"
             subtitle="Paramètres communs, utilisés à la fois si la société achète le véhicule et si le dirigeant l'achète à titre personnel."
           >
+            <RuleNote ruleId="taux-usure-credit-personnel" />
             <div className="financing-grid">
               <div className="financing-card">
                 <h4>Comptant</h4>
@@ -417,11 +534,17 @@ export function VehicleSimulatorPage() {
                     onChange={(e) => updateFinancing("credit", { apport: Number(e.target.value) })}
                   />
                 </Field>
-                <Field label="TAEG (%/an)">
+                <Field
+                  label="TAEG (%/an)"
+                  hint={`Plafonné automatiquement au taux d'usure applicable : ${formatPercent(
+                    getTauxUsureApplicable(Math.max(0, inputs.financing.credit.prixTTC - inputs.financing.credit.apport)),
+                    2,
+                  )} pour ce montant emprunté.`}
+                >
                   <NumberInput
                     step="0.001"
                     value={inputs.financing.credit.tauxAnnuel}
-                    onChange={(e) => updateFinancing("credit", { tauxAnnuel: Number(e.target.value) })}
+                    onChange={(e) => handleCreditTauxChange(Number(e.target.value))}
                   />
                 </Field>
                 <Field label="Durée (mois)">
@@ -548,6 +671,15 @@ export function VehicleSimulatorPage() {
           </div>
 
           <Section title="Comparaison de toutes les options">
+            <Field label="Trier par">
+              <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value as SortCriterion)}>
+                {(Object.keys(SORT_LABELS) as SortCriterion[]).map((c) => (
+                  <option key={c} value={c}>
+                    {SORT_LABELS[c]}
+                  </option>
+                ))}
+              </select>
+            </Field>
             <table className="projection-table">
               <thead>
                 <tr>
@@ -557,21 +689,51 @@ export function VehicleSimulatorPage() {
                 </tr>
               </thead>
               <tbody>
-                {results.allOptions.map((opt, idx) => (
-                  <tr key={opt.label} className={idx === 0 ? "row--selected" : undefined}>
-                    <td>
-                      {idx === 0 && "🏆 "}
-                      {opt.label}
-                      <div className="option-breakdown">
-                        dont société {formatEUR(opt.partSociete)} · dont dirigeant {formatEUR(opt.partDirigeant)}
-                      </div>
-                    </td>
-                    <td>{formatEUR(opt.globalCostAnnual)}</td>
-                    <td>
-                      {idx > 0 && `+${formatEUR(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual)}`}
-                    </td>
-                  </tr>
-                ))}
+                {[...results.allOptions]
+                  .sort((a, b) => {
+                    if (sortCriterion === "societe") return a.partSociete - b.partSociete;
+                    if (sortCriterion === "personnel") return a.partDirigeant - b.partDirigeant;
+                    return a.globalCostAnnual - b.globalCostAnnual;
+                  })
+                  .map((opt, idx) => {
+                    const isGlobalBest = opt.label === results.allOptions[0].label;
+                    const isExpanded = expandedOptions.has(opt.label);
+                    return (
+                      <Fragment key={opt.label}>
+                        <tr
+                          className={`option-row ${idx === 0 ? "row--selected" : ""}`}
+                          onClick={() => toggleExpandedOption(opt.label)}
+                        >
+                          <td>
+                            <span className="option-row__caret">{isExpanded ? "▾" : "▸"}</span>
+                            {isGlobalBest && "🏆 "}
+                            {opt.label}
+                            <div className="option-breakdown">
+                              dont société {formatEUR(opt.partSociete)} · dont dirigeant {formatEUR(opt.partDirigeant)}
+                            </div>
+                          </td>
+                          <td>{formatEUR(opt.globalCostAnnual)}</td>
+                          <td>
+                            {!isGlobalBest &&
+                              `+${formatEUR(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual)}`}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr className="option-detail-row">
+                            <td colSpan={3}>
+                              <ul className="detail-list">
+                                {opt.detail.map((line) => (
+                                  <li key={line.label}>
+                                    {line.label} : {formatEUR(line.value)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
               </tbody>
             </table>
             {results.seuilPrivateUsePercent !== null && (

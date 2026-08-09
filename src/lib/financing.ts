@@ -5,6 +5,22 @@
 
 export type FinancingMode = "comptant" | "credit" | "loa" | "lld";
 
+// Taux d'usure (taux maximum légal) applicable aux prêts personnels, par tranche de montant —
+// Banque de France, 3e trimestre 2026 (juillet-septembre). Dépasser ce taux constitue un délit
+// d'usure (art. L341-50 code de la consommation, jusqu'à 2 ans d'emprisonnement et 300 000€
+// d'amende). Révisé chaque trimestre : valeurs à recontrôler sur banque-france.fr.
+export const TAUX_USURE_PRETS_PERSONNELS = [
+  { montantMax: 3000, taux: 0.2356 }, // valeur T1 2026, non republiée au T3 — à vérifier
+  { montantMax: 6000, taux: 0.1587 }, // valeur T1 2026, non republiée au T3 — à vérifier
+  { montantMax: Infinity, taux: 0.0856 }, // T3 2026 (à jour)
+];
+
+/** Taux d'usure applicable pour un montant emprunté donné (tranche la plus basse qui le couvre). */
+export function getTauxUsureApplicable(montantEmprunte: number): number {
+  const tranche = TAUX_USURE_PRETS_PERSONNELS.find((t) => montantEmprunte <= t.montantMax);
+  return tranche ? tranche.taux : TAUX_USURE_PRETS_PERSONNELS[TAUX_USURE_PRETS_PERSONNELS.length - 1].taux;
+}
+
 export interface ComptantParams {
   prixTTC: number;
   dureeDetentionMois: number;

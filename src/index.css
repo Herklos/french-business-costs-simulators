@@ -243,6 +243,13 @@ select:focus {
   background: rgba(251, 191, 36, 0.1);
   border-radius: 6px;
   padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.warning-block--danger {
+  color: var(--bad);
+  background: rgba(248, 113, 113, 0.12);
+  border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
 /* Rule note */
@@ -394,6 +401,62 @@ td {
 
 .row--selected {
   background: rgba(91, 140, 255, 0.1);
+}
+
+.charge-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.charge-line {
+  display: grid;
+  grid-template-columns: 1fr 140px auto;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+}
+
+.charge-line__toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.charge-line__unit {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.option-row {
+  cursor: pointer;
+}
+
+.option-row:hover {
+  background: rgba(91, 140, 255, 0.06);
+}
+
+.option-row__caret {
+  display: inline-block;
+  width: 1rem;
+  color: var(--text-muted);
+}
+
+.option-detail-row td {
+  background: var(--bg);
+  padding: 0.75rem 1rem;
+}
+
+.option-detail-row .detail-list {
+  margin: 0;
+  columns: 2;
 }
 
 .option-breakdown {
