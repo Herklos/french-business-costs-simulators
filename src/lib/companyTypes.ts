@@ -24,8 +24,8 @@ export const COMPANY_TYPES_BY_COUNTRY: Record<string, CompanyTypeConfig[]> = {
       description: "Le gérant associé unique est de plein droit gérant majoritaire → statut TNS.",
       hasGerantMajoriteOption: false,
       defaultDirigeantStatus: "TNS",
-      impositionOptions: ["IR", "IS"],
-      defaultImposition: "IR",
+      impositionOptions: ["IS", "IR"],
+      defaultImposition: "IS",
       defaultCotisationRate: 0.43,
     },
     {

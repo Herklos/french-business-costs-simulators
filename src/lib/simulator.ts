@@ -111,7 +111,7 @@ export function createDefaultInputs(): SimulationInputs {
     country,
     companyType,
     gerantMajoritaire: true,
-    impositionSociete: companyTypeConfig?.defaultImposition ?? "IR",
+    impositionSociete: companyTypeConfig?.defaultImposition ?? "IS",
 
     vehicleModelId: null,
     vehiclePrice,
