@@ -2,7 +2,7 @@
 // Permet de sauvegarder une simulation puis de la comparer plus tard à une autre,
 // y compris entre deux sessions du navigateur.
 
-export type SimulatorKind = "vehicle" | "homeOffice";
+export type SimulatorKind = "vehicle" | "homeOffice" | "remuneration";
 
 export interface SavedSimulation<T = unknown> {
   kind: SimulatorKind;

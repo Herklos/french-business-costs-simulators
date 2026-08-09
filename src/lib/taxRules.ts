@@ -18,7 +18,8 @@ export type RuleCategory =
   | "revenus_fonciers"
   | "impot_societe"
   | "fiscalite_vehicule_societe"
-  | "risques_juridiques";
+  | "risques_juridiques"
+  | "remuneration_dirigeant";
 
 export interface TaxRule {
   id: string;
@@ -320,6 +321,44 @@ export const TAX_RULES: TaxRule[] = [
     validUntil: null,
     notes:
       "Il reste possible de dépasser 30% si l'occupation professionnelle réelle est solidement justifiée (mais le risque de requalification augmente). Rappel : il n'est pas possible de louer l'intégralité d'un logement à usage principal d'habitation à sa société (changement de destination).",
+  },
+  {
+    id: "charges-patronales-salariales-assimile-salarie",
+    category: "remuneration_dirigeant",
+    label: "Charges patronales et salariales — président assimilé salarié (SASU/SAS), régime général",
+    value: "≈ 42 % de charges patronales (sur le brut) · ≈ 22 % de charges salariales (sur le brut)",
+    legalReference: "Régime général — Art. L242-1 CSS",
+    sourceLabel: "URSSAF",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Ordres de grandeur pour un cadre assimilé salarié (le taux patronal réel varie fortement selon le niveau de rémunération, du fait des allègements Fillon sur les bas salaires). Cumulé, un coût total employeur de 100 se traduit par un net social d'environ 45 — proche du taux global de 55% déjà utilisé ailleurs dans l'application pour l'AEN.",
+  },
+  {
+    id: "pfu-dividendes-taux",
+    category: "remuneration_dirigeant",
+    label: "Prélèvement forfaitaire unique (flat tax) sur les dividendes",
+    value: "30 % (12,8 % IR + 17,2 % prélèvements sociaux)",
+    legalReference: "Art. 200 A CGI",
+    sourceLabel: "Service-Public.fr / Bercy Infos",
+    sourceUrl: "https://www.economie.gouv.fr/particuliers/prelevement-forfaitaire-unique-pfu",
+    validFrom: "2018-01-01",
+    validUntil: null,
+    notes:
+      "Option pour le barème progressif de l'IR toujours possible (globale, pour tous les revenus mobiliers du foyer sur l'année), avec abattement de 40% sur l'assiette IR — intéressant surtout pour un foyer dont le TMI réel est inférieur à 12,8%. Les prélèvements sociaux de 17,2% restent dus dans tous les cas, sans abattement.",
+  },
+  {
+    id: "dividendes-tns-seuil-10-pourcent-cotisations",
+    category: "remuneration_dirigeant",
+    label: "Cotisations sociales TNS sur les dividendes excédant 10% du capital (gérant majoritaire)",
+    value: "Dividendes > 10% (capital social + primes d'émission + comptes courants d'associés) → cotisations sociales TNS sur l'excédent",
+    legalReference: "Art. L131-6, al. 3 CSS (LFSS 2013)",
+    sourceLabel: "URSSAF / Service-Public.fr",
+    sourceUrl: "https://www.urssaf.fr/accueil/independants/vos-cotisations/calcul/dividendes.html",
+    validFrom: "2013-01-01",
+    validUntil: null,
+    notes:
+      "Concerne uniquement les gérants majoritaires de SARL/EURL soumises à l'IS (statut TNS). Ne s'applique pas au président (assimilé salarié) de SASU/SAS, dont les dividendes échappent totalement aux cotisations sociales (seul le PFU s'applique) — différence structurante dans l'arbitrage salaire/dividendes selon la forme juridique.",
   },
 ];
 

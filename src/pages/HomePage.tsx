@@ -25,6 +25,14 @@ const SIMULATORS: SimulatorCard[] = [
       "Indemnité d'occupation versée par la société pour l'usage professionnel d'une partie du domicile du dirigeant, avec sa fiscalité (revenus fonciers).",
     available: true,
   },
+  {
+    page: "remuneration",
+    icon: "💰",
+    title: "Rémunération du dirigeant",
+    description:
+      "Salaire, dividendes, ou un mixte des deux : cotisations sociales selon la forme juridique (TNS ou assimilé salarié), fiscalité du foyer, brut/net annuel et mensuel, et scénario le plus avantageux à coût entreprise égal.",
+    available: true,
+  },
 ];
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {

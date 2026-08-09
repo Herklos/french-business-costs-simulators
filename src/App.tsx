@@ -2,9 +2,10 @@ import { useState } from "react";
 import { HomePage } from "./pages/HomePage";
 import { VehicleSimulatorPage } from "./pages/VehicleSimulatorPage";
 import { HomeOfficeSimulatorPage } from "./pages/HomeOfficeSimulatorPage";
+import { RemunerationSimulatorPage } from "./pages/RemunerationSimulatorPage";
 import { RulesPage } from "./pages/RulesPage";
 
-export type Page = "home" | "vehicle" | "homeOffice" | "rules";
+export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "rules";
 
 function App() {
   const [page, setPage] = useState<Page>("home");
@@ -22,6 +23,9 @@ function App() {
           <button type="button" className={page === "homeOffice" ? "active" : ""} onClick={() => setPage("homeOffice")}>
             🏠 Bureau à domicile
           </button>
+          <button type="button" className={page === "remuneration" ? "active" : ""} onClick={() => setPage("remuneration")}>
+            💰 Rémunération
+          </button>
           <button type="button" className={page === "rules" ? "active" : ""} onClick={() => setPage("rules")}>
             📚 Règles fiscales
           </button>
@@ -32,6 +36,7 @@ function App() {
         {page === "home" && <HomePage onNavigate={setPage} />}
         {page === "vehicle" && <VehicleSimulatorPage />}
         {page === "homeOffice" && <HomeOfficeSimulatorPage />}
+        {page === "remuneration" && <RemunerationSimulatorPage />}
         {page === "rules" && <RulesPage />}
       </main>
 

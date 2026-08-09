@@ -237,6 +237,12 @@ select:focus {
   padding: 0.5rem 0.75rem;
 }
 
+.range-slider {
+  width: 100%;
+  margin: 0.5rem 0 1rem;
+  accent-color: var(--accent);
+}
+
 .warning-block {
   font-size: 0.85rem;
   color: var(--warn);

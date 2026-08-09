@@ -10,6 +10,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   impot_societe: "Impôt sur les sociétés",
   fiscalite_vehicule_societe: "Fiscalité du véhicule de société (taxes, plafonds, aides)",
   risques_juridiques: "Seuils et risques juridiques (usure, abus de biens sociaux, tolérances)",
+  remuneration_dirigeant: "Rémunération du dirigeant (salaire, dividendes)",
 };
 
 const STATUS_LABEL: Record<string, string> = {
