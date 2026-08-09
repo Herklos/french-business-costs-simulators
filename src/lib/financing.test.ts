@@ -142,6 +142,21 @@ describe("createDefaultFinancingInputs", () => {
     expect(inputs.loa.prixTTC).toBe(45000);
     expect(inputs.loa.leveeOption).toBe(true);
   });
+
+  it("reprend l'offre LOA réelle Tesla Model Y au prix de référence (45 000€)", () => {
+    const inputs = createDefaultFinancingInputs(45000);
+    expect(inputs.loa.loyerMensuel).toBe(308);
+    expect(inputs.loa.dureeMois).toBe(36);
+    expect(inputs.loa.premierLoyerMajore).toBe(9320);
+    expect(inputs.loa.valeurOptionAchat).toBe(25804);
+  });
+
+  it("revient à une estimation générique (% du prix) pour un autre prix de véhicule", () => {
+    const inputs = createDefaultFinancingInputs(60000);
+    expect(inputs.loa.loyerMensuel).not.toBe(308);
+    expect(inputs.loa.dureeMois).toBe(48);
+    expect(inputs.loa.premierLoyerMajore).toBeCloseTo(60000 * 0.2, 6);
+  });
 });
 
 describe("getTauxUsureApplicable", () => {

@@ -59,18 +59,37 @@ export interface FinancingInputs {
   lld: LldParams;
 }
 
+// Prix par défaut du véhicule dans le simulateur (Tesla Model Y Propulsion, cf. createDefaultInputs
+// dans simulator.ts). Offre LOA constructeur réelle utilisée comme valeur par défaut pour ce prix :
+// 308 €/mois sur 36 mois, 1er loyer majoré 9 320 €, option d'achat 25 804 €, TAEG fixe 0,99%
+// (déjà intégré dans les loyers ci-dessous — pas de champ TAEG dédié pour la LOA, à la différence
+// du crédit classique). Pour tout autre prix saisi, une estimation générique (% du prix) est
+// utilisée à la place.
+const MODEL_Y_PRIX_REFERENCE = 45000;
+const MODEL_Y_LOA_OFFER = {
+  premierLoyerMajore: 9320,
+  loyerMensuel: 308,
+  dureeMois: 36,
+  valeurOptionAchat: 25804,
+};
+
 export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
+  const loa =
+    prixTTC === MODEL_Y_PRIX_REFERENCE
+      ? { prixTTC, ...MODEL_Y_LOA_OFFER, leveeOption: true }
+      : {
+          prixTTC,
+          premierLoyerMajore: prixTTC * 0.2,
+          loyerMensuel: Math.round(prixTTC * 0.018 * 100) / 100,
+          dureeMois: 48,
+          valeurOptionAchat: Math.round(prixTTC * 0.35 * 100) / 100,
+          leveeOption: true,
+        };
+
   return {
     comptant: { prixTTC, dureeDetentionMois: 60, tauxOpportunite: 0.03 },
     credit: { prixTTC, apport: prixTTC * 0.1, tauxAnnuel: 0.04, dureeMois: 60 },
-    loa: {
-      prixTTC,
-      premierLoyerMajore: prixTTC * 0.2,
-      loyerMensuel: Math.round((prixTTC * 0.018) * 100) / 100,
-      dureeMois: 48,
-      valeurOptionAchat: Math.round(prixTTC * 0.35 * 100) / 100,
-      leveeOption: true,
-    },
+    loa,
     lld: {
       premierLoyer: 0,
       loyerMensuel: Math.round((prixTTC * 0.022) * 100) / 100,
