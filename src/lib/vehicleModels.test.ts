@@ -37,11 +37,29 @@ describe("vehicleModels", () => {
     });
   });
 
-  it("les autres modèles n'ont pas d'offre LOA constructeur codée en dur", () => {
-    for (const m of VEHICLE_MODELS) {
-      if (m.id !== "tesla-model-y-berlin") {
-        expect(m.defaultLoaOffer).toBeUndefined();
-      }
-    }
+  it("le Tesla Model 3 porte l'offre LOA constructeur constatée (279€/mois, 36 mois)", () => {
+    const model3 = getVehicleModel("tesla-model-3");
+    expect(model3?.defaultPrice).toBe(42990);
+    expect(model3?.defaultLoaOffer).toEqual({
+      premierLoyerMajore: 8250,
+      loyerMensuel: 279,
+      dureeMois: 36,
+      valeurOptionAchat: 16745,
+    });
+  });
+
+  it("Megane E-Tech et Scenic E-Tech ont un prix de référence mais pas d'offre LOA constructeur codée en dur (donnée non trouvée de façon fiable)", () => {
+    const megane = getVehicleModel("renault-megane-e-tech");
+    const scenic = getVehicleModel("renault-scenic-e-tech");
+    expect(megane?.defaultPrice).toBe(37500);
+    expect(megane?.defaultLoaOffer).toBeUndefined();
+    expect(scenic?.defaultPrice).toBe(40490);
+    expect(scenic?.defaultLoaOffer).toBeUndefined();
+  });
+
+  it("le modèle « autre » n'a ni prix ni offre LOA de référence", () => {
+    const autre = getVehicleModel("autre");
+    expect(autre?.defaultPrice).toBeUndefined();
+    expect(autre?.defaultLoaOffer).toBeUndefined();
   });
 });

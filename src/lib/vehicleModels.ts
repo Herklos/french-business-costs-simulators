@@ -43,24 +43,36 @@ export const VEHICLE_MODELS: VehicleModel[] = [
   },
   {
     id: "tesla-model-3",
-    label: "Tesla Model 3",
+    label: "Tesla Model 3 Propulsion",
     isElectric: true,
     ecoScoreEligible: false,
     notes: "Majoritairement non éligible (production hors UE pour une grande partie des versions commercialisées en France).",
+    defaultPrice: 42990, // version Propulsion, prix constaté 2026
+    defaultLoaOffer: {
+      // Offre LOA Tesla constatée 2026 (Model 3 Propulsion, 36 mois / 10 000 km/an).
+      premierLoyerMajore: 8250,
+      loyerMensuel: 279,
+      dureeMois: 36,
+      valeurOptionAchat: 16745,
+    },
   },
   {
     id: "renault-megane-e-tech",
     label: "Renault Megane E-Tech Electric",
     isElectric: true,
     ecoScoreEligible: true,
-    notes: "Assemblée en France (Douai) — listée parmi les véhicules éligibles à l'éco-score ADEME.",
+    notes:
+      "Assemblée en France (Douai) — listée parmi les véhicules éligibles à l'éco-score ADEME. Prix catalogue constaté 2026 (finition Techno, restylée) ; pas d'offre LOA constructeur au format complet (1er loyer/mensualité/durée/option d'achat) trouvée de façon fiable — l'estimation générique (% du prix) s'applique pour la LOA/LLD/crédit.",
+    defaultPrice: 37500,
   },
   {
     id: "renault-scenic-e-tech",
     label: "Renault Scenic E-Tech Electric",
     isElectric: true,
     ecoScoreEligible: true,
-    notes: "Assemblé en France (Douai) — listé parmi les véhicules éligibles à l'éco-score ADEME.",
+    notes:
+      "Assemblé en France (Douai) — listé parmi les véhicules éligibles à l'éco-score ADEME. Prix catalogue constaté 2026 (finition Equilibre, 60 kWh) ; pas d'offre LOA constructeur au format complet trouvée de façon fiable — l'estimation générique (% du prix) s'applique pour la LOA/LLD/crédit.",
+    defaultPrice: 40490,
   },
   {
     id: "autre",

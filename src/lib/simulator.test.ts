@@ -192,13 +192,27 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     expect(next.financing.loa.leveeOption).toBe(true);
   });
 
-  it("un modèle sans offre connue (Tesla Model 3) ne modifie que motorisation/éco-score, pas le prix ni le financement", () => {
+  it("réapplique le prix et l'offre LOA réelle du Tesla Model 3", () => {
     const base = { ...createDefaultInputs(), vehiclePrice: 38000 };
     const next = applyVehicleModel(base, "tesla-model-3");
 
-    expect(next.vehiclePrice).toBe(38000);
+    expect(next.vehiclePrice).toBe(42990);
     expect(next.isEcoScoreEligible).toBe(false);
-    expect(next.financing.loa).toEqual(base.financing.loa);
+    expect(next.financing.loa.premierLoyerMajore).toBe(8250);
+    expect(next.financing.loa.loyerMensuel).toBe(279);
+    expect(next.financing.loa.dureeMois).toBe(36);
+    expect(next.financing.loa.valeurOptionAchat).toBe(16745);
+  });
+
+  it("un modèle avec seulement un prix de référence (Renault Megane E-Tech) met à jour le prix mais garde l'estimation générique pour la LOA", () => {
+    const base = { ...createDefaultInputs(), vehiclePrice: 38000 };
+    const next = applyVehicleModel(base, "renault-megane-e-tech");
+
+    expect(next.vehiclePrice).toBe(37500);
+    expect(next.isEcoScoreEligible).toBe(true);
+    // Pas d'offre LOA constructeur codée en dur pour ce modèle : l'estimation générique (%
+    // du nouveau prix) s'applique, cohérente avec createDefaultFinancingInputs.
+    expect(next.financing.loa.premierLoyerMajore).toBeCloseTo(37500 * 0.2, 6);
   });
 
   it("le modèle « autre » ne touche ni motorisation/éco-score, ni prix/financement", () => {
