@@ -8,12 +8,13 @@ import {
   computeRemuneration,
   createDefaultRemunerationInputs,
 } from "../lib/remuneration";
-import { getCompanyType, getCompanyTypes } from "../lib/companyTypes";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { CompanyTypeFields } from "../components/CompanyTypeFields";
+import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation rémunération, destiné à être copié dans le presse-papier. */
@@ -67,33 +68,9 @@ export function RemunerationSimulatorPage() {
     setInputs((prev) => ({ ...prev, [key]: value }));
   }
 
-  function updatePersonalTax<K extends keyof RemunerationInputs["personalTaxProfile"]>(
-    key: K,
-    value: RemunerationInputs["personalTaxProfile"][K],
-  ) {
-    setInputs((prev) => ({ ...prev, personalTaxProfile: { ...prev.personalTaxProfile, [key]: value } }));
-  }
-
-  function handleSituationFamilialeChange(situationFamiliale: "seul" | "couple") {
-    setInputs((prev) => ({
-      ...prev,
-      personalTaxProfile: {
-        ...prev.personalTaxProfile,
-        situationFamiliale,
-        conjointSalaireNetImposableAnnuel:
-          situationFamiliale === "couple" && prev.personalTaxProfile.conjointSalaireNetImposableAnnuel === 0
-            ? prev.personalTaxProfile.salaireNetImposableAnnuel
-            : prev.personalTaxProfile.conjointSalaireNetImposableAnnuel,
-      },
-    }));
-  }
-
   function handleCompanyTypeChange(code: string) {
     setInputs((prev) => ({ ...prev, companyType: code, gerantMajoritaire: true }));
   }
-
-  const companyTypes = getCompanyTypes(inputs.country);
-  const companyTypeConfig = getCompanyType(inputs.country, inputs.companyType);
 
   return (
     <div className="page">
@@ -112,53 +89,24 @@ export function RemunerationSimulatorPage() {
       <div className="layout">
         <div className="layout__form">
           <Section title="Forme juridique & statut du dirigeant">
-            <div className="grid grid--3">
-              <Field label="Forme juridique">
-                <select value={inputs.companyType} onChange={(e) => handleCompanyTypeChange(e.target.value)}>
-                  {companyTypes.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Régime d'imposition de la société">
-                <select
-                  value={inputs.impositionSociete}
-                  onChange={(e) => update("impositionSociete", e.target.value as RemunerationInputs["impositionSociete"])}
-                >
-                  {(companyTypeConfig?.impositionOptions ?? ["IS", "IR"]).map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt === "IS" ? "Impôt sur les sociétés (IS)" : "Impôt sur le revenu (IR, société translucide)"}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              {companyTypeConfig?.hasGerantMajoriteOption && (
-                <Field label="Le gérant est-il majoritaire ?">
-                  <select
-                    value={inputs.gerantMajoritaire ? "oui" : "non"}
-                    onChange={(e) => update("gerantMajoritaire", e.target.value === "oui")}
-                  >
-                    <option value="oui">Oui — gérant majoritaire (statut TNS)</option>
-                    <option value="non">Non — minoritaire/égalitaire (assimilé salarié)</option>
-                  </select>
-                </Field>
+            <CompanyTypeFields
+              country={inputs.country}
+              companyType={inputs.companyType}
+              gerantMajoritaire={inputs.gerantMajoritaire}
+              impositionSociete={inputs.impositionSociete}
+              onCountryChange={(country) => update("country", country)}
+              onCompanyTypeChange={handleCompanyTypeChange}
+              onGerantMajoritaireChange={(v) => update("gerantMajoritaire", v)}
+              onImpositionChange={(v) => update("impositionSociete", v)}
+            >
+              {inputs.impositionSociete === "IR" && (
+                <p className="warning-block">
+                  Régime IR (société translucide) : le bénéfice est déjà taxé au barème IR du foyer quelle que soit
+                  son affectation. La distinction salaire/dividendes est nettement moins pertinente dans ce régime
+                  (pas d'IS, pas de PFU) — les résultats restent indicatifs.
+                </p>
               )}
-            </div>
-            <p className="hint-block">
-              Statut retenu :{" "}
-              <strong>{results.dirigeantStatus === "TNS" ? "Travailleur Non Salarié (TNS)" : "Assimilé salarié"}</strong>
-              {" — "}
-              {companyTypeConfig?.description}
-            </p>
-            {inputs.impositionSociete === "IR" && (
-              <p className="warning-block">
-                Régime IR (société translucide) : le bénéfice est déjà taxé au barème IR du foyer quelle que soit son
-                affectation. La distinction salaire/dividendes est nettement moins pertinente dans ce régime (pas
-                d'IS, pas de PFU) — les résultats restent indicatifs.
-              </p>
-            )}
+            </CompanyTypeFields>
           </Section>
 
           <Section
@@ -292,61 +240,12 @@ export function RemunerationSimulatorPage() {
           </Section>
 
           <Section title="Revenu de référence du foyer fiscal" subtitle="Utilisé pour calculer le taux marginal d'imposition (TMI) réel appliqué au salaire et aux dividendes soumis au barème.">
-            <Field label="Mode">
-              <select
-                value={inputs.personalTaxProfile.mode}
-                onChange={(e) => updatePersonalTax("mode", e.target.value as "manuel" | "calcule")}
-              >
-                <option value="calcule">Calculer le TMI à partir de ma situation</option>
-                <option value="manuel">Saisir un taux manuel</option>
-              </select>
-            </Field>
-            {inputs.personalTaxProfile.mode === "manuel" ? (
-              <Field label="Taux marginal d'imposition manuel">
-                <ResetableNumberInput
-                  step="0.01"
-                  value={inputs.personalTaxProfile.tauxManuel}
-                  defaultValue={0.3}
-                  formatDefault={(v) => `${Math.round(v * 100)}%`}
-                  onChange={(v) => updatePersonalTax("tauxManuel", v)}
-                />
-              </Field>
-            ) : (
-              <>
-                <div className="grid grid--3">
-                  <Field label="Situation familiale">
-                    <select
-                      value={inputs.personalTaxProfile.situationFamiliale}
-                      onChange={(e) => handleSituationFamilialeChange(e.target.value as "seul" | "couple")}
-                    >
-                      <option value="seul">Célibataire / divorcé(e) / veuf(ve)</option>
-                      <option value="couple">Marié(e) / pacsé(e)</option>
-                    </select>
-                  </Field>
-                  <Field label="Nombre d'enfants à charge">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.nombreEnfants}
-                      onChange={(e) => updatePersonalTax("nombreEnfants", Number(e.target.value))}
-                    />
-                  </Field>
-                  <Field label="Autres revenus imposables du foyer (€/an, hors rémunération/dividendes simulés)">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.autresRevenusImposablesFoyer}
-                      onChange={(e) => updatePersonalTax("autresRevenusImposablesFoyer", Number(e.target.value))}
-                    />
-                  </Field>
-                </div>
-                {inputs.personalTaxProfile.situationFamiliale === "couple" && (
-                  <Field label="Salaire net imposable annuel du conjoint (€)">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.conjointSalaireNetImposableAnnuel}
-                      onChange={(e) => updatePersonalTax("conjointSalaireNetImposableAnnuel", Number(e.target.value))}
-                    />
-                  </Field>
-                )}
-              </>
-            )}
-            <RuleNote ruleId="ir-bareme-2026" />
+            <PersonalTaxProfileFields
+              profile={inputs.personalTaxProfile}
+              onChange={(profile) => update("personalTaxProfile", profile)}
+              showSalaireDirigeant={false}
+              footerAlways={<RuleNote ruleId="ir-bareme-2026" />}
+            />
           </Section>
 
           <Field label="Nom de la simulation">

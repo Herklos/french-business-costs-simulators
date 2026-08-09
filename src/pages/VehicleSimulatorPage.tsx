@@ -8,8 +8,7 @@ import {
   computeSimulation,
   createDefaultInputs,
 } from "../lib/simulator";
-import { COUNTRIES } from "../lib/countries";
-import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/companyTypes";
+import { getCompanyType, resolveDirigeantStatus } from "../lib/companyTypes";
 import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMode } from "../lib/financing";
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
 import { VEHICLE_MODELS, getVehicleModel } from "../lib/vehicleModels";
@@ -18,6 +17,8 @@ import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { CompanyTypeFields } from "../components/CompanyTypeFields";
+import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { formatEUR, formatPercent } from "../lib/format";
 
 const FINANCING_LABELS: Record<FinancingMode, string> = {
@@ -118,7 +119,6 @@ export function VehicleSimulatorPage() {
   }
 
   const results = useMemo(() => computeSimulation(inputs), [inputs]);
-  const companyTypes = getCompanyTypes(inputs.country);
   const companyTypeConfig = getCompanyType(inputs.country, inputs.companyType);
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
   const defaultCotisationRate = companyTypeConfig?.defaultCotisationRate ?? DEFAULT_TNS_RATE;
@@ -127,28 +127,6 @@ export function VehicleSimulatorPage() {
 
   function update<K extends keyof SimulationInputs>(key: K, value: SimulationInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));
-  }
-
-  function updatePersonalTax<K extends keyof SimulationInputs["personalTaxProfile"]>(
-    key: K,
-    value: SimulationInputs["personalTaxProfile"][K],
-  ) {
-    setInputs((prev) => ({ ...prev, personalTaxProfile: { ...prev.personalTaxProfile, [key]: value } }));
-  }
-
-  function handleSituationFamilialeChange(situationFamiliale: "seul" | "couple") {
-    setInputs((prev) => ({
-      ...prev,
-      personalTaxProfile: {
-        ...prev.personalTaxProfile,
-        situationFamiliale,
-        // Par défaut, on suppose un conjoint au même salaire que le dirigeant (modifiable ensuite).
-        conjointSalaireNetImposableAnnuel:
-          situationFamiliale === "couple" && prev.personalTaxProfile.conjointSalaireNetImposableAnnuel === 0
-            ? prev.personalTaxProfile.salaireNetImposableAnnuel
-            : prev.personalTaxProfile.conjointSalaireNetImposableAnnuel,
-      },
-    }));
   }
 
   function updateFinancing<M extends FinancingMode>(
@@ -225,56 +203,19 @@ export function VehicleSimulatorPage() {
       <div className="layout">
         <div className="layout__form">
           <Section title="Juridiction & structure" subtitle="Détermine le statut du dirigeant et le régime applicable.">
-            <div className="grid grid--3">
-              <Field label="Pays">
-                <select value={inputs.country} onChange={(e) => handleCountryChange(e.target.value)}>
-                  {COUNTRIES.map((c) => (
-                    <option key={c.code} value={c.code} disabled={!c.available}>
-                      {c.flag} {c.label} {!c.available ? "(bientôt disponible)" : ""}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Forme juridique">
-                <select value={inputs.companyType} onChange={(e) => handleCompanyTypeChange(e.target.value)}>
-                  {companyTypes.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Régime d'imposition de la société">
-                <select
-                  value={inputs.impositionSociete}
-                  onChange={(e) => update("impositionSociete", e.target.value as SimulationInputs["impositionSociete"])}
-                >
-                  {(companyTypeConfig?.impositionOptions ?? ["IS", "IR"]).map((opt) => (
-                    <option key={opt} value={opt}>
-                      {opt === "IS" ? "Impôt sur les sociétés (IS)" : "Impôt sur le revenu (IR, société translucide)"}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-            </div>
-            {companyTypeConfig?.hasGerantMajoriteOption && (
-              <Field label="Le gérant est-il majoritaire ?">
-                <select
-                  value={inputs.gerantMajoritaire ? "oui" : "non"}
-                  onChange={(e) => update("gerantMajoritaire", e.target.value === "oui")}
-                >
-                  <option value="oui">Oui — gérant majoritaire (statut TNS)</option>
-                  <option value="non">Non — minoritaire/égalitaire (assimilé salarié)</option>
-                </select>
-              </Field>
-            )}
-            <p className="hint-block">
-              Statut retenu : <strong>{dirigeantStatus === "TNS" ? "Travailleur Non Salarié (TNS)" : "Assimilé salarié"}</strong>
-              {" — "}
-              {companyTypeConfig?.description}
-            </p>
-            <RuleNote ruleId="aen-methode-reelle-obligatoire-tns" />
-            {dirigeantStatus === "ASSIMILE_SALARIE" && <RuleNote ruleId="aen-forfaitaire-assimile-salarie" />}
+            <CompanyTypeFields
+              country={inputs.country}
+              companyType={inputs.companyType}
+              gerantMajoritaire={inputs.gerantMajoritaire}
+              impositionSociete={inputs.impositionSociete}
+              onCountryChange={handleCountryChange}
+              onCompanyTypeChange={handleCompanyTypeChange}
+              onGerantMajoritaireChange={(v) => update("gerantMajoritaire", v)}
+              onImpositionChange={(v) => update("impositionSociete", v)}
+            >
+              <RuleNote ruleId="aen-methode-reelle-obligatoire-tns" />
+              {dirigeantStatus === "ASSIMILE_SALARIE" && <RuleNote ruleId="aen-forfaitaire-assimile-salarie" />}
+            </CompanyTypeFields>
           </Section>
 
           <Section title="Véhicule">
@@ -481,98 +422,46 @@ export function VehicleSimulatorPage() {
             title="Situation personnelle du dirigeant (et du foyer)"
             subtitle="Permet de calculer précisément le taux marginal d'imposition (TMI) appliqué à l'avantage en nature."
           >
-            <Field label="Mode">
-              <select
-                value={inputs.personalTaxProfile.mode}
-                onChange={(e) => updatePersonalTax("mode", e.target.value as "manuel" | "calcule")}
-              >
-                <option value="calcule">Calculer le TMI à partir de ma situation</option>
-                <option value="manuel">Saisir un taux manuel</option>
-              </select>
-            </Field>
-            {inputs.personalTaxProfile.mode === "manuel" ? (
-              <Field label="Taux marginal d'imposition manuel">
-                <ResetableNumberInput
-                  step="0.01"
-                  value={inputs.personalTaxProfile.tauxManuel}
-                  defaultValue={0.3}
-                  formatDefault={(v) => formatPercent(v)}
-                  onChange={(v) => updatePersonalTax("tauxManuel", v)}
-                />
-              </Field>
-            ) : (
-              <>
-                <div className="grid grid--3">
-                  <Field label="Situation familiale">
-                    <select
-                      value={inputs.personalTaxProfile.situationFamiliale}
-                      onChange={(e) => handleSituationFamilialeChange(e.target.value as "seul" | "couple")}
-                    >
-                      <option value="seul">Célibataire / divorcé(e) / veuf(ve)</option>
-                      <option value="couple">Marié(e) / pacsé(e)</option>
-                    </select>
-                  </Field>
-                  <Field label="Nombre d'enfants à charge">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.nombreEnfants}
-                      onChange={(e) => updatePersonalTax("nombreEnfants", Number(e.target.value))}
-                    />
-                  </Field>
-                  <Field label="Salaire net imposable annuel du dirigeant (€)">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.salaireNetImposableAnnuel}
-                      onChange={(e) => updatePersonalTax("salaireNetImposableAnnuel", Number(e.target.value))}
-                    />
-                  </Field>
-                </div>
-                {inputs.personalTaxProfile.situationFamiliale === "couple" && (
-                  <Field label="Salaire net imposable annuel du conjoint (€)">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.conjointSalaireNetImposableAnnuel}
-                      onChange={(e) => updatePersonalTax("conjointSalaireNetImposableAnnuel", Number(e.target.value))}
-                    />
-                  </Field>
-                )}
-                <Field label="Autres revenus imposables du foyer (€/an) — fonciers, dividendes, etc.">
-                  <NumberInput
-                    value={inputs.personalTaxProfile.autresRevenusImposablesFoyer}
-                    onChange={(e) => updatePersonalTax("autresRevenusImposablesFoyer", Number(e.target.value))}
-                  />
-                </Field>
-                <p className="hint-block">
-                  Parts fiscales : <strong>{results.partsFiscales}</strong> · Quotient familial (revenu ÷ parts) :{" "}
-                  <strong>{formatEUR(results.quotientFamilial)}</strong> · TMI de la tranche :{" "}
-                  <strong>{formatPercent(results.tmiCalcule)}</strong> · Impôt du foyer après décote :{" "}
-                  <strong>{formatEUR(results.impotFoyerApresDecote)}</strong>
-                  {results.dansZoneDecote && (
-                    <>
-                      {" "}
-                      · Taux marginal effectif retenu (zone de décote) :{" "}
-                      <strong>{formatPercent(results.tauxMarginalEffectif)}</strong>
-                    </>
-                  )}
-                </p>
-                <p className="field__hint">
-                  Le barème est une fonction en escalier : le taux marginal ne change que si le quotient familial
-                  franchit une borne de tranche (
-                  {IR_BAREME_2026.slice(0, -1)
-                    .map((b) => formatEUR(b.upTo ?? 0))
-                    .join(" · ")}
-                  ). Un enfant de plus fait baisser le quotient mais pas forcément le taux, tant qu'il reste dans la
-                  même tranche.
-                </p>
-                {inputs.impositionSociete === "IR" && (
-                  <p className="field__hint">
-                    Régime IR (société translucide) : le bénéfice prévisionnel de la société (
-                    {formatEUR(inputs.beneficeAvantChargePrevisionnel)}) est ajouté au revenu imposable du foyer
-                    ci-dessus pour déterminer le TMI réel.
+            <PersonalTaxProfileFields
+              profile={inputs.personalTaxProfile}
+              onChange={(profile) => update("personalTaxProfile", profile)}
+              footerWhenCalcule={
+                <>
+                  <p className="hint-block">
+                    Parts fiscales : <strong>{results.partsFiscales}</strong> · Quotient familial (revenu ÷ parts) :{" "}
+                    <strong>{formatEUR(results.quotientFamilial)}</strong> · TMI de la tranche :{" "}
+                    <strong>{formatPercent(results.tmiCalcule)}</strong> · Impôt du foyer après décote :{" "}
+                    <strong>{formatEUR(results.impotFoyerApresDecote)}</strong>
+                    {results.dansZoneDecote && (
+                      <>
+                        {" "}
+                        · Taux marginal effectif retenu (zone de décote) :{" "}
+                        <strong>{formatPercent(results.tauxMarginalEffectif)}</strong>
+                      </>
+                    )}
                   </p>
-                )}
-                <RuleNote ruleId="ir-bareme-2026" />
-                <RuleNote ruleId="ir-abattement-10-salaires" />
-                <RuleNote ruleId="ir-decote" />
-              </>
-            )}
+                  <p className="field__hint">
+                    Le barème est une fonction en escalier : le taux marginal ne change que si le quotient familial
+                    franchit une borne de tranche (
+                    {IR_BAREME_2026.slice(0, -1)
+                      .map((b) => formatEUR(b.upTo ?? 0))
+                      .join(" · ")}
+                    ). Un enfant de plus fait baisser le quotient mais pas forcément le taux, tant qu'il reste dans la
+                    même tranche.
+                  </p>
+                  {inputs.impositionSociete === "IR" && (
+                    <p className="field__hint">
+                      Régime IR (société translucide) : le bénéfice prévisionnel de la société (
+                      {formatEUR(inputs.beneficeAvantChargePrevisionnel)}) est ajouté au revenu imposable du foyer
+                      ci-dessus pour déterminer le TMI réel.
+                    </p>
+                  )}
+                  <RuleNote ruleId="ir-bareme-2026" />
+                  <RuleNote ruleId="ir-abattement-10-salaires" />
+                  <RuleNote ruleId="ir-decote" />
+                </>
+              }
+            />
           </Section>
 
           <Section title="Optimisations">

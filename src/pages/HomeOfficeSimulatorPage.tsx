@@ -10,6 +10,7 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { formatEUR, formatPercent } from "../lib/format";
 
 const SURFACE_TOLERANCE = 0.3;
@@ -64,28 +65,6 @@ export function HomeOfficeSimulatorPage() {
     setInputs((prev) => ({
       ...prev,
       chargeLines: prev.chargeLines.map((c) => (c.id === id ? { ...c, ...patch } : c)),
-    }));
-  }
-
-  function updatePersonalTax<K extends keyof HomeOfficeInputs["personalTaxProfile"]>(
-    key: K,
-    value: HomeOfficeInputs["personalTaxProfile"][K],
-  ) {
-    setInputs((prev) => ({ ...prev, personalTaxProfile: { ...prev.personalTaxProfile, [key]: value } }));
-  }
-
-  function handleSituationFamilialeChange(situationFamiliale: "seul" | "couple") {
-    setInputs((prev) => ({
-      ...prev,
-      personalTaxProfile: {
-        ...prev.personalTaxProfile,
-        situationFamiliale,
-        // Par défaut, on suppose un conjoint au même salaire que le dirigeant (modifiable ensuite).
-        conjointSalaireNetImposableAnnuel:
-          situationFamiliale === "couple" && prev.personalTaxProfile.conjointSalaireNetImposableAnnuel === 0
-            ? prev.personalTaxProfile.salaireNetImposableAnnuel
-            : prev.personalTaxProfile.conjointSalaireNetImposableAnnuel,
-      },
     }));
   }
 
@@ -269,67 +248,20 @@ export function HomeOfficeSimulatorPage() {
           </Section>
 
           <Section title="Situation personnelle du dirigeant" subtitle="Utilisée pour calculer le TMI appliqué au revenu foncier.">
-            <Field label="Mode">
-              <select
-                value={inputs.personalTaxProfile.mode}
-                onChange={(e) => updatePersonalTax("mode", e.target.value as "manuel" | "calcule")}
-              >
-                <option value="calcule">Calculer le TMI à partir de ma situation</option>
-                <option value="manuel">Saisir un taux manuel</option>
-              </select>
-            </Field>
-            {inputs.personalTaxProfile.mode === "manuel" ? (
-              <Field label="Taux marginal d'imposition manuel">
-                <ResetableNumberInput
-                  step="0.01"
-                  value={inputs.personalTaxProfile.tauxManuel}
-                  defaultValue={0.3}
-                  formatDefault={(v) => `${Math.round(v * 100)}%`}
-                  onChange={(v) => updatePersonalTax("tauxManuel", v)}
-                />
-              </Field>
-            ) : (
-              <>
-                <div className="grid grid--3">
-                  <Field label="Situation familiale">
-                    <select
-                      value={inputs.personalTaxProfile.situationFamiliale}
-                      onChange={(e) => handleSituationFamilialeChange(e.target.value as "seul" | "couple")}
-                    >
-                      <option value="seul">Célibataire / divorcé(e) / veuf(ve)</option>
-                      <option value="couple">Marié(e) / pacsé(e)</option>
-                    </select>
-                  </Field>
-                  <Field label="Nombre d'enfants à charge">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.nombreEnfants}
-                      onChange={(e) => updatePersonalTax("nombreEnfants", Number(e.target.value))}
-                    />
-                  </Field>
-                  <Field label="Salaire net imposable annuel du dirigeant (€)">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.salaireNetImposableAnnuel}
-                      onChange={(e) => updatePersonalTax("salaireNetImposableAnnuel", Number(e.target.value))}
-                    />
-                  </Field>
-                </div>
-                {inputs.personalTaxProfile.situationFamiliale === "couple" && (
-                  <Field label="Salaire net imposable annuel du conjoint (€)">
-                    <NumberInput
-                      value={inputs.personalTaxProfile.conjointSalaireNetImposableAnnuel}
-                      onChange={(e) => updatePersonalTax("conjointSalaireNetImposableAnnuel", Number(e.target.value))}
-                    />
-                  </Field>
-                )}
-                {inputs.impositionSociete === "IR" && (
+            <PersonalTaxProfileFields
+              profile={inputs.personalTaxProfile}
+              onChange={(profile) => update("personalTaxProfile", profile)}
+              showAutresRevenus={false}
+              footerWhenCalcule={
+                inputs.impositionSociete === "IR" && (
                   <p className="field__hint">
                     Le bénéfice prévisionnel de la société (régime IR, translucide) est ajouté au revenu imposable du
                     foyer pour déterminer le TMI réel.
                   </p>
-                )}
-              </>
-            )}
-            <RuleNote ruleId="ir-bareme-2026" />
+                )
+              }
+              footerAlways={<RuleNote ruleId="ir-bareme-2026" />}
+            />
           </Section>
 
           <Section title="Comparaison — bureau externe">
