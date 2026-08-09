@@ -67,21 +67,25 @@ describe("computeLoa — régression : l'option d'achat ne doit pas gonfler le l
     expect(r.devientProprietaire).toBe(false);
   });
 
-  it("avec levée d'option : le coût total (cash) intègre l'option, mais PAS le loyer annuel moyen (base AEN)", () => {
+  it("avec levée d'option : le coût total (cash) intègre l'option, mais PAS le coût mensuel/annuel récurrent", () => {
     const avecOption = computeLoa({ ...base, leveeOption: true });
     const sansOption = computeLoa({ ...base, leveeOption: false });
 
-    // Le coût total réellement décaissé augmente bien de la valeur de l'option.
+    // Le coût total « patrimonial » sur la durée intègre bien la valeur de l'option si levée.
     expect(avecOption.coutTotal).toBeCloseTo(sansOption.coutTotal + base.valeurOptionAchat, 6);
 
-    // Le loyer annuel moyen (utilisé pour la base légale de l'AEN, méthode réelle véhicule loué à
-    // 30% — BOI-RSA-BASE-30-50-30) ne doit PAS inclure l'option d'achat : c'est un achat de
-    // capital, pas un loyer. Il doit donc rester identique, que l'option soit levée ou non.
+    // Le loyer annuel moyen (base légale de l'AEN, méthode réelle véhicule loué à 30% —
+    // BOI-RSA-BASE-30-50-30) ne doit PAS inclure l'option d'achat : c'est un achat de capital, pas
+    // un loyer. Il doit donc rester identique, que l'option soit levée ou non.
     expect(avecOption.loyerAnnuelMoyen).toBeCloseTo(sansOption.loyerAnnuelMoyen, 6);
     expect(avecOption.loyerAnnuelMoyen).toBeCloseTo((base.premierLoyerMajore + base.loyerMensuel * base.dureeMois) / 4, 6);
 
-    // En revanche coutMensuelEquivalent (coût cash réel) doit bien être plus élevé avec l'option.
-    expect(avecOption.coutMensuelEquivalent).toBeGreaterThan(sansOption.coutMensuelEquivalent);
+    // coutMensuelEquivalent est le coût RÉCURRENT réellement facturé pendant le contrat (loyers
+    // uniquement) : l'option d'achat, versement unique en fin de contrat, ne doit PAS y être
+    // lissée — sinon elle gonflerait artificiellement le coût mensuel affiché pendant la location
+    // très au-dessus du loyer réel. Il doit donc être identique, que l'option soit levée ou non.
+    expect(avecOption.coutMensuelEquivalent).toBeCloseTo(sansOption.coutMensuelEquivalent, 6);
+    expect(avecOption.coutMensuelEquivalent).toBeCloseTo(avecOption.loyerAnnuelMoyen / 12, 6);
     expect(avecOption.devientProprietaire).toBe(true);
   });
 });
@@ -143,19 +147,11 @@ describe("createDefaultFinancingInputs", () => {
     expect(inputs.loa.leveeOption).toBe(true);
   });
 
-  it("reprend l'offre LOA réelle Tesla Model Y au prix de référence (45 000€)", () => {
-    const inputs = createDefaultFinancingInputs(45000);
-    expect(inputs.loa.loyerMensuel).toBe(308);
-    expect(inputs.loa.dureeMois).toBe(36);
-    expect(inputs.loa.premierLoyerMajore).toBe(9320);
-    expect(inputs.loa.valeurOptionAchat).toBe(25804);
-  });
-
-  it("revient à une estimation générique (% du prix) pour un autre prix de véhicule", () => {
+  it("utilise une estimation générique (% du prix) — l'offre LOA réelle d'un modèle est appliquée séparément (cf. applyVehicleModel)", () => {
     const inputs = createDefaultFinancingInputs(60000);
-    expect(inputs.loa.loyerMensuel).not.toBe(308);
     expect(inputs.loa.dureeMois).toBe(48);
     expect(inputs.loa.premierLoyerMajore).toBeCloseTo(60000 * 0.2, 6);
+    expect(inputs.loa.loyerMensuel).toBeCloseTo(60000 * 0.018, 6);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type SimulationInputs, computeSimulation, createDefaultInputs } from "./simulator";
+import { type SimulationInputs, applyVehicleModel, computeSimulation, createDefaultInputs } from "./simulator";
 
 function withFinancingLoa(inputs: SimulationInputs, patch: Partial<SimulationInputs["financing"]["loa"]>): SimulationInputs {
   return { ...inputs, financing: { ...inputs.financing, loa: { ...inputs.financing.loa, ...patch } } };
@@ -53,13 +53,20 @@ describe("computeSimulation — régression LOA : l'option d'achat ne doit pas g
     expect(avecOption.cotisationsTNS).toBeCloseTo(sansOption.cotisationsTNS, 6);
   });
 
-  it("en revanche, le décaissement réel société augmente bien avec l'option levée (coût cash réel)", () => {
+  it("le décaissement récurrent (annuel) reste identique, que l'option soit levée ou non — l'option d'achat est un versement unique, non lissé sur le coût annuel", () => {
     const base: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa" };
     const sansOption = computeSimulation(withFinancingLoa(base, { leveeOption: false }));
     const avecOption = computeSimulation(withFinancingLoa(base, { leveeOption: true }));
 
-    expect(avecOption.companyCashBaseAnnual).toBeGreaterThan(sansOption.companyCashBaseAnnual);
-    expect(avecOption.globalCostSociete).toBeGreaterThan(sansOption.globalCostSociete);
+    expect(avecOption.companyCashBaseAnnual).toBeCloseTo(sansOption.companyCashBaseAnnual, 6);
+    expect(avecOption.globalCostSociete).toBeCloseTo(sansOption.globalCostSociete, 6);
+
+    // L'option d'achat apparaît en revanche, une fois, dans le détail de l'option correspondante
+    // (paiement unique de fin de contrat), sans être comptée dans le coût annuel récurrent.
+    const optionLine = avecOption.allOptions
+      .find((o) => o.owner === "societe" && o.mode === "loa")
+      ?.detail.find((d) => d.label.includes("Option d'achat"));
+    expect(optionLine?.value).toBeCloseTo(base.financing.loa.valeurOptionAchat, 6);
   });
 });
 
@@ -165,5 +172,55 @@ describe("computeSimulation — usage privé 0% et 100%", () => {
     const r = computeSimulation({ ...createDefaultInputs(), privateUsePercent: 100 });
     expect(r.proKmAnnual).toBeCloseTo(0, 6);
     expect(r.ikReimbursement).toBe(0);
+  });
+});
+
+describe("applyVehicleModel — changement de modèle de véhicule", () => {
+  it("réapplique le prix et l'offre LOA réelle d'un modèle qui en dispose (Tesla Model Y)", () => {
+    // Partir d'un état volontairement différent (autre prix, autre LOA) pour vérifier que tout est
+    // bien réécrasé par les valeurs réelles du modèle sélectionné.
+    const base = { ...createDefaultInputs(), vehiclePrice: 30000, isElectric: false };
+    const next = applyVehicleModel(base, "tesla-model-y-berlin");
+
+    expect(next.vehiclePrice).toBe(45000);
+    expect(next.isElectric).toBe(true);
+    expect(next.isEcoScoreEligible).toBe(true);
+    expect(next.financing.loa.premierLoyerMajore).toBe(9320);
+    expect(next.financing.loa.loyerMensuel).toBe(308);
+    expect(next.financing.loa.dureeMois).toBe(36);
+    expect(next.financing.loa.valeurOptionAchat).toBe(25804);
+    expect(next.financing.loa.leveeOption).toBe(true);
+  });
+
+  it("un modèle sans offre connue (Tesla Model 3) ne modifie que motorisation/éco-score, pas le prix ni le financement", () => {
+    const base = { ...createDefaultInputs(), vehiclePrice: 38000 };
+    const next = applyVehicleModel(base, "tesla-model-3");
+
+    expect(next.vehiclePrice).toBe(38000);
+    expect(next.isEcoScoreEligible).toBe(false);
+    expect(next.financing.loa).toEqual(base.financing.loa);
+  });
+
+  it("le modèle « autre » ne touche ni motorisation/éco-score, ni prix/financement", () => {
+    const base = { ...createDefaultInputs(), vehiclePrice: 38000, isElectric: false, isEcoScoreEligible: false };
+    const next = applyVehicleModel(base, "autre");
+
+    expect(next.vehicleModelId).toBe("autre");
+    expect(next.isElectric).toBe(false);
+    expect(next.isEcoScoreEligible).toBe(false);
+    expect(next.vehiclePrice).toBe(38000);
+  });
+
+  it("un identifiant de modèle inconnu ne modifie que l'identifiant stocké", () => {
+    const base = createDefaultInputs();
+    const next = applyVehicleModel(base, "modele-inexistant");
+    expect(next.vehicleModelId).toBe("modele-inexistant");
+    expect(next.vehiclePrice).toBe(base.vehiclePrice);
+  });
+
+  it("createDefaultInputs applique bien l'offre LOA réelle du Model Y par défaut", () => {
+    const inputs = createDefaultInputs();
+    expect(inputs.financing.loa.loyerMensuel).toBe(308);
+    expect(inputs.financing.loa.dureeMois).toBe(36);
   });
 });

@@ -6,12 +6,23 @@
 // assemblés hors Union Européenne dont le score dépend fortement du site de production et de la
 // filière batterie utilisés à un instant donné.
 
+/** Offre LOA constructeur réelle associée à un modèle, réappliquée automatiquement à la sélection du modèle. */
+export interface VehicleLoaOffer {
+  premierLoyerMajore: number;
+  loyerMensuel: number;
+  dureeMois: number;
+  valeurOptionAchat: number;
+  tauxAnnuelIndicatif?: number; // TAEG affiché par le constructeur, déjà intégré dans les loyers (pas de champ dédié en LOA)
+}
+
 export interface VehicleModel {
   id: string;
   label: string;
   isElectric: boolean;
   ecoScoreEligible: boolean;
   notes: string;
+  defaultPrice?: number; // prix TTC de référence, réappliqué à la sélection du modèle
+  defaultLoaOffer?: VehicleLoaOffer; // offre LOA réelle publiée, réappliquée à la sélection du modèle
 }
 
 export const VEHICLE_MODELS: VehicleModel[] = [
@@ -21,6 +32,14 @@ export const VEHICLE_MODELS: VehicleModel[] = [
     isElectric: true,
     ecoScoreEligible: true,
     notes: "Versions assemblées à Berlin généralement éligibles ; vérifier le code TVV précis sur la carte grise.",
+    defaultPrice: 45000,
+    defaultLoaOffer: {
+      premierLoyerMajore: 9320,
+      loyerMensuel: 308,
+      dureeMois: 36,
+      valeurOptionAchat: 25804,
+      tauxAnnuelIndicatif: 0.0099,
+    },
   },
   {
     id: "tesla-model-3",

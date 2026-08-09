@@ -4,6 +4,7 @@ import {
   DEFAULT_CORPORATE_TAX_RATE,
   DEFAULT_IK_RATE,
   DEFAULT_TNS_RATE,
+  applyVehicleModel,
   computeSimulation,
   createDefaultInputs,
 } from "../lib/simulator";
@@ -11,7 +12,7 @@ import { COUNTRIES } from "../lib/countries";
 import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/companyTypes";
 import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMode } from "../lib/financing";
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
-import { VEHICLE_MODELS, getVehicleModel } from "../lib/vehicleModels";
+import { VEHICLE_MODELS } from "../lib/vehicleModels";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
@@ -101,12 +102,9 @@ export function VehicleSimulatorPage() {
   }
 
   function handleVehicleModelChange(modelId: string) {
-    const model = getVehicleModel(modelId);
-    setInputs((prev) => ({
-      ...prev,
-      vehicleModelId: modelId,
-      ...(model && model.id !== "autre" ? { isElectric: model.isElectric, isEcoScoreEligible: model.ecoScoreEligible } : {}),
-    }));
+    // Réapplique motorisation/éco-score et, quand le modèle a une offre LOA constructeur réelle
+    // connue (ex. Tesla Model Y), le prix TTC de référence et le mode d'acquisition du véhicule.
+    setInputs((prev) => applyVehicleModel(prev, modelId));
   }
 
   function toggleExpandedOption(label: string) {

@@ -59,37 +59,22 @@ export interface FinancingInputs {
   lld: LldParams;
 }
 
-// Prix par défaut du véhicule dans le simulateur (Tesla Model Y Propulsion, cf. createDefaultInputs
-// dans simulator.ts). Offre LOA constructeur réelle utilisée comme valeur par défaut pour ce prix :
-// 308 €/mois sur 36 mois, 1er loyer majoré 9 320 €, option d'achat 25 804 €, TAEG fixe 0,99%
-// (déjà intégré dans les loyers ci-dessous — pas de champ TAEG dédié pour la LOA, à la différence
-// du crédit classique). Pour tout autre prix saisi, une estimation générique (% du prix) est
-// utilisée à la place.
-const MODEL_Y_PRIX_REFERENCE = 45000;
-const MODEL_Y_LOA_OFFER = {
-  premierLoyerMajore: 9320,
-  loyerMensuel: 308,
-  dureeMois: 36,
-  valeurOptionAchat: 25804,
-};
-
+// Estimation générique (% du prix TTC) utilisée par défaut pour tout véhicule. Pour les modèles
+// disposant d'une offre LOA constructeur réelle connue (ex. Tesla Model Y — cf. vehicleModels.ts),
+// c'est cette offre réelle qui est appliquée à la sélection du modèle (voir applyVehicleModel dans
+// simulator.ts), en remplacement de l'estimation générique ci-dessous.
 export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
-  const loa =
-    prixTTC === MODEL_Y_PRIX_REFERENCE
-      ? { prixTTC, ...MODEL_Y_LOA_OFFER, leveeOption: true }
-      : {
-          prixTTC,
-          premierLoyerMajore: prixTTC * 0.2,
-          loyerMensuel: Math.round(prixTTC * 0.018 * 100) / 100,
-          dureeMois: 48,
-          valeurOptionAchat: Math.round(prixTTC * 0.35 * 100) / 100,
-          leveeOption: true,
-        };
-
   return {
     comptant: { prixTTC, dureeDetentionMois: 60, tauxOpportunite: 0.03 },
     credit: { prixTTC, apport: prixTTC * 0.1, tauxAnnuel: 0.04, dureeMois: 60 },
-    loa,
+    loa: {
+      prixTTC,
+      premierLoyerMajore: prixTTC * 0.2,
+      loyerMensuel: Math.round(prixTTC * 0.018 * 100) / 100,
+      dureeMois: 48,
+      valeurOptionAchat: Math.round(prixTTC * 0.35 * 100) / 100,
+      leveeOption: true,
+    },
     lld: {
       premierLoyer: 0,
       loyerMensuel: Math.round((prixTTC * 0.022) * 100) / 100,
@@ -161,16 +146,23 @@ export function computeCredit(p: CreditParams): FinancingResult {
 export function computeLoa(p: LoaParams): FinancingResult {
   const totalLoyers = p.loyerMensuel * p.dureeMois;
   const optionAchat = p.leveeOption ? p.valeurOptionAchat : 0;
+  // Coût total "patrimonial" sur la durée, y compris l'option d'achat si levée : sert de référence
+  // pour connaître le montant total engagé, mais NE DOIT PAS être lissé sur la durée du contrat
+  // pour obtenir un coût mensuel/annuel récurrent (cf. coutMensuelEquivalent ci-dessous).
   const coutTotal = p.premierLoyerMajore + totalLoyers + optionAchat;
   const dureeAnnees = p.dureeMois / 12;
-  // Base légale AEN "véhicule loué" : uniquement les loyers (1er loyer majoré + loyers mensuels),
-  // hors option d'achat qui est un versement d'acquisition de capital, pas un loyer.
+  // Coût de LOCATION annuel moyen (1er loyer majoré + loyers mensuels), hors option d'achat : c'est
+  // à la fois la base légale de l'AEN "véhicule loué" (30% du coût de location) ET le coût
+  // récurrent réellement décaissé pendant le contrat. L'option d'achat, si levée, est un versement
+  // UNIQUE d'acquisition de capital en fin de contrat (comparable à un "balloon payment") : la
+  // lisser sur toute la durée du contrat gonflerait artificiellement le coût mensuel affiché
+  // pendant la location, très au-dessus du loyer réellement facturé chaque mois.
   const loyerAnnuelMoyen = dureeAnnees > 0 ? (p.premierLoyerMajore + totalLoyers) / dureeAnnees : 0;
   return {
     mode: "loa",
     label: "LOA (location avec option d'achat)",
     coutTotal,
-    coutMensuelEquivalent: p.dureeMois > 0 ? coutTotal / p.dureeMois : 0,
+    coutMensuelEquivalent: loyerAnnuelMoyen / 12,
     loyerAnnuelMoyen,
     detail: {
       premierLoyerMajore: p.premierLoyerMajore,

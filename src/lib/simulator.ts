@@ -30,6 +30,7 @@ import {
 } from "./financing";
 import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
 import { computeEconomieImpotIS } from "./corporateTax";
+import { getVehicleModel } from "./vehicleModels";
 
 export interface SimulationInputs {
   id: string;
@@ -100,7 +101,7 @@ export function createDefaultInputs(): SimulationInputs {
   const companyTypeConfig = getCompanyType(country, companyType);
   const vehiclePrice = 45000;
 
-  return {
+  const base: SimulationInputs = {
     id: crypto.randomUUID(),
     name: "Nouvelle simulation",
     createdAt: new Date().toISOString(),
@@ -110,7 +111,7 @@ export function createDefaultInputs(): SimulationInputs {
     gerantMajoritaire: true,
     impositionSociete: companyTypeConfig?.defaultImposition ?? "IR",
 
-    vehicleModelId: "tesla-model-y-berlin",
+    vehicleModelId: null,
     vehiclePrice,
     vehicleOverFiveYears: false,
     isElectric: true,
@@ -143,6 +144,35 @@ export function createDefaultInputs(): SimulationInputs {
 
     projectionYears: 5,
   };
+
+  // Applique le modèle par défaut (Tesla Model Y) : reprend son prix de référence et son offre LOA
+  // constructeur réelle plutôt que l'estimation générique définie ci-dessus.
+  return applyVehicleModel(base, "tesla-model-y-berlin");
+}
+
+/**
+ * Applique le modèle de véhicule sélectionné : motorisation/éligibilité éco-score, et — quand le
+ * modèle dispose d'une offre LOA constructeur réelle connue (ex. Tesla Model Y, cf.
+ * vehicleModels.ts) — le prix TTC de référence et les paramètres de financement (« Mode
+ * d'acquisition du véhicule », section LOA) sont eux aussi réappliqués pour rester cohérents avec
+ * l'offre réelle plutôt que de garder une estimation générique ou un prix précédemment saisi.
+ */
+export function applyVehicleModel(inputs: SimulationInputs, modelId: string): SimulationInputs {
+  const model = getVehicleModel(modelId);
+  if (!model) return { ...inputs, vehicleModelId: modelId };
+
+  let next: SimulationInputs = { ...inputs, vehicleModelId: modelId };
+  if (model.id !== "autre") {
+    next = { ...next, isElectric: model.isElectric, isEcoScoreEligible: model.ecoScoreEligible };
+  }
+  if (model.defaultPrice) {
+    const financing = createDefaultFinancingInputs(model.defaultPrice);
+    if (model.defaultLoaOffer) {
+      financing.loa = { prixTTC: model.defaultPrice, ...model.defaultLoaOffer, leveeOption: true };
+    }
+    next = { ...next, vehiclePrice: model.defaultPrice, financing };
+  }
+  return next;
 }
 
 /** Coût global annualisé d'une combinaison {propriétaire, mode de financement} donnée, avec le
@@ -466,6 +496,14 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const allOptions: GlobalOption[] = ALL_FINANCING_MODES.flatMap((mode) => {
     const s = computeSocieteForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise);
     const p = computePersonnelForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise);
+    // Coût de l'option d'achat LOA, si levée : un versement UNIQUE en fin de contrat (achat de
+    // capital), volontairement exclu du coût annuel récurrent ci-dessus (cf. computeLoa) — affiché
+    // séparément pour rester visible sans gonfler artificiellement le coût mensuel/annuel affiché.
+    const optionAchatUnique = mode === "loa" ? (financingResults.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
+    const optionAchatDetail: { label: string; value: number }[] =
+      optionAchatUnique > 0
+        ? [{ label: "Option d'achat LOA en fin de contrat (paiement unique, hors coût annuel ci-dessus)", value: optionAchatUnique }]
+        : [];
     return [
       {
         owner: "societe" as const,
@@ -480,11 +518,12 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "AEN net", value: s.aenNet },
           { label: "Cotisations sociales dirigeant", value: s.cotisationsTNS },
           { label: "IR dirigeant sur l'AEN", value: s.irEstimee },
-          { label: `Financement du véhicule (${FINANCING_LABELS[mode]})`, value: s.financingAnnual },
+          { label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement)`, value: s.financingAnnual },
           { label: "Assurance annuelle", value: inputs.annualInsurance },
           { label: "Entretien annuel", value: inputs.annualMaintenance },
           { label: "Taxes annuelles CO2 + polluants (ex-TVS)", value: s.annualVehicleTax },
-          { label: "= Décaissement réel société (total)", value: s.companyCashBaseAnnual },
+          { label: "= Décaissement réel société (total annuel)", value: s.companyCashBaseAnnual },
+          ...optionAchatDetail,
           { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },
           { label: "Quote-part professionnelle déductible", value: s.quotePartProfessionnelleDeductible },
           { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
@@ -504,9 +543,13 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Km privés/an", value: p.privateKmAnnual },
           { label: "Barème IK effectif (€/km)", value: p.effectiveIkRatePerKm },
           { label: "Remboursement IK perçu par le dirigeant", value: p.ikReimbursement },
-          { label: `Financement du véhicule (${FINANCING_LABELS[mode]}, dirigeant)`, value: p.personalFinancingAnnual },
+          {
+            label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement, dirigeant)`,
+            value: p.personalFinancingAnnual,
+          },
           { label: "Assurance annuelle (dirigeant)", value: inputs.annualInsurance },
           { label: "Entretien annuel (dirigeant)", value: inputs.annualMaintenance },
+          ...optionAchatDetail,
           {
             label: "= Coût brut avant IK (dirigeant)",
             value: p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance,
