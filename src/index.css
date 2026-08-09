@@ -325,6 +325,25 @@ select:focus {
 }
 
 /* Banner */
+.results-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.results-toolbar--top {
+  justify-content: flex-start;
+  margin-bottom: 1rem;
+}
+
+.copy-button {
+  font-weight: 600;
+}
+
+.results-toolbar--top .copy-button {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
 .banner {
   border-radius: var(--radius);
   padding: 1rem 1.25rem;

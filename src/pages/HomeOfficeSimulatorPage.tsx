@@ -9,6 +9,7 @@ import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
+import { CopyButton } from "../components/CopyButton";
 import { formatEUR, formatPercent } from "../lib/format";
 
 const SURFACE_TOLERANCE = 0.3;
@@ -99,6 +100,10 @@ export function HomeOfficeSimulatorPage() {
         professionnel. La société lui verse en contrepartie une indemnité d'occupation, déductible côté société et
         imposable côté dirigeant en tant que revenu foncier.
       </p>
+
+      <div className="results-toolbar results-toolbar--top">
+        <CopyButton getText={() => buildHomeOfficeExportText(inputs)} />
+      </div>
 
       <div className="layout">
         <div className="layout__form">

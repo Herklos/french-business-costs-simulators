@@ -16,6 +16,7 @@ import { VEHICLE_MODELS } from "../lib/vehicleModels";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
+import { CopyButton } from "../components/CopyButton";
 import { formatEUR, formatPercent } from "../lib/format";
 
 const FINANCING_LABELS: Record<FinancingMode, string> = {
@@ -189,6 +190,10 @@ export function VehicleSimulatorPage() {
         combinaisons possibles — propriétaire (société ou dirigeant) × mode de financement (comptant, crédit, LOA,
         LLD) — pour identifier celle qui coûte le moins cher au global.
       </p>
+
+      <div className="results-toolbar results-toolbar--top">
+        <CopyButton getText={() => buildVehicleExportText(inputs)} />
+      </div>
 
       <div className="layout">
         <div className="layout__form">
