@@ -1,16 +1,19 @@
 import { useMemo, useState } from "react";
 import {
   type SimulationInputs,
+  DEFAULT_CORPORATE_TAX_RATE,
+  DEFAULT_IK_RATE,
+  DEFAULT_TNS_RATE,
   computeSimulation,
   createDefaultInputs,
 } from "../lib/simulator";
 import { COUNTRIES } from "../lib/countries";
 import { getCompanyType, getCompanyTypes, resolveDirigeantStatus } from "../lib/companyTypes";
-import { createDefaultFinancingInputs, compareFinancingModes, type FinancingMode } from "../lib/financing";
-import { Field, NumberInput, Section, StatCard } from "../components/Field";
+import { createDefaultFinancingInputs, type FinancingMode } from "../lib/financing";
+import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
-import { formatEUR, formatEURPrecise, formatPercent } from "../lib/format";
+import { formatEUR, formatPercent } from "../lib/format";
 
 const FINANCING_LABELS: Record<FinancingMode, string> = {
   comptant: "Comptant",
@@ -24,10 +27,10 @@ export function VehicleSimulatorPage() {
   const [saveVersion, setSaveVersion] = useState(0);
 
   const results = useMemo(() => computeSimulation(inputs), [inputs]);
-  const financingResults = useMemo(() => compareFinancingModes(inputs.financing), [inputs.financing]);
   const companyTypes = getCompanyTypes(inputs.country);
   const companyTypeConfig = getCompanyType(inputs.country, inputs.companyType);
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
+  const defaultCotisationRate = companyTypeConfig?.defaultCotisationRate ?? DEFAULT_TNS_RATE;
 
   function update<K extends keyof SimulationInputs>(key: K, value: SimulationInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));
@@ -73,20 +76,17 @@ export function VehicleSimulatorPage() {
     }));
   }
 
-  const recoLabel =
-    results.recommandation === "societe"
-      ? "Achat / financement via la société plus avantageux"
-      : results.recommandation === "personnel"
-        ? "Achat personnel + indemnités kilométriques plus avantageux"
-        : "Les deux scénarios sont équivalents";
+  const best = results.bestOption;
+  const currentIsBest = best.owner === "societe" ? inputs.financingMode === best.mode : inputs.personalFinancingMode === best.mode;
 
   return (
     <div className="page">
-      <h2>🚗 Véhicule de société — coût AEN, société, personnel</h2>
+      <h2>🚗 Véhicule de société — quelle est l'option la moins coûteuse au global ?</h2>
       <p className="page__intro">
-        Simulateur pour dirigeant TNS (gérant majoritaire) ou assimilé salarié : calcul de l'avantage en nature par
-        la méthode réelle (obligatoire pour les TNS), comparaison avec un achat personnel indemnisé aux frais
-        kilométriques, et comparaison des modes de financement.
+        Simulateur pour dirigeant TNS (gérant majoritaire) ou assimilé salarié : plutôt que d'opposer société et
+        personnel, l'outil chiffre le <strong>coût total consolidé</strong> (société + dirigeant) de chacune des 8
+        combinaisons possibles — propriétaire (société ou dirigeant) × mode de financement (comptant, crédit, LOA,
+        LLD) — pour identifier celle qui coûte le moins cher au global.
       </p>
 
       <div className="layout">
@@ -148,7 +148,7 @@ export function VehicleSimulatorPage() {
               <Field label="Prix d'achat TTC (€)">
                 <NumberInput value={inputs.vehiclePrice} onChange={(e) => handleVehiclePriceChange(Number(e.target.value))} />
               </Field>
-              <Field label="Âge du véhicule">
+              <Field label="Âge du véhicule (si acheté)">
                 <select
                   value={inputs.vehicleOverFiveYears ? "gt5" : "lte5"}
                   onChange={(e) => update("vehicleOverFiveYears", e.target.value === "gt5")}
@@ -168,6 +168,7 @@ export function VehicleSimulatorPage() {
               </Field>
             </div>
             <RuleNote ruleId="aen-amortissement-taux" />
+            <RuleNote ruleId="aen-vehicule-loue-taux" />
             {inputs.isElectric && (
               <Field label="Véhicule éligible à l'éco-score renforcé (≥ 60 pts, liste ADEME) ?">
                 <select
@@ -219,17 +220,28 @@ export function VehicleSimulatorPage() {
             </div>
           </Section>
 
-          <Section title="Cotisations & fiscalité">
+          <Section
+            title="Cotisations & fiscalité"
+            subtitle="Valeurs par défaut indicatives (2026) — modifiables et réinitialisables en un clic."
+          >
             <div className="grid grid--2">
               <Field label={`Taux de charges sociales sur l'AEN (${dirigeantStatus === "TNS" ? "TNS" : "assimilé salarié"})`}>
-                <NumberInput
+                <ResetableNumberInput
                   step="0.01"
                   value={inputs.tnsContributionRate}
-                  onChange={(e) => update("tnsContributionRate", Number(e.target.value))}
+                  defaultValue={defaultCotisationRate}
+                  formatDefault={(v) => formatPercent(v)}
+                  onChange={(v) => update("tnsContributionRate", v)}
                 />
               </Field>
               <Field label="Taux d'IS (si régime IS)">
-                <NumberInput step="0.01" value={inputs.corporateTaxRate} onChange={(e) => update("corporateTaxRate", Number(e.target.value))} />
+                <ResetableNumberInput
+                  step="0.01"
+                  value={inputs.corporateTaxRate}
+                  defaultValue={DEFAULT_CORPORATE_TAX_RATE}
+                  formatDefault={(v) => formatPercent(v)}
+                  onChange={(v) => update("corporateTaxRate", v)}
+                />
               </Field>
             </div>
             <RuleNote ruleId={dirigeantStatus === "TNS" ? "cotisations-tns-taux-global" : "cotisations-assimile-salarie-taux"} />
@@ -237,7 +249,7 @@ export function VehicleSimulatorPage() {
           </Section>
 
           <Section
-            title="Situation personnelle du dirigeant"
+            title="Situation personnelle du dirigeant (et du foyer)"
             subtitle="Permet de calculer précisément le taux marginal d'imposition (TMI) appliqué à l'avantage en nature."
           >
             <Field label="Mode">
@@ -251,10 +263,12 @@ export function VehicleSimulatorPage() {
             </Field>
             {inputs.personalTaxProfile.mode === "manuel" ? (
               <Field label="Taux marginal d'imposition manuel">
-                <NumberInput
+                <ResetableNumberInput
                   step="0.01"
                   value={inputs.personalTaxProfile.tauxManuel}
-                  onChange={(e) => updatePersonalTax("tauxManuel", Number(e.target.value))}
+                  defaultValue={0.3}
+                  formatDefault={(v) => formatPercent(v)}
+                  onChange={(v) => updatePersonalTax("tauxManuel", v)}
                 />
               </Field>
             ) : (
@@ -277,14 +291,22 @@ export function VehicleSimulatorPage() {
                       onChange={(e) => updatePersonalTax("nombreEnfants", Number(e.target.value))}
                     />
                   </Field>
-                  <Field label="Salaire net imposable annuel du gérant (€)">
+                  <Field label="Salaire net imposable annuel du dirigeant (€)">
                     <NumberInput
                       value={inputs.personalTaxProfile.salaireNetImposableAnnuel}
                       onChange={(e) => updatePersonalTax("salaireNetImposableAnnuel", Number(e.target.value))}
                     />
                   </Field>
                 </div>
-                <Field label="Autres revenus imposables du foyer (€/an)">
+                {inputs.personalTaxProfile.situationFamiliale === "couple" && (
+                  <Field label="Salaire net imposable annuel du conjoint (€)">
+                    <NumberInput
+                      value={inputs.personalTaxProfile.conjointSalaireNetImposableAnnuel}
+                      onChange={(e) => updatePersonalTax("conjointSalaireNetImposableAnnuel", Number(e.target.value))}
+                    />
+                  </Field>
+                )}
+                <Field label="Autres revenus imposables du foyer (€/an) — fonciers, dividendes, etc.">
                   <NumberInput
                     value={inputs.personalTaxProfile.autresRevenusImposablesFoyer}
                     onChange={(e) => updatePersonalTax("autresRevenusImposablesFoyer", Number(e.target.value))}
@@ -310,19 +332,21 @@ export function VehicleSimulatorPage() {
                 />
               </Field>
               <Field label="Barème IK retenu (€/km) — scénario achat personnel">
-                <NumberInput step="0.001" value={inputs.ikRatePerKm} onChange={(e) => update("ikRatePerKm", Number(e.target.value))} />
+                <ResetableNumberInput
+                  step="0.001"
+                  value={inputs.ikRatePerKm}
+                  defaultValue={DEFAULT_IK_RATE}
+                  onChange={(v) => update("ikRatePerKm", v)}
+                />
               </Field>
             </div>
             <RuleNote ruleId="ik-bareme-2026" />
           </Section>
 
-          <Section title="Comparaison — crédit personnel alternatif">
-            <Field label="Mensualité crédit personnel de référence (€/mois)">
-              <NumberInput value={inputs.personalLoanMonthly} onChange={(e) => update("personalLoanMonthly", Number(e.target.value))} />
-            </Field>
-          </Section>
-
-          <Section title="Mode d'acquisition du véhicule" subtitle="Comparaison Comptant / Crédit / LOA / LLD, indépendamment du calcul d'AEN.">
+          <Section
+            title="Mode d'acquisition du véhicule"
+            subtitle="Paramètres communs, utilisés à la fois si la société achète le véhicule et si le dirigeant l'achète à titre personnel."
+          >
             <div className="financing-grid">
               <div className="financing-card">
                 <h4>Comptant</h4>
@@ -456,54 +480,125 @@ export function VehicleSimulatorPage() {
         </div>
 
         <div className="layout__results">
-          <div className={`banner banner--${results.recommandation}`}>
-            <strong>{recoLabel}</strong>
+          <div className="banner banner--societe">
+            <strong>
+              Option la moins coûteuse au global : {best.label} — {formatEUR(best.globalCostAnnual)}/an
+            </strong>
             <span>
-              Différence annuelle : {formatEUR(Math.abs(results.difference))}{" "}
-              {results.difference > 0 ? "en faveur du personnel" : results.difference < 0 ? "en faveur de la société" : ""}
+              Coût consolidé (société + dirigeant), toutes charges, cotisations et économies d'impôt comprises.
             </span>
-            {results.seuilPrivateUsePercent !== null && (
-              <span>
-                Seuil d'usage privé à partir duquel le personnel devient plus intéressant : ~
-                {results.seuilPrivateUsePercent.toFixed(0)}%
-              </span>
+            {!currentIsBest && (
+              <button
+                type="button"
+                className="btn btn--ghost"
+                onClick={() =>
+                  setInputs((prev) => ({
+                    ...prev,
+                    ...(best.owner === "societe" ? { financingMode: best.mode } : { personalFinancingMode: best.mode }),
+                  }))
+                }
+              >
+                Retenir cette option pour le détail ci-dessous
+              </button>
             )}
           </div>
 
-          <div className="stat-grid">
-            <StatCard label="AEN brut" value={formatEUR(results.aenBrut)} />
-            <StatCard label="Abattement électrique" value={formatEUR(results.abattement)} tone={results.abattement > 0 ? "good" : "neutral"} />
-            <StatCard label="AEN net" value={formatEUR(results.aenNet)} />
-            <StatCard label="Cotisations sociales" value={formatEUR(results.cotisationsTNS)} />
-            <StatCard label="IR estimé sur l'AEN" value={formatEUR(results.irEstimee)} sub={`TMI utilisé : ${formatPercent(results.tauxIRUtilise)}`} />
-            <StatCard
-              label="Coût total annuel — gérant (société)"
-              value={formatEUR(results.coutTotalGerantSociete)}
-              tone="bad"
-            />
-            <StatCard label="Coût scénario personnel + IK" value={formatEUR(results.coutScenarioPersonnel)} tone="bad" />
-            <StatCard label="Coût net société (après économie d'impôt)" value={formatEUR(results.coutNetSociete)} />
-          </div>
+          <Section title="Comparaison de toutes les options">
+            <table className="projection-table">
+              <thead>
+                <tr>
+                  <th>Option</th>
+                  <th>Coût global annuel</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {results.allOptions.map((opt, idx) => (
+                  <tr key={opt.label} className={idx === 0 ? "row--selected" : undefined}>
+                    <td>
+                      {idx === 0 && "🏆 "}
+                      {opt.label}
+                    </td>
+                    <td>{formatEUR(opt.globalCostAnnual)}</td>
+                    <td>
+                      {idx > 0 && `+${formatEUR(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual)}`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {results.seuilPrivateUsePercent !== null && (
+              <p className="hint-block">
+                Pour les modes actuellement sélectionnés ci-dessous, le seuil de bascule société ⇄ personnel se situe
+                vers {results.seuilPrivateUsePercent.toFixed(0)}% d'usage privé.
+              </p>
+            )}
+          </Section>
 
-          <Section title="Détail société">
+          <Section
+            title={`Détail — société (${FINANCING_LABELS[inputs.financingMode]})`}
+            subtitle="Mode de financement retenu pour cet affichage détaillé."
+          >
+            <div className="grid grid--2" style={{ marginBottom: "0.75rem" }}>
+              <Field label="Mode de financement (société)">
+                <select value={inputs.financingMode} onChange={(e) => update("financingMode", e.target.value as FinancingMode)}>
+                  {(["comptant", "credit", "loa", "lld"] as FinancingMode[]).map((m) => (
+                    <option key={m} value={m}>
+                      {FINANCING_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="stat-grid">
+              <StatCard label="AEN brut" value={formatEUR(results.aenBrut)} />
+              <StatCard label="Abattement électrique" value={formatEUR(results.abattement)} tone={results.abattement > 0 ? "good" : "neutral"} />
+              <StatCard label="AEN net" value={formatEUR(results.aenNet)} />
+              <StatCard label="Cotisations sociales" value={formatEUR(results.cotisationsTNS)} />
+              <StatCard label="IR estimé sur l'AEN" value={formatEUR(results.irEstimee)} sub={`TMI utilisé : ${formatPercent(results.tauxIRUtilise)}`} />
+              <StatCard label="Coût cash annuel — dirigeant" value={formatEUR(results.coutTotalGerantSociete)} tone="bad" />
+              <StatCard label="Coût net société (après économie d'impôt)" value={formatEUR(results.coutNetSociete)} tone="bad" />
+              <StatCard label="Coût global consolidé" value={formatEUR(results.globalCostSociete)} tone="bad" />
+            </div>
             <ul className="detail-list">
-              <li>Amortissement annuel ({formatPercent(results.amortRate)}) : {formatEUR(results.amortAnnual)}</li>
+              <li>Base réelle retenue pour l'AEN : {formatEUR(results.aenBaseAnnualCosts)}</li>
+              <li>Décaissement réel annuel société (financement + assurance + entretien) : {formatEUR(results.companyCashBaseAnnual)}</li>
               <li>Quote-part professionnelle déductible : {formatEUR(results.quotePartProfessionnelleDeductible)}</li>
               <li>Quote-part privée réintégrée (non déductible) : {formatEUR(results.quotePartPrivéeNonDeductible)}</li>
               <li>Économie d'impôt sur la quote-part pro : {formatEUR(results.economieImpotQuotePartPro)}</li>
             </ul>
           </Section>
 
-          <Section title="Détail scénario personnel + IK">
-            <ul className="detail-list">
-              <li>Km professionnels/an : {results.proKmAnnual.toFixed(0)} km</li>
-              <li>Km privés/an : {results.privateKmAnnual.toFixed(0)} km</li>
-              <li>Remboursement IK perçu : {formatEUR(results.ikReimbursement)}</li>
-              <li>Crédit personnel annuel : {formatEUR(results.personalLoanAnnual)}</li>
-            </ul>
+          <Section
+            title={`Détail — achat personnel + IK (${FINANCING_LABELS[inputs.personalFinancingMode]})`}
+            subtitle="Mode de financement retenu pour cet affichage détaillé."
+          >
+            <div className="grid grid--2" style={{ marginBottom: "0.75rem" }}>
+              <Field label="Mode de financement (personnel)">
+                <select
+                  value={inputs.personalFinancingMode}
+                  onChange={(e) => update("personalFinancingMode", e.target.value as FinancingMode)}
+                >
+                  {(["comptant", "credit", "loa", "lld"] as FinancingMode[]).map((m) => (
+                    <option key={m} value={m}>
+                      {FINANCING_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+            <div className="stat-grid">
+              <StatCard label="Km professionnels/an" value={`${results.proKmAnnual.toFixed(0)} km`} />
+              <StatCard label="Km privés/an" value={`${results.privateKmAnnual.toFixed(0)} km`} />
+              <StatCard label="Remboursement IK perçu" value={formatEUR(results.ikReimbursement)} tone="good" />
+              <StatCard label="Coût financement annuel" value={formatEUR(results.personalFinancingAnnual)} />
+              <StatCard label="Coût net — dirigeant (après IK)" value={formatEUR(results.coutScenarioPersonnel)} tone="bad" />
+              <StatCard label="Économie d'impôt société sur l'IK" value={formatEUR(results.economieImpotIK)} tone="good" />
+              <StatCard label="Coût global consolidé" value={formatEUR(results.globalCostPersonnel)} tone="bad" />
+            </div>
           </Section>
 
-          <Section title="Projection">
+          <Section title="Projection (coût global cumulé)">
             <table className="projection-table">
               <thead>
                 <tr>
@@ -524,38 +619,6 @@ export function VehicleSimulatorPage() {
             </table>
           </Section>
 
-          <Section title="Modes de financement">
-            <table className="projection-table">
-              <thead>
-                <tr>
-                  <th>Mode</th>
-                  <th>Coût total</th>
-                  <th>Équivalent mensuel</th>
-                  <th>Devient propriétaire ?</th>
-                </tr>
-              </thead>
-              <tbody>
-                {financingResults.map((f) => (
-                  <tr key={f.mode} className={f.mode === inputs.financingMode ? "row--selected" : undefined}>
-                    <td>
-                      <button
-                        type="button"
-                        className="link-btn"
-                        onClick={() => update("financingMode", f.mode)}
-                        title="Retenir ce mode de financement"
-                      >
-                        {FINANCING_LABELS[f.mode]}
-                      </button>
-                    </td>
-                    <td>{formatEURPrecise(f.coutTotal)}</td>
-                    <td>{formatEURPrecise(f.coutMensuelEquivalent)}</td>
-                    <td>{f.devientProprietaire ? "Oui" : "Non"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Section>
-
           <Section title="Sauvegarde & comparaison">
             <SavedSimulationsPanel
               kind="vehicle"
@@ -569,9 +632,10 @@ export function VehicleSimulatorPage() {
                 const r = computeSimulation(sim);
                 return [
                   { label: "AEN net", value: formatEUR(r.aenNet) },
-                  { label: "Coût total gérant (société)", value: formatEUR(r.coutTotalGerantSociete) },
-                  { label: "Coût scénario personnel", value: formatEUR(r.coutScenarioPersonnel) },
-                  { label: "Recommandation", value: r.recommandation },
+                  { label: "Meilleure option globale", value: r.bestOption.label },
+                  { label: "Coût de la meilleure option", value: formatEUR(r.bestOption.globalCostAnnual) },
+                  { label: "Coût global société (mode sélectionné)", value: formatEUR(r.globalCostSociete) },
+                  { label: "Coût global personnel (mode sélectionné)", value: formatEUR(r.globalCostPersonnel) },
                 ];
               }}
             />

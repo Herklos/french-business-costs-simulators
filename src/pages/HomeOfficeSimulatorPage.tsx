@@ -4,7 +4,8 @@ import {
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
 } from "../lib/homeOffice";
-import { Field, NumberInput, Section, StatCard } from "../components/Field";
+import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
+import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { formatEUR, formatPercent } from "../lib/format";
@@ -110,7 +111,13 @@ export function HomeOfficeSimulatorPage() {
                 </select>
               </Field>
               <Field label="Taux d'IS (si régime IS)">
-                <NumberInput step="0.01" value={inputs.corporateTaxRate} onChange={(e) => update("corporateTaxRate", Number(e.target.value))} />
+                <ResetableNumberInput
+                  step="0.01"
+                  value={inputs.corporateTaxRate}
+                  defaultValue={DEFAULT_CORPORATE_TAX_RATE}
+                  formatDefault={(v) => `${Math.round(v * 100)}%`}
+                  onChange={(v) => update("corporateTaxRate", v)}
+                />
               </Field>
             </div>
             <RuleNote ruleId="is-taux-normal" />
@@ -128,36 +135,48 @@ export function HomeOfficeSimulatorPage() {
             </Field>
             {inputs.personalTaxProfile.mode === "manuel" ? (
               <Field label="Taux marginal d'imposition manuel">
-                <NumberInput
+                <ResetableNumberInput
                   step="0.01"
                   value={inputs.personalTaxProfile.tauxManuel}
-                  onChange={(e) => updatePersonalTax("tauxManuel", Number(e.target.value))}
+                  defaultValue={0.3}
+                  formatDefault={(v) => `${Math.round(v * 100)}%`}
+                  onChange={(v) => updatePersonalTax("tauxManuel", v)}
                 />
               </Field>
             ) : (
-              <div className="grid grid--3">
-                <Field label="Situation familiale">
-                  <select
-                    value={inputs.personalTaxProfile.situationFamiliale}
-                    onChange={(e) => updatePersonalTax("situationFamiliale", e.target.value as "seul" | "couple")}
-                  >
-                    <option value="seul">Célibataire / divorcé(e) / veuf(ve)</option>
-                    <option value="couple">Marié(e) / pacsé(e)</option>
-                  </select>
-                </Field>
-                <Field label="Nombre d'enfants à charge">
-                  <NumberInput
-                    value={inputs.personalTaxProfile.nombreEnfants}
-                    onChange={(e) => updatePersonalTax("nombreEnfants", Number(e.target.value))}
-                  />
-                </Field>
-                <Field label="Salaire net imposable annuel (€)">
-                  <NumberInput
-                    value={inputs.personalTaxProfile.salaireNetImposableAnnuel}
-                    onChange={(e) => updatePersonalTax("salaireNetImposableAnnuel", Number(e.target.value))}
-                  />
-                </Field>
-              </div>
+              <>
+                <div className="grid grid--3">
+                  <Field label="Situation familiale">
+                    <select
+                      value={inputs.personalTaxProfile.situationFamiliale}
+                      onChange={(e) => updatePersonalTax("situationFamiliale", e.target.value as "seul" | "couple")}
+                    >
+                      <option value="seul">Célibataire / divorcé(e) / veuf(ve)</option>
+                      <option value="couple">Marié(e) / pacsé(e)</option>
+                    </select>
+                  </Field>
+                  <Field label="Nombre d'enfants à charge">
+                    <NumberInput
+                      value={inputs.personalTaxProfile.nombreEnfants}
+                      onChange={(e) => updatePersonalTax("nombreEnfants", Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Salaire net imposable annuel du dirigeant (€)">
+                    <NumberInput
+                      value={inputs.personalTaxProfile.salaireNetImposableAnnuel}
+                      onChange={(e) => updatePersonalTax("salaireNetImposableAnnuel", Number(e.target.value))}
+                    />
+                  </Field>
+                </div>
+                {inputs.personalTaxProfile.situationFamiliale === "couple" && (
+                  <Field label="Salaire net imposable annuel du conjoint (€)">
+                    <NumberInput
+                      value={inputs.personalTaxProfile.conjointSalaireNetImposableAnnuel}
+                      onChange={(e) => updatePersonalTax("conjointSalaireNetImposableAnnuel", Number(e.target.value))}
+                    />
+                  </Field>
+                )}
+              </>
             )}
             <RuleNote ruleId="ir-bareme-2026" />
           </Section>

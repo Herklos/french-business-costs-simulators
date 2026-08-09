@@ -196,6 +196,39 @@ select:focus {
   outline-offset: 1px;
 }
 
+.resetable-field {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.resetable-field input {
+  flex: 1;
+  min-width: 90px;
+}
+
+.resetable-field__reset {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.7rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.resetable-field__reset:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.resetable-field__reset:not(:disabled):hover {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
 .hint-block {
   font-size: 0.85rem;
   color: var(--text-muted);

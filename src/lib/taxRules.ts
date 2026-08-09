@@ -45,6 +45,19 @@ export const TAX_RULES: TaxRule[] = [
     notes: "10 % au-delà de 5 ans de mise en circulation.",
   },
   {
+    id: "aen-vehicule-loue-taux",
+    category: "aen_vehicule",
+    label: "Base AEN pour un véhicule loué (LOA/LLD, méthode réelle)",
+    value: "30 % du (coût global annuel de location + assurance + entretien)",
+    legalReference: "BOI-RSA-BASE-30-50-30, § véhicule loué",
+    sourceLabel: "BOFiP-Impôts",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1512-PGP.html",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Remplace le calcul par amortissement (20 %/10 %) lorsque le véhicule n'est pas acheté par la société : le loyer annuel (LOA ou LLD) se substitue au prix d'achat.",
+  },
+  {
     id: "aen-methode-reelle-obligatoire-tns",
     category: "aen_vehicule",
     label: "Méthode d'évaluation obligatoire pour les gérants majoritaires TNS",

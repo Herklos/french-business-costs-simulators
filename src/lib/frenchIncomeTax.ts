@@ -85,7 +85,8 @@ export interface PersonalTaxProfile {
   situationFamiliale: SituationFamiliale;
   nombreEnfants: number;
   salaireNetImposableAnnuel: number; // salaire du gérant (hors AEN), avant abattement 10%
-  autresRevenusImposablesFoyer: number; // autres revenus du foyer (conjoint, revenus fonciers, etc.), déjà nets imposables
+  conjointSalaireNetImposableAnnuel: number; // salaire du conjoint (si couple), avant abattement 10% — 0 sinon
+  autresRevenusImposablesFoyer: number; // autres revenus du foyer (revenus fonciers, dividendes, etc.), déjà nets imposables
 }
 
 export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
@@ -95,6 +96,7 @@ export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
     situationFamiliale: "seul",
     nombreEnfants: 0,
     salaireNetImposableAnnuel: 30000,
+    conjointSalaireNetImposableAnnuel: 0,
     autresRevenusImposablesFoyer: 0,
   };
 }
@@ -107,7 +109,9 @@ export interface ResolvedTaxProfile extends IRResult {
 export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): ResolvedTaxProfile {
   const parts = computeParts(profile.situationFamiliale, profile.nombreEnfants);
   const salaireApresAbattement = applyAbattement10(profile.salaireNetImposableAnnuel);
-  const revenuImposable = salaireApresAbattement + profile.autresRevenusImposablesFoyer;
+  const conjointApresAbattement =
+    profile.situationFamiliale === "couple" ? applyAbattement10(profile.conjointSalaireNetImposableAnnuel) : 0;
+  const revenuImposable = salaireApresAbattement + conjointApresAbattement + profile.autresRevenusImposablesFoyer;
   const ir = computeIR(revenuImposable, parts);
 
   const tauxUtilise = profile.mode === "manuel" ? profile.tauxManuel : ir.tmi;
