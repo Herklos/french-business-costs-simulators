@@ -25,6 +25,7 @@ const FINANCING_LABELS: Record<FinancingMode, string> = {
 };
 
 type SortCriterion = "global" | "societe" | "personnel";
+type CostPeriod = "annuel" | "mensuel";
 
 const SORT_LABELS: Record<SortCriterion, string> = {
   global: "Coût global (recommandé)",
@@ -32,11 +33,18 @@ const SORT_LABELS: Record<SortCriterion, string> = {
   personnel: "Coût le plus bas côté dirigeant",
 };
 
+const PERIOD_SUFFIX: Record<CostPeriod, string> = { annuel: "/an", mensuel: "/mois" };
+
 export function VehicleSimulatorPage() {
   const [inputs, setInputs] = useState<SimulationInputs>(() => createDefaultInputs());
   const [saveVersion, setSaveVersion] = useState(0);
   const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
+  const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
+
+  function toPeriod(annualValue: number): number {
+    return costPeriod === "mensuel" ? annualValue / 12 : annualValue;
+  }
 
   const results = useMemo(() => computeSimulation(inputs), [inputs]);
   const companyTypes = getCompanyTypes(inputs.country);
@@ -662,7 +670,8 @@ export function VehicleSimulatorPage() {
         <div className="layout__results">
           <div className="banner banner--societe">
             <strong>
-              Option la moins coûteuse au global : {best.label} — {formatEUR(best.globalCostAnnual)}/an
+              Option la moins coûteuse au global : {best.label} — {formatEUR(toPeriod(best.globalCostAnnual))}
+              {PERIOD_SUFFIX[costPeriod]}
             </strong>
             <span>
               Coût consolidé (société + dirigeant), toutes charges, cotisations et économies d'impôt comprises.
@@ -684,20 +693,38 @@ export function VehicleSimulatorPage() {
           </div>
 
           <Section title="Comparaison de toutes les options">
-            <Field label="Trier par">
-              <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value as SortCriterion)}>
-                {(Object.keys(SORT_LABELS) as SortCriterion[]).map((c) => (
-                  <option key={c} value={c}>
-                    {SORT_LABELS[c]}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div className="compare-toolbar">
+              <Field label="Trier par">
+                <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value as SortCriterion)}>
+                  {(Object.keys(SORT_LABELS) as SortCriterion[]).map((c) => (
+                    <option key={c} value={c}>
+                      {SORT_LABELS[c]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="period-switch" role="group" aria-label="Affichage annuel ou mensuel">
+                <button
+                  type="button"
+                  className={costPeriod === "annuel" ? "active" : ""}
+                  onClick={() => setCostPeriod("annuel")}
+                >
+                  Annuel
+                </button>
+                <button
+                  type="button"
+                  className={costPeriod === "mensuel" ? "active" : ""}
+                  onClick={() => setCostPeriod("mensuel")}
+                >
+                  Mensuel
+                </button>
+              </div>
+            </div>
             <table className="projection-table">
               <thead>
                 <tr>
                   <th>Option</th>
-                  <th>Coût global annuel</th>
+                  <th>Coût global {costPeriod === "annuel" ? "annuel" : "mensuel"}</th>
                   <th></th>
                 </tr>
               </thead>
@@ -722,22 +749,29 @@ export function VehicleSimulatorPage() {
                             {isGlobalBest && "🏆 "}
                             {opt.label}
                             <div className="option-breakdown">
-                              dont société {formatEUR(opt.partSociete)} · dont dirigeant {formatEUR(opt.partDirigeant)}
+                              dont société {formatEUR(toPeriod(opt.partSociete))} · dont dirigeant{" "}
+                              {formatEUR(toPeriod(opt.partDirigeant))}
                             </div>
                           </td>
-                          <td>{formatEUR(opt.globalCostAnnual)}</td>
+                          <td>{formatEUR(toPeriod(opt.globalCostAnnual))}</td>
                           <td>
                             {!isGlobalBest &&
-                              `+${formatEUR(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual)}`}
+                              `+${formatEUR(toPeriod(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual))}`}
                           </td>
                         </tr>
                         {isExpanded && (
                           <tr className="option-detail-row">
                             <td colSpan={3}>
+                              <p className="field__hint">Détail du calcul (valeurs annuelles) :</p>
                               <ul className="detail-list">
                                 {opt.detail.map((line) => (
                                   <li key={line.label}>
-                                    {line.label} : {formatEUR(line.value)}
+                                    {line.label} :{" "}
+                                    {line.label.includes("(€/km)")
+                                      ? `${line.value.toFixed(3)} €/km`
+                                      : line.label.includes("Km ")
+                                        ? `${line.value.toFixed(0)} km`
+                                        : formatEUR(line.value)}
                                   </li>
                                 ))}
                               </ul>

@@ -435,6 +435,38 @@ td {
   color: var(--text-muted);
 }
 
+.compare-toolbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.period-switch {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem;
+  gap: 0.15rem;
+}
+
+.period-switch button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
+.period-switch button.active {
+  background: var(--accent);
+  color: white;
+}
+
 .option-row {
   cursor: pointer;
 }
