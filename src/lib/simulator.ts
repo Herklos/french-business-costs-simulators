@@ -194,6 +194,7 @@ export interface SimulationResults {
   fractionFiscalementDeductible: number; // part de l'amortissement/loyer effectivement déductible (0-1)
   reintegrationFiscaleCO2: number; // fraction de l'amortissement/loyer au-delà du plafond, non déductible
   annualVehicleTax: number; // taxes annuelles CO2 + polluants (ex-TVS), 0 si électrique
+  financingAnnual: number; // coût annuel du financement seul (mensualités crédit, loyers LOA/LLD, ou coût comptant/opportunité)
   companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes)
   quotePartProfessionnelleDeductible: number;
   quotePartPrivéeNonDeductible: number;
@@ -230,16 +231,24 @@ function getFinancingAnnual(financingResults: FinancingResult[], mode: Financing
   return found ? found.coutMensuelEquivalent * 12 : 0;
 }
 
+/** Coût de LOCATION annuel moyen (hors option d'achat/valeur résiduelle) — cf. FinancingResult.loyerAnnuelMoyen. */
+function getLoyerAnnuelMoyen(financingResults: FinancingResult[], mode: FinancingMode): number {
+  const found = financingResults.find((f) => f.mode === mode);
+  return found ? found.loyerAnnuelMoyen : 0;
+}
+
 /** Base annuelle réelle retenue pour l'AEN : amortissement si le véhicule est acheté par la société,
- * 30% du coût de location si le véhicule est loué (LOA/LLD) — cf. BOI-RSA-BASE-30-50-30. */
-function computeAenBase(inputs: SimulationInputs, mode: FinancingMode, financingAnnual: number) {
+ * 30% du coût de location si le véhicule est loué (LOA/LLD) — cf. BOI-RSA-BASE-30-50-30.
+ * En LOA, si l'option d'achat est levée, sa valeur n'est PAS un loyer (c'est un versement
+ * d'acquisition de capital) : elle est exclue de cette base, cf. `loyerAnnuelMoyen`. */
+function computeAenBase(inputs: SimulationInputs, mode: FinancingMode, loyerAnnuelMoyen: number) {
   const isOwned = mode === "comptant" || mode === "credit";
   if (isOwned) {
     const amortRate = inputs.vehicleOverFiveYears ? 0.1 : 0.2;
     const amortAnnual = inputs.vehiclePrice * amortRate;
     return { amortRate, amortAnnual, aenBaseAnnualCosts: amortAnnual + inputs.annualInsurance + inputs.annualMaintenance };
   }
-  const aenBaseAnnualCosts = (financingAnnual + inputs.annualInsurance + inputs.annualMaintenance) * 0.3;
+  const aenBaseAnnualCosts = (loyerAnnuelMoyen + inputs.annualInsurance + inputs.annualMaintenance) * 0.3;
   return { amortRate: 0, amortAnnual: 0, aenBaseAnnualCosts };
 }
 
@@ -275,7 +284,8 @@ function computeSocieteForMode(
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
 
   const financingAnnual = getFinancingAnnual(financingResults, mode);
-  const { amortRate, amortAnnual, aenBaseAnnualCosts } = computeAenBase(inputs, mode, financingAnnual);
+  const loyerAnnuelMoyen = getLoyerAnnuelMoyen(financingResults, mode);
+  const { amortRate, amortAnnual, aenBaseAnnualCosts } = computeAenBase(inputs, mode, loyerAnnuelMoyen);
 
   const ratio = Math.min(Math.max(privateUsePercent, 0), 100) / 100;
   const aenBrutFromBase = aenBaseAnnualCosts * ratio;
@@ -301,7 +311,7 @@ function computeSocieteForMode(
   const plafondAmortissementDeductible = getPlafondAmortissementDeductible(inputs.co2EmissionsGkm, inputs.isElectric);
   const fractionFiscalementDeductible =
     inputs.vehiclePrice > 0 ? Math.min(1, plafondAmortissementDeductible / inputs.vehiclePrice) : 1;
-  const composantPlafonnee = mode === "comptant" || mode === "credit" ? amortAnnual : financingAnnual;
+  const composantPlafonnee = mode === "comptant" || mode === "credit" ? amortAnnual : loyerAnnuelMoyen;
   const reintegrationFiscaleCO2 = composantPlafonnee * (1 - fractionFiscalementDeductible);
 
   // Taxes annuelles sur l'affectation des véhicules de tourisme (ex-TVS : composante CO2 + polluants),
@@ -336,6 +346,7 @@ function computeSocieteForMode(
     fractionFiscalementDeductible,
     reintegrationFiscaleCO2,
     annualVehicleTax,
+    financingAnnual,
     companyCashBaseAnnual,
     quotePartProfessionnelleDeductible,
     quotePartPrivéeNonDeductible,
@@ -469,7 +480,11 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "AEN net", value: s.aenNet },
           { label: "Cotisations sociales dirigeant", value: s.cotisationsTNS },
           { label: "IR dirigeant sur l'AEN", value: s.irEstimee },
-          { label: "Décaissement réel société (financement + assurance + entretien + taxes)", value: s.companyCashBaseAnnual },
+          { label: `Financement du véhicule (${FINANCING_LABELS[mode]})`, value: s.financingAnnual },
+          { label: "Assurance annuelle", value: inputs.annualInsurance },
+          { label: "Entretien annuel", value: inputs.annualMaintenance },
+          { label: "Taxes annuelles CO2 + polluants (ex-TVS)", value: s.annualVehicleTax },
+          { label: "= Décaissement réel société (total)", value: s.companyCashBaseAnnual },
           { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },
           { label: "Quote-part professionnelle déductible", value: s.quotePartProfessionnelleDeductible },
           { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
@@ -489,7 +504,13 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Km privés/an", value: p.privateKmAnnual },
           { label: "Barème IK effectif (€/km)", value: p.effectiveIkRatePerKm },
           { label: "Remboursement IK perçu par le dirigeant", value: p.ikReimbursement },
-          { label: "Coût financement + assurance + entretien (dirigeant)", value: p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance },
+          { label: `Financement du véhicule (${FINANCING_LABELS[mode]}, dirigeant)`, value: p.personalFinancingAnnual },
+          { label: "Assurance annuelle (dirigeant)", value: inputs.annualInsurance },
+          { label: "Entretien annuel (dirigeant)", value: inputs.annualMaintenance },
+          {
+            label: "= Coût brut avant IK (dirigeant)",
+            value: p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance,
+          },
           { label: "Coût net dirigeant (après IK)", value: p.coutScenarioPersonnel },
           { label: "Économie d'impôt société sur l'IK versée", value: p.economieImpotIK },
           { label: "Coût net société sur l'IK", value: p.ikReimbursement - p.economieImpotIK },

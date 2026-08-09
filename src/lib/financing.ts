@@ -85,8 +85,13 @@ export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
 export interface FinancingResult {
   mode: FinancingMode;
   label: string;
-  coutTotal: number; // coût total décaissé sur la durée du mode
+  coutTotal: number; // coût total décaissé sur la durée du mode (y compris l'option d'achat si levée)
   coutMensuelEquivalent: number;
+  // Coût de LOCATION annuel moyen, hors option d'achat/valeur résiduelle (qui est un achat de capital,
+  // pas un loyer). Sert de base légale à l'AEN "véhicule loué" (30% du coût de location — cf.
+  // BOI-RSA-BASE-30-50-30), qui ne doit pas être gonflée par un versement ponctuel d'acquisition.
+  // Identique à coutMensuelEquivalent×12 pour le crédit, le comptant et la LLD (pas d'option d'achat).
+  loyerAnnuelMoyen: number;
   detail: Record<string, number>;
   devientProprietaire: boolean;
 }
@@ -104,11 +109,13 @@ export function computeMensualiteCredit(montantEmprunte: number, tauxAnnuel: num
 export function computeComptant(p: ComptantParams): FinancingResult {
   const coutOpportunite = p.prixTTC * p.tauxOpportunite * (p.dureeDetentionMois / 12);
   const coutTotal = p.prixTTC + coutOpportunite;
+  const coutMensuelEquivalent = p.dureeDetentionMois > 0 ? coutTotal / p.dureeDetentionMois : 0;
   return {
     mode: "comptant",
     label: "Achat comptant",
     coutTotal,
-    coutMensuelEquivalent: p.dureeDetentionMois > 0 ? coutTotal / p.dureeDetentionMois : 0,
+    coutMensuelEquivalent,
+    loyerAnnuelMoyen: coutMensuelEquivalent * 12,
     detail: { prixTTC: p.prixTTC, coutOpportunite },
     devientProprietaire: true,
   };
@@ -120,11 +127,13 @@ export function computeCredit(p: CreditParams): FinancingResult {
   const totalMensualites = mensualite * p.dureeMois;
   const coutCredit = totalMensualites - montantEmprunte;
   const coutTotal = p.apport + totalMensualites;
+  const coutMensuelEquivalent = p.dureeMois > 0 ? coutTotal / p.dureeMois : 0;
   return {
     mode: "credit",
     label: "Crédit classique",
     coutTotal,
-    coutMensuelEquivalent: p.dureeMois > 0 ? coutTotal / p.dureeMois : 0,
+    coutMensuelEquivalent,
+    loyerAnnuelMoyen: coutMensuelEquivalent * 12,
     detail: { montantEmprunte, mensualite, totalMensualites, coutCredit, apport: p.apport },
     devientProprietaire: true,
   };
@@ -134,11 +143,16 @@ export function computeLoa(p: LoaParams): FinancingResult {
   const totalLoyers = p.loyerMensuel * p.dureeMois;
   const optionAchat = p.leveeOption ? p.valeurOptionAchat : 0;
   const coutTotal = p.premierLoyerMajore + totalLoyers + optionAchat;
+  const dureeAnnees = p.dureeMois / 12;
+  // Base légale AEN "véhicule loué" : uniquement les loyers (1er loyer majoré + loyers mensuels),
+  // hors option d'achat qui est un versement d'acquisition de capital, pas un loyer.
+  const loyerAnnuelMoyen = dureeAnnees > 0 ? (p.premierLoyerMajore + totalLoyers) / dureeAnnees : 0;
   return {
     mode: "loa",
     label: "LOA (location avec option d'achat)",
     coutTotal,
     coutMensuelEquivalent: p.dureeMois > 0 ? coutTotal / p.dureeMois : 0,
+    loyerAnnuelMoyen,
     detail: {
       premierLoyerMajore: p.premierLoyerMajore,
       totalLoyers,
@@ -156,11 +170,13 @@ export function computeLld(p: LldParams): FinancingResult {
   const kmDepassement = Math.max(0, kmReelTotal - kmInclusTotal);
   const coutDepassement = kmDepassement * p.coutKmSupplementaire;
   const coutTotal = p.premierLoyer + totalLoyers + coutDepassement;
+  const coutMensuelEquivalent = p.dureeMois > 0 ? coutTotal / p.dureeMois : 0;
   return {
     mode: "lld",
     label: "LLD (location longue durée)",
     coutTotal,
-    coutMensuelEquivalent: p.dureeMois > 0 ? coutTotal / p.dureeMois : 0,
+    coutMensuelEquivalent,
+    loyerAnnuelMoyen: coutMensuelEquivalent * 12, // pas d'option d'achat en LLD : identique au coût total annualisé
     detail: { premierLoyer: p.premierLoyer, totalLoyers, kmDepassement, coutDepassement },
     devientProprietaire: false,
   };
