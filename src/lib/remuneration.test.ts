@@ -3,6 +3,8 @@ import {
   type RemunerationInputs,
   PFU_TAUX_GLOBAL,
   SEUIL_DIVIDENDES_TNS_RATIO,
+  TNS_COTISATIONS_REPARTITION,
+  breakdownCotisationsTNS,
   computeRemuneration,
   createDefaultRemunerationInputs,
 } from "./remuneration";
@@ -160,5 +162,73 @@ describe("computeRemuneration — régime IR (société translucide)", () => {
     const petit = computeRemuneration(withCompany("EURL", { impositionSociete: "IR", budgetAnnuelDisponible: 10000 }));
     const grand = computeRemuneration(withCompany("EURL", { impositionSociete: "IR", budgetAnnuelDisponible: 200000 }));
     expect(grand.scenarioDividendes.tauxPrelevementGlobal).toBeGreaterThan(petit.scenarioDividendes.tauxPrelevementGlobal);
+  });
+});
+
+describe("computeRemuneration — rémunération variable / bonus", () => {
+  it("sans bonus, le coût total entreprise reste égal au budget disponible", () => {
+    const r = computeRemuneration(withCompany("EURL", { budgetAnnuelDisponible: 60000, bonusAnnuel: 0 }));
+    expect(r.scenarioSalaire.coutTotalEntreprise).toBeCloseTo(60000, 6);
+  });
+
+  it("le bonus s'ajoute au coût total entreprise, identique dans les 3 scénarios", () => {
+    const r = computeRemuneration(withCompany("EURL", { budgetAnnuelDisponible: 60000, bonusAnnuel: 10000 }));
+    for (const s of r.scenarios) {
+      expect(s.coutTotalEntreprise).toBeCloseTo(70000, 6);
+    }
+  });
+
+  it("le bonus passe toujours par le canal salaire, même dans le scénario 100% dividendes", () => {
+    const r = computeRemuneration(withCompany("EURL", { budgetAnnuelDisponible: 60000, bonusAnnuel: 10000 }));
+    expect(r.scenarioDividendes.coutSalaireEntreprise).toBeCloseTo(10000, 6);
+    expect(r.scenarioDividendes.beneficeSoumisIS).toBeCloseTo(60000, 6);
+  });
+
+  it("un bonus négatif saisi par erreur est ramené à zéro", () => {
+    const r = computeRemuneration(withCompany("EURL", { budgetAnnuelDisponible: 60000, bonusAnnuel: -5000 }));
+    expect(r.scenarioSalaire.coutTotalEntreprise).toBeCloseTo(60000, 6);
+  });
+});
+
+describe("breakdownCotisationsTNS — répartition indicative par branche", () => {
+  it("les parts de TNS_COTISATIONS_REPARTITION somment à 1 (100% du taux global)", () => {
+    const total = TNS_COTISATIONS_REPARTITION.reduce((sum, r) => sum + r.part, 0);
+    expect(total).toBeCloseTo(1, 6);
+  });
+
+  it("la somme des lignes du détail reconstitue le montant total", () => {
+    const lignes = breakdownCotisationsTNS(10000);
+    const total = lignes.reduce((sum, l) => sum + l.value, 0);
+    expect(total).toBeCloseTo(10000, 6);
+  });
+
+  it("un montant nul donne des lignes toutes nulles", () => {
+    const lignes = breakdownCotisationsTNS(0);
+    for (const l of lignes) expect(l.value).toBe(0);
+  });
+});
+
+describe("computeRemuneration — projection pluriannuelle", () => {
+  it("sans croissance, le cumul est linéaire (net année 1 × nombre d'années)", () => {
+    const r = computeRemuneration(withCompany("EURL", { projectionYears: 4, tauxCroissanceBudgetAnnuel: 0 }));
+    const derniereAnnee = r.projection[r.projection.length - 1];
+    expect(derniereAnnee.cumulSalaire).toBeCloseTo(r.scenarioSalaire.netTotalAnnuel * 4, 6);
+  });
+
+  it("la projection a autant de lignes que projectionYears", () => {
+    const r = computeRemuneration(withCompany("EURL", { projectionYears: 7 }));
+    expect(r.projection).toHaveLength(7);
+    expect(r.projection.map((p) => p.year)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+  });
+
+  it("avec une croissance positive, le cumul croît plus vite qu'une simple multiplication linéaire", () => {
+    const r = computeRemuneration(withCompany("EURL", { projectionYears: 5, tauxCroissanceBudgetAnnuel: 0.1 }));
+    const derniereAnnee = r.projection[r.projection.length - 1];
+    expect(derniereAnnee.cumulSalaire).toBeGreaterThan(r.scenarioSalaire.netTotalAnnuel * 5);
+  });
+
+  it("projectionYears à 0 donne une projection vide, sans erreur", () => {
+    const r = computeRemuneration(withCompany("EURL", { projectionYears: 0 }));
+    expect(r.projection).toEqual([]);
   });
 });

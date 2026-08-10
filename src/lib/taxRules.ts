@@ -481,6 +481,32 @@ export const TAX_RULES: TaxRule[] = [
     notes:
       "Le forfait exact dépend de la présence ou non d'un compteur dédié permettant de mesurer précisément la consommation liée à la recharge du véhicule — à défaut, un forfait simplifié s'applique. Valeur retenue ici à titre d'ordre de grandeur, à ajuster selon la situation réelle et le barème URSSAF en vigueur.",
   },
+  {
+    id: "interessement-forfait-social-pacte",
+    category: "remuneration_dirigeant",
+    label: "Exonération de forfait social sur l'intéressement (loi PACTE)",
+    value: "0% pour les entreprises de moins de 250 salariés (au lieu de 20%)",
+    legalReference: "Art. 16 loi n°2019-486 du 22 mai 2019 (loi PACTE)",
+    sourceLabel: "Service-Public.fr / URSSAF",
+    sourceUrl: "https://www.service-public.fr/professionnels-entreprises/vosdroits/F32440",
+    validFrom: "2019-01-01",
+    validUntil: null,
+    notes:
+      "Depuis la loi PACTE, le dirigeant d'une société de moins de 250 salariés (y compris sans salarié) peut lui-même bénéficier de l'intéressement mis en place dans son entreprise, au même titre que ses salariés — auparavant réservé aux seuls salariés.",
+  },
+  {
+    id: "aga-regime-simplifie",
+    category: "remuneration_dirigeant",
+    label: "Attribution Gratuite d'Actions (AGA) — régime simplifié retenu par le simulateur",
+    value: "Gain d'acquisition et gain de cession imposés au PFU (30%) ; contribution patronale de 20% exonérée pour les PME n'ayant jamais distribué de dividendes",
+    legalReference: "Art. L225-197-1 code de commerce ; art. 80 quaterdecies et 200 A CGI ; art. L137-13 CSS",
+    sourceLabel: "impots.gouv.fr / Bpifrance Création",
+    sourceUrl: "https://www.impots.gouv.fr/particulier/actions-gratuites",
+    validFrom: "2018-01-01",
+    validUntil: null,
+    notes:
+      "Réservé aux sociétés par actions (SAS/SASU) — impossible en EURL/SARL. RÉGIME PARTICULIÈREMENT COMPLEXE, simplifié ici au cas le plus courant : le PFU est un choix par défaut, une option pour le barème progressif avec abattements pour durée de détention existe et peut être plus favorable selon les cas ; une contribution salariale spécifique de 10% s'ajoute au-delà de 300 000€ de gain (non modélisée). Avis d'un expert-comptable fortement recommandé avant toute décision.",
+  },
 ];
 
 export function getRule(id: string): TaxRule | undefined {

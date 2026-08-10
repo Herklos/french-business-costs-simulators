@@ -5,9 +5,20 @@ import {
   DEFAULT_TAUX_CHARGES_PATRONALES,
   DEFAULT_TAUX_CHARGES_SALARIALES,
   DEFAULT_TAUX_CHARGES_TNS,
+  breakdownCotisationsTNS,
   computeRemuneration,
   createDefaultRemunerationInputs,
 } from "../lib/remuneration";
+import {
+  type InteressementInputs,
+  computeInteressement,
+  createDefaultInteressementInputs,
+} from "../lib/interessement";
+import {
+  type AttributionActionsGratuitesInputs,
+  computeAttributionActionsGratuites,
+  createDefaultAttributionActionsGratuitesInputs,
+} from "../lib/attributionActionsGratuites";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
@@ -16,6 +27,7 @@ import { CopyButton } from "../components/CopyButton";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import { resolvePersonalTaxProfile } from "../lib/frenchIncomeTax";
 import { formatEUR, formatEURPrecise, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation rémunération, destiné à être copié dans le presse-papier. */
@@ -66,6 +78,39 @@ export function RemunerationSimulatorPage() {
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeRemuneration(inputs), [inputs]);
+  const tauxIRUtilise = resolvePersonalTaxProfile(inputs.personalTaxProfile).tauxUtilise;
+
+  const [interessementInputs, setInteressementInputs] = useState<InteressementInputs>(() => createDefaultInteressementInputs());
+  const [agaInputs, setAgaInputs] = useState<AttributionActionsGratuitesInputs>(() => createDefaultAttributionActionsGratuitesInputs());
+
+  // Ces deux calculateurs annexes (intéressement, AGA) sont des charges/opérations déductibles
+  // additionnelles : faute d'un "bénéfice prévisionnel" dédié dans ce simulateur, on retient
+  // l'enveloppe budgétaire déjà saisie comme référence pour le calcul de l'économie d'impôt société.
+  const ctxAddons = useMemo(
+    () => ({
+      impositionSociete: inputs.impositionSociete,
+      beneficeAvantChargePrevisionnel: inputs.budgetAnnuelDisponible,
+      eligibleTauxReduitPME: inputs.eligibleTauxReduitPME,
+      corporateTaxRate: inputs.corporateTaxRate,
+    }),
+    [inputs.impositionSociete, inputs.budgetAnnuelDisponible, inputs.eligibleTauxReduitPME, inputs.corporateTaxRate],
+  );
+  const interessementResults = useMemo(
+    () => computeInteressement(interessementInputs, ctxAddons, tauxIRUtilise),
+    [interessementInputs, ctxAddons, tauxIRUtilise],
+  );
+  const agaResults = useMemo(
+    () => computeAttributionActionsGratuites(agaInputs, ctxAddons, tauxIRUtilise),
+    [agaInputs, ctxAddons, tauxIRUtilise],
+  );
+
+  function updateInteressement<K extends keyof InteressementInputs>(key: K, value: InteressementInputs[K]) {
+    setInteressementInputs((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function updateAga<K extends keyof AttributionActionsGratuitesInputs>(key: K, value: AttributionActionsGratuitesInputs[K]) {
+    setAgaInputs((prev) => ({ ...prev, [key]: value }));
+  }
 
   // Le revenu de référence du foyer fiscal est un réglage transversal (identique quel que soit le
   // simulateur) : on le persiste à chaque modification pour le retrouver pré-rempli sur les autres
@@ -148,6 +193,12 @@ export function RemunerationSimulatorPage() {
               onChange={(e) => update("partSalaireSurBudgetMixte", Number(e.target.value))}
               className="range-slider"
             />
+            <Field
+              label="Rémunération variable / bonus annuel (€, en plus de l'enveloppe)"
+              hint="Toujours versé en salaire (jamais en dividendes), dans les 3 scénarios comparés."
+            >
+              <NumberInput value={inputs.bonusAnnuel} onChange={(e) => update("bonusAnnuel", Number(e.target.value))} />
+            </Field>
           </Section>
 
           <Section
@@ -187,6 +238,21 @@ export function RemunerationSimulatorPage() {
               </div>
             )}
             <RuleNote ruleId={results.dirigeantStatus === "TNS" ? "cotisations-tns-taux-global" : "charges-patronales-salariales-assimile-salarie"} />
+            {results.dirigeantStatus === "TNS" && (
+              <>
+                <p className="field__hint">
+                  Répartition indicative des cotisations TNS par branche (scénario 100% salaire, non officielle — cf.
+                  note ci-dessus) :
+                </p>
+                <ul className="detail-list">
+                  {breakdownCotisationsTNS(results.scenarioSalaire.cotisationsTNS).map((l) => (
+                    <li key={l.label}>
+                      {l.label} : {formatEUR(l.value)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
           </Section>
 
           <Section
@@ -247,6 +313,124 @@ export function RemunerationSimulatorPage() {
               </Field>
             </div>
             <RuleNote ruleId="is-taux-normal" />
+          </Section>
+
+          <Section
+            title="🤝 Intéressement du dirigeant"
+            subtitle="Depuis la loi PACTE, un dirigeant peut bénéficier de l'intéressement mis en place dans son entreprise — canal optionnel, en plus du salaire/dividendes ci-dessus."
+          >
+            <div className="grid grid--2">
+              <Field label="Montant annuel d'intéressement (€)">
+                <NumberInput
+                  value={interessementInputs.montantAnnuel}
+                  onChange={(e) => updateInteressement("montantAnnuel", Number(e.target.value))}
+                />
+              </Field>
+              <Field label="Entreprise de moins de 250 salariés ?" hint="Exonère le forfait social (20% sinon).">
+                <select
+                  value={interessementInputs.entrepriseMoinsDe250Salaries ? "oui" : "non"}
+                  onChange={(e) => updateInteressement("entrepriseMoinsDe250Salaries", e.target.value === "oui")}
+                >
+                  <option value="oui">Oui</option>
+                  <option value="non">Non</option>
+                </select>
+              </Field>
+            </div>
+            <Field label="Placé sur un plan d'épargne salariale (PEE/PERCO) ?" hint="Exonère l'IR (mais pas la CSG-CRDS) si placé au moins 5 ans.">
+              <select
+                value={interessementInputs.placeSurPlanEpargneSalariale ? "oui" : "non"}
+                onChange={(e) => updateInteressement("placeSurPlanEpargneSalariale", e.target.value === "oui")}
+              >
+                <option value="non">Non — perçu immédiatement</option>
+                <option value="oui">Oui — placé</option>
+              </select>
+            </Field>
+            <div className="stat-grid">
+              <StatCard label="Coût net société" value={formatEUR(interessementResults.coutNetSociete)} tone="bad" />
+              <StatCard label="Net dirigeant" value={formatEUR(interessementResults.netDirigeant)} tone="good" />
+            </div>
+            <RuleNote ruleId="interessement-forfait-social-pacte" />
+          </Section>
+
+          {results.dirigeantStatus === "ASSIMILE_SALARIE" && (
+            <Section
+              title="📈 Attribution Gratuite d'Actions (AGA)"
+              subtitle="Réservé aux sociétés par actions (SAS/SASU). Régime fiscal parmi les plus complexes — calcul simplifié, à confirmer avec un expert-comptable."
+            >
+              <div className="grid grid--2">
+                <Field label="Valeur des actions à l'acquisition définitive (€)">
+                  <NumberInput
+                    value={agaInputs.valeurActionsAttribution}
+                    onChange={(e) => updateAga("valeurActionsAttribution", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Prix de cession estimé (€)">
+                  <NumberInput
+                    value={agaInputs.prixCessionEstime}
+                    onChange={(e) => updateAga("prixCessionEstime", Number(e.target.value))}
+                  />
+                </Field>
+              </div>
+              <Field label="PME n'ayant jamais distribué de dividendes ?" hint="Exonère la contribution patronale de 20%.">
+                <select
+                  value={agaInputs.pmeExonereeContributionPatronale ? "oui" : "non"}
+                  onChange={(e) => updateAga("pmeExonereeContributionPatronale", e.target.value === "oui")}
+                >
+                  <option value="oui">Oui</option>
+                  <option value="non">Non</option>
+                </select>
+              </Field>
+              <div className="stat-grid">
+                <StatCard label="Contribution patronale" value={formatEUR(agaResults.contributionPatronale)} tone="bad" />
+                <StatCard label="Coût net société" value={formatEUR(agaResults.coutNetSociete)} tone="bad" />
+                <StatCard label="Net bénéficiaire (après PFU sur les 2 gains)" value={formatEUR(agaResults.netBeneficiaire)} tone="good" />
+              </div>
+              <RuleNote ruleId="aga-regime-simplifie" />
+            </Section>
+          )}
+
+          <Section
+            title="📅 Projection pluriannuelle"
+            subtitle="Net cumulé sur plusieurs années, à budget constant ou croissant, pour chaque scénario."
+          >
+            <div className="grid grid--2">
+              <Field label="Durée de projection (années)">
+                <NumberInput value={inputs.projectionYears} onChange={(e) => update("projectionYears", Number(e.target.value))} />
+              </Field>
+              <Field label="Croissance annuelle estimée du budget (%)">
+                <ResetableNumberInput
+                  step="0.01"
+                  value={inputs.tauxCroissanceBudgetAnnuel}
+                  defaultValue={0}
+                  formatDefault={(v) => formatPercent(v)}
+                  onChange={(v) => update("tauxCroissanceBudgetAnnuel", v)}
+                />
+              </Field>
+            </div>
+            {results.projection.length > 0 && (
+              <div className="rules-table-wrap">
+                <table className="rules-table">
+                  <thead>
+                    <tr>
+                      <th>Année</th>
+                      <th>Cumul net — Salaire</th>
+                      <th>Cumul net — Dividendes</th>
+                      <th>Cumul net — Mixte</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {results.projection.map((p) => (
+                      <tr key={p.year}>
+                        <td>{p.year}</td>
+                        <td>{formatEUR(p.cumulSalaire)}</td>
+                        <td>{formatEUR(p.cumulDividendes)}</td>
+                        <td>{formatEUR(p.cumulMixte)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </Section>
 
           <Section title="Revenu de référence du foyer fiscal" subtitle="Utilisé pour calculer le taux marginal d'imposition (TMI) réel appliqué au salaire et aux dividendes soumis au barème.">

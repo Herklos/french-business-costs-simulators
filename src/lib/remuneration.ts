@@ -47,6 +47,36 @@ export const PFU_TAUX_GLOBAL = PFU_TAUX_IR + PFU_TAUX_PS; // 30%
 export const ABATTEMENT_DIVIDENDES_BAREME = 0.4; // abattement de 40% sur l'assiette IR (pas sur les prélèvements sociaux) en cas d'option barème progressif
 export const SEUIL_DIVIDENDES_TNS_RATIO = 0.1; // 10% de (capital social + primes d'émission + CCA) — art. L131-6 CSS
 
+/**
+ * Répartition APPROXIMATIVE du taux global de cotisations sociales TNS (`tauxChargesTNS`, 43% par
+ * défaut) entre ses principales composantes — à titre PUREMENT INFORMATIF pour donner une intuition
+ * de la destination des cotisations. Les taux réels par branche sont progressifs/dégressifs selon
+ * le revenu et le PASS, avec des règles spécifiques par profession (artisans/commerçants vs
+ * libéraux) : cette répartition n'est PAS un calcul officiel, seulement un éclatement proportionnel
+ * du taux global déjà retenu par ailleurs, réparti selon des ordres de grandeur publiés par l'URSSAF.
+ */
+const TNS_COTISATIONS_TAUX_INDICATIFS: { label: string; tauxIndicatif: number }[] = [
+  { label: "Maladie-maternité", tauxIndicatif: 0.075 },
+  { label: "Retraite de base", tauxIndicatif: 0.1775 },
+  { label: "Retraite complémentaire", tauxIndicatif: 0.07 },
+  { label: "Invalidité-décès", tauxIndicatif: 0.013 },
+  { label: "Allocations familiales", tauxIndicatif: 0.031 },
+  { label: "CSG-CRDS", tauxIndicatif: 0.097 },
+  { label: "Formation professionnelle", tauxIndicatif: 0.0025 },
+];
+const TNS_COTISATIONS_TOTAL_INDICATIF = TNS_COTISATIONS_TAUX_INDICATIFS.reduce((sum, r) => sum + r.tauxIndicatif, 0);
+// Parts normalisées (somment exactement à 1), quel que soit l'écart entre la somme des taux
+// indicatifs ci-dessus et le taux global réellement retenu par l'utilisateur (`tauxChargesTNS`).
+export const TNS_COTISATIONS_REPARTITION: { label: string; part: number }[] = TNS_COTISATIONS_TAUX_INDICATIFS.map((r) => ({
+  label: r.label,
+  part: r.tauxIndicatif / TNS_COTISATIONS_TOTAL_INDICATIF,
+}));
+
+/** Éclate un montant total de cotisations TNS en lignes indicatives par branche (cf. TNS_COTISATIONS_REPARTITION). */
+export function breakdownCotisationsTNS(totalCotisations: number): { label: string; value: number }[] {
+  return TNS_COTISATIONS_REPARTITION.map((r) => ({ label: r.label, value: totalCotisations * r.part }));
+}
+
 export type ModeRemuneration = "salaire" | "dividendes" | "mixte";
 
 export interface RemunerationInputs {
@@ -61,6 +91,7 @@ export interface RemunerationInputs {
   budgetAnnuelDisponible: number; // enveloppe totale que la société peut consacrer à la rémunération du dirigeant, avant IS/charges — base de comparaison à coût égal entre scénarios
   modeRemuneration: ModeRemuneration; // scénario mis en avant dans l'UI (les 3 sont toujours calculés)
   partSalaireSurBudgetMixte: number; // 0-100, part de l'enveloppe allouée en salaire dans le scénario "mixte"
+  bonusAnnuel: number; // rémunération variable/bonus (€/an), s'ajoute au budget négociable et passe toujours par le canal salaire (dans les 3 scénarios)
 
   tauxChargesTNS: number;
   tauxChargesPatronales: number;
@@ -75,6 +106,9 @@ export interface RemunerationInputs {
   eligibleTauxReduitPME: boolean;
 
   personalTaxProfile: PersonalTaxProfile;
+
+  projectionYears: number; // durée de la projection pluriannuelle (années)
+  tauxCroissanceBudgetAnnuel: number; // 0-1, croissance annuelle estimée du budget disponible sur la projection
 }
 
 export function createDefaultRemunerationInputs(): RemunerationInputs {
@@ -88,6 +122,7 @@ export function createDefaultRemunerationInputs(): RemunerationInputs {
     budgetAnnuelDisponible: 60000,
     modeRemuneration: "mixte",
     partSalaireSurBudgetMixte: 50,
+    bonusAnnuel: 0,
     tauxChargesTNS: DEFAULT_TAUX_CHARGES_TNS,
     tauxChargesPatronales: DEFAULT_TAUX_CHARGES_PATRONALES,
     tauxChargesSalariales: DEFAULT_TAUX_CHARGES_SALARIALES,
@@ -98,6 +133,8 @@ export function createDefaultRemunerationInputs(): RemunerationInputs {
     corporateTaxRate: 0.25,
     eligibleTauxReduitPME: true,
     personalTaxProfile: createDefaultPersonalTaxProfile(),
+    projectionYears: 5,
+    tauxCroissanceBudgetAnnuel: 0,
   };
 }
 
@@ -143,6 +180,8 @@ export interface RemunerationResults {
   scenarioMixte: ScenarioResult;
   scenarios: ScenarioResult[]; // les 3 ci-dessus, triés par net total annuel décroissant
   meilleurScenario: ScenarioResult;
+  /** Projection du net cumulé sur `projectionYears` années, budget croissant à `tauxCroissanceBudgetAnnuel`/an. */
+  projection: { year: number; cumulSalaire: number; cumulDividendes: number; cumulMixte: number }[];
 }
 
 function computeScenario(
@@ -154,9 +193,13 @@ function computeScenario(
 ): ScenarioResult {
   const isTNS = dirigeantStatus === "TNS";
   const ratio = Math.min(Math.max(partSalairePourcent, 0), 100) / 100;
-  const coutTotalEntreprise = inputs.budgetAnnuelDisponible;
-  const coutSalaireEntreprise = coutTotalEntreprise * ratio;
-  const beneficeSoumisIS = coutTotalEntreprise - coutSalaireEntreprise;
+  // Le bonus/rémunération variable, quand il existe, s'ajoute à l'enveloppe négociable et passe
+  // TOUJOURS par le canal salaire (un bonus ne peut pas être versé en dividendes) — il est donc
+  // ajouté aux deux côtés de l'équation pour préserver l'égalité de coût total entre scénarios.
+  const bonusAnnuel = Math.max(0, inputs.bonusAnnuel);
+  const coutTotalEntreprise = inputs.budgetAnnuelDisponible + bonusAnnuel;
+  const coutSalaireEntreprise = inputs.budgetAnnuelDisponible * ratio + bonusAnnuel;
+  const beneficeSoumisIS = inputs.budgetAnnuelDisponible * (1 - ratio);
 
   // --- Rémunération (salaire) ---
   let salaireBrutAnnuel = 0;
@@ -292,6 +335,19 @@ export function computeRemuneration(inputs: RemunerationInputs): RemunerationRes
   const isTNS = dirigeantStatus === "TNS";
   const seuilDividendesTNS = isTNS ? SEUIL_DIVIDENDES_TNS_RATIO * (inputs.capitalSocial + inputs.primesEmissionEtCCA) : Infinity;
 
+  const projection: RemunerationResults["projection"] = [];
+  let cumulSalaire = 0;
+  let cumulDividendes = 0;
+  let cumulMixte = 0;
+  for (let year = 1; year <= Math.max(0, inputs.projectionYears); year++) {
+    const facteurCroissance = Math.pow(1 + inputs.tauxCroissanceBudgetAnnuel, year - 1);
+    const inputsAnnee = { ...inputs, budgetAnnuelDisponible: inputs.budgetAnnuelDisponible * facteurCroissance };
+    cumulSalaire += computeScenario(inputsAnnee, 100, "salaire", "", dirigeantStatus).netTotalAnnuel;
+    cumulDividendes += computeScenario(inputsAnnee, 0, "dividendes", "", dirigeantStatus).netTotalAnnuel;
+    cumulMixte += computeScenario(inputsAnnee, inputs.partSalaireSurBudgetMixte, "mixte", "", dirigeantStatus).netTotalAnnuel;
+    projection.push({ year, cumulSalaire, cumulDividendes, cumulMixte });
+  }
+
   return {
     dirigeantStatus,
     seuilDividendesTNS,
@@ -300,5 +356,6 @@ export function computeRemuneration(inputs: RemunerationInputs): RemunerationRes
     scenarioMixte,
     scenarios,
     meilleurScenario,
+    projection,
   };
 }
