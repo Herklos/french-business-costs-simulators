@@ -11,6 +11,9 @@ const CATEGORY_LABEL: Record<string, string> = {
   fiscalite_vehicule_societe: "Fiscalité du véhicule de société (taxes, plafonds, aides)",
   risques_juridiques: "Seuils et risques juridiques (usure, abus de biens sociaux, tolérances)",
   remuneration_dirigeant: "Rémunération du dirigeant (salaire, dividendes)",
+  materiel_professionnel: "Matériel professionnel (informatique, mobilier)",
+  protection_sociale_dirigeant: "Protection sociale du dirigeant (mutuelle, prévoyance)",
+  epargne_retraite_dirigeant: "Épargne retraite du dirigeant (PER, Madelin)",
 };
 
 const STATUS_LABEL: Record<string, string> = {

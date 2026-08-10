@@ -33,6 +33,14 @@ const SIMULATORS: SimulatorCard[] = [
       "Salaire, dividendes, ou un mixte des deux : cotisations sociales selon la forme juridique (TNS ou assimilé salarié), fiscalité du foyer, brut/net annuel et mensuel, et scénario le plus avantageux à coût entreprise égal.",
     available: true,
   },
+  {
+    page: "materiel",
+    icon: "💻",
+    title: "Matériel professionnel",
+    description:
+      "Ordinateur, mobilier de bureau : charge immédiate ou amortissement selon le seuil des 500€ HT, et comparaison achat société / achat personnel remboursé (identique) / achat personnel non remboursé (aucun avantage fiscal).",
+    available: true,
+  },
 ];
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {

@@ -3,9 +3,10 @@ import { HomePage } from "./pages/HomePage";
 import { VehicleSimulatorPage } from "./pages/VehicleSimulatorPage";
 import { HomeOfficeSimulatorPage } from "./pages/HomeOfficeSimulatorPage";
 import { RemunerationSimulatorPage } from "./pages/RemunerationSimulatorPage";
+import { MaterielSimulatorPage } from "./pages/MaterielSimulatorPage";
 import { RulesPage } from "./pages/RulesPage";
 
-export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "rules";
+export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "materiel" | "rules";
 
 function App() {
   const [page, setPage] = useState<Page>("home");
@@ -26,6 +27,9 @@ function App() {
           <button type="button" className={page === "remuneration" ? "active" : ""} onClick={() => setPage("remuneration")}>
             💰 Rémunération
           </button>
+          <button type="button" className={page === "materiel" ? "active" : ""} onClick={() => setPage("materiel")}>
+            💻 Matériel
+          </button>
           <button type="button" className={page === "rules" ? "active" : ""} onClick={() => setPage("rules")}>
             📚 Règles fiscales
           </button>
@@ -37,6 +41,7 @@ function App() {
         {page === "vehicle" && <VehicleSimulatorPage />}
         {page === "homeOffice" && <HomeOfficeSimulatorPage />}
         {page === "remuneration" && <RemunerationSimulatorPage />}
+        {page === "materiel" && <MaterielSimulatorPage />}
         {page === "rules" && <RulesPage />}
       </main>
 

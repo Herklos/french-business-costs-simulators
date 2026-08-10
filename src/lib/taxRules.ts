@@ -19,7 +19,10 @@ export type RuleCategory =
   | "impot_societe"
   | "fiscalite_vehicule_societe"
   | "risques_juridiques"
-  | "remuneration_dirigeant";
+  | "remuneration_dirigeant"
+  | "materiel_professionnel"
+  | "protection_sociale_dirigeant"
+  | "epargne_retraite_dirigeant";
 
 export interface TaxRule {
   id: string;
@@ -359,6 +362,19 @@ export const TAX_RULES: TaxRule[] = [
     validUntil: null,
     notes:
       "Concerne uniquement les gérants majoritaires de SARL/EURL soumises à l'IS (statut TNS). Ne s'applique pas au président (assimilé salarié) de SASU/SAS, dont les dividendes échappent totalement aux cotisations sociales (seul le PFU s'applique) — différence structurante dans l'arbitrage salaire/dividendes selon la forme juridique.",
+  },
+  {
+    id: "materiel-petit-equipement-charge-immediate",
+    category: "materiel_professionnel",
+    label: "Déduction immédiate en charge du « petit matériel » (au lieu d'un amortissement)",
+    value: "Prix unitaire HT ≤ 500€ → charge déductible immédiatement, sans amortissement",
+    legalReference: "Art. 39-1 3° CGI",
+    sourceLabel: "BOFiP-Impôts (BOI-BIC-CHG-20-30-10)",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1224-PGP.html",
+    validFrom: "1960-01-01",
+    validUntil: null,
+    notes:
+      "Seuil fixe (500€ HT), non revalorisé depuis des décennies. Au-delà, le matériel est immobilisé et amorti sur sa durée d'usage (généralement 3 ans pour l'informatique, 8-10 ans pour le mobilier de bureau).",
   },
 ];
 

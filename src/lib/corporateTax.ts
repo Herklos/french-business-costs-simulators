@@ -12,6 +12,8 @@
 //     l'IS qui aurait été dû sur ce bénéfice — le surplus de charge ne fait qu'accroître un
 //     déficit reportable (avantage différé et incertain, non compté ici comme un gain immédiat).
 
+import type { ImpositionSociete } from "./companyTypes";
+
 export const IS_TAUX_REDUIT = 0.15;
 export const IS_SEUIL_TAUX_REDUIT = 42500;
 
@@ -39,4 +41,26 @@ export function computeEconomieImpotIS(
   const isAvant = computeIS(beneficeAvantCharge, eligibleTauxReduit, tauxNormal);
   const isApres = computeIS(beneficeAvantCharge - chargeDeductible, eligibleTauxReduit, tauxNormal);
   return Math.max(0, isAvant - isApres);
+}
+
+/** Champs communs à tout simulateur ayant besoin de chiffrer l'économie d'impôt société d'une charge déductible. */
+export interface CompanyTaxContext {
+  impositionSociete: ImpositionSociete;
+  beneficeAvantChargePrevisionnel: number;
+  eligibleTauxReduitPME: boolean;
+  corporateTaxRate: number;
+}
+
+/**
+ * Économie d'impôt société générée par une charge déductible, quel que soit le régime : IS
+ * (barème progressif + plafonnement par le bénéfice réel, cf. computeEconomieImpotIS) ou IR
+ * (société translucide — le bénéfice est déjà intégré au revenu imposable du foyer, donc le taux
+ * marginal du foyer, `tauxIRUtilise`, s'applique directement). Factorisé ici pour être partagé par
+ * tous les simulateurs (véhicule, bureau à domicile, rémunération, matériel, mutuelle, retraite...).
+ */
+export function computeEconomieImpotSociete(ctx: CompanyTaxContext, chargeDeductible: number, tauxIRUtilise: number): number {
+  if (ctx.impositionSociete === "IS") {
+    return computeEconomieImpotIS(ctx.beneficeAvantChargePrevisionnel, chargeDeductible, ctx.eligibleTauxReduitPME, ctx.corporateTaxRate);
+  }
+  return chargeDeductible * tauxIRUtilise;
 }
