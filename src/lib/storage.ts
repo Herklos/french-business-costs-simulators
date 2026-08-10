@@ -4,7 +4,7 @@
 
 import type { PersonalTaxProfile } from "./frenchIncomeTax";
 
-export type SimulatorKind = "vehicle" | "homeOffice" | "remuneration" | "materiel" | "mutuelle" | "retraite";
+export type SimulatorKind = "vehicle" | "homeOffice" | "remuneration" | "materiel" | "mutuelle" | "retraite" | "holding";
 
 export interface SavedSimulation<T = unknown> {
   kind: SimulatorKind;

@@ -57,6 +57,14 @@ const SIMULATORS: SimulatorCard[] = [
       "PER individuel / Madelin retraite : plafond de déduction fiscale selon le statut (formule TNS plus généreuse dès que le bénéfice dépasse le PASS, ou 10% du revenu pour un assimilé salarié), économie d'impôt et coût net.",
     available: true,
   },
+  {
+    page: "holding",
+    icon: "🏛️",
+    title: "Holding / montage patrimonial",
+    description:
+      "Régime mère-fille : coût de la remontée de dividendes vers une holding (quote-part de frais et charges de 5%) vs distribution directe au PFU, projection de la capitalisation dans le temps et coût de sortie finale.",
+    available: true,
+  },
 ];
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
@@ -65,8 +73,8 @@ export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
       <h2>Simulateurs de coûts pour entrepreneurs français</h2>
       <p className="page__intro">
         Une suite d'outils pour chiffrer précisément le coût réel — société et personnel — des principales
-        décisions d'un dirigeant d'entreprise en France : véhicule de société, bureau à domicile, et bientôt
-        d'autres frais professionnels courants.
+        décisions d'un dirigeant d'entreprise en France : véhicule de société, bureau à domicile, rémunération,
+        matériel professionnel, protection sociale, épargne retraite et structuration patrimoniale.
       </p>
       <div className="home-grid">
         {SIMULATORS.map((s) => (
@@ -86,7 +94,7 @@ export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
         <div className="home-card home-card--placeholder">
           <span className="home-card__icon">➕</span>
           <h3>D'autres simulateurs à venir</h3>
-          <p>Frais de repas, mutuelle, matériel informatique, notes de frais... Suggestions bienvenues.</p>
+          <p>Notes de frais, local professionnel externe, micro-entreprise vs société... Suggestions bienvenues.</p>
         </div>
       </div>
     </div>

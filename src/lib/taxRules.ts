@@ -22,7 +22,8 @@ export type RuleCategory =
   | "remuneration_dirigeant"
   | "materiel_professionnel"
   | "protection_sociale_dirigeant"
-  | "epargne_retraite_dirigeant";
+  | "epargne_retraite_dirigeant"
+  | "holding_montage_patrimonial";
 
 export interface TaxRule {
   id: string;
@@ -559,6 +560,45 @@ export const TAX_RULES: TaxRule[] = [
     validUntil: null,
     notes:
       "Même principe général que l'AEN véhicule (mise à disposition d'un bien de l'entreprise à usage personnel), mais sans abattement spécifique (celui du véhicule électrique ne s'applique qu'aux véhicules). Nécessite un usage privé réel et documenté pour être opposable — sinon la déductibilité de la charge société elle-même peut être remise en cause (acte anormal de gestion).",
+  },
+  {
+    id: "regime-mere-fille",
+    category: "holding_montage_patrimonial",
+    label: "Régime mère-fille — exonération d'IS sur les dividendes remontés à une holding",
+    value: "Exonération à 95% (quote-part de frais et charges de 5% réintégrée et taxée à l'IS), sous condition de détention ≥5% du capital pendant ≥2 ans",
+    legalReference: "Art. 145, 216 CGI",
+    sourceLabel: "impots.gouv.fr / BOFiP-Impôts",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1438-PGP.html",
+    validFrom: "2016-01-01",
+    validUntil: null,
+    notes:
+      "Régime optionnel (sur choix exprimé dans la liasse fiscale de la holding), à ne pas confondre avec l'intégration fiscale (régime distinct, ≥95% de détention, permettant en plus la compensation des résultats du groupe). Si les conditions de détention ne sont pas remplies, le dividende reçu par la holding est imposé à l'IS pour son montant brut entier, sans aucune exonération.",
+  },
+  {
+    id: "pfu-dividendes",
+    category: "holding_montage_patrimonial",
+    label: "Prélèvement forfaitaire unique (PFU / flat tax) sur les dividendes perçus par une personne physique",
+    value: "30% (12,8% d'impôt sur le revenu + 17,2% de prélèvements sociaux), taux par défaut",
+    legalReference: "Art. 200 A CGI",
+    sourceLabel: "impots.gouv.fr",
+    sourceUrl: "https://www.impots.gouv.fr/particulier/le-prelevement-forfaitaire-unique-pfu",
+    validFrom: "2018-01-01",
+    validUntil: null,
+    notes:
+      "Une option pour le barème progressif de l'IR (avec abattement de 40% sur le montant du dividende) reste possible sur demande expresse et globale (portant sur tous les revenus de capitaux mobiliers du foyer de l'année), parfois plus avantageuse pour un foyer faiblement imposé — non modélisée ici, seul le PFU à 30% est retenu par simplification.",
+  },
+  {
+    id: "holding-strategies-sortie-hors-perimetre",
+    category: "holding_montage_patrimonial",
+    label: "Stratégies de sortie optimisée d'une holding — hors périmètre de ce simulateur",
+    value: "Apport-cession avec remploi (art. 150-0 B ter), donation avec purge de plus-value, conservation jusqu'au décès (effacement de la plus-value latente)",
+    legalReference: "Art. 150-0 B ter CGI ; art. 150-0 D bis CGI (donation)",
+    sourceLabel: "impots.gouv.fr",
+    sourceUrl: "https://www.impots.gouv.fr/particulier/questions/quest-ce-que-larticle-150-0-b-ter-du-cgi",
+    validFrom: "2017-01-01",
+    validUntil: null,
+    notes:
+      "Ce simulateur ne modélise qu'une sortie simple par distribution finale taxée au PFU. Des montages plus sophistiqués (report d'imposition en cas de remploi du produit de cession dans une activité économique sous 2 ans, purge de la plus-value latente par donation avant cession, ou conservation des titres jusqu'au décès du dirigeant) peuvent réduire drastiquement, voire annuler, le coût de sortie réel — mais nécessitent un accompagnement par un avocat fiscaliste, hors du champ pédagogique de cet outil.",
   },
 ];
 

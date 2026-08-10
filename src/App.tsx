@@ -6,9 +6,10 @@ import { RemunerationSimulatorPage } from "./pages/RemunerationSimulatorPage";
 import { MaterielSimulatorPage } from "./pages/MaterielSimulatorPage";
 import { MutuellePrevoyanceSimulatorPage } from "./pages/MutuellePrevoyanceSimulatorPage";
 import { RetraiteSimulatorPage } from "./pages/RetraiteSimulatorPage";
+import { HoldingSimulatorPage } from "./pages/HoldingSimulatorPage";
 import { RulesPage } from "./pages/RulesPage";
 
-export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "materiel" | "mutuelle" | "retraite" | "rules";
+export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "materiel" | "mutuelle" | "retraite" | "holding" | "rules";
 
 function App() {
   const [page, setPage] = useState<Page>("home");
@@ -38,6 +39,9 @@ function App() {
           <button type="button" className={page === "retraite" ? "active" : ""} onClick={() => setPage("retraite")}>
             🏦 Retraite
           </button>
+          <button type="button" className={page === "holding" ? "active" : ""} onClick={() => setPage("holding")}>
+            🏛️ Holding
+          </button>
           <button type="button" className={page === "rules" ? "active" : ""} onClick={() => setPage("rules")}>
             📚 Règles fiscales
           </button>
@@ -52,6 +56,7 @@ function App() {
         {page === "materiel" && <MaterielSimulatorPage />}
         {page === "mutuelle" && <MutuellePrevoyanceSimulatorPage />}
         {page === "retraite" && <RetraiteSimulatorPage />}
+        {page === "holding" && <HoldingSimulatorPage />}
         {page === "rules" && <RulesPage />}
       </main>
 

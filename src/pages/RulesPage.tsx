@@ -14,6 +14,7 @@ const CATEGORY_LABEL: Record<string, string> = {
   materiel_professionnel: "Matériel professionnel (informatique, mobilier)",
   protection_sociale_dirigeant: "Protection sociale du dirigeant (mutuelle, prévoyance)",
   epargne_retraite_dirigeant: "Épargne retraite du dirigeant (PER, Madelin)",
+  holding_montage_patrimonial: "Holding / montage patrimonial (régime mère-fille)",
 };
 
 const STATUS_LABEL: Record<string, string> = {
