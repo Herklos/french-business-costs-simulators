@@ -78,8 +78,12 @@ export interface HomeOfficeInputs {
 
   personalTaxProfile: PersonalTaxProfile;
 
-  // Comparaison : location d'un bureau externe équivalent
-  loyerBureauExterneMensuel: number;
+  // Comparaison : location d'un bureau externe équivalent — bail classique (loyer mensuel fixe) ou
+  // espace de coworking (tarification à la journée, usage flexible).
+  typeComparaisonExterne: "location" | "coworking";
+  loyerBureauExterneMensuel: number; // utilisé si typeComparaisonExterne === "location"
+  coworkingTarifJournalier: number; // utilisé si typeComparaisonExterne === "coworking"
+  coworkingJoursParMois: number; // utilisé si typeComparaisonExterne === "coworking"
 }
 
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
@@ -112,7 +116,10 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     formalisation: "indemnite",
     fraisMiseEnPlaceBail: 0,
     personalTaxProfile: createDefaultPersonalTaxProfile(),
+    typeComparaisonExterne: "location",
     loyerBureauExterneMensuel: 350,
+    coworkingTarifJournalier: 25,
+    coworkingJoursParMois: 20,
   };
 }
 
@@ -198,7 +205,10 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
       : indemniteAnnuelleBrute * tauxIRUtilise;
   const coutNetSociete = indemniteAnnuelleBrute - economieImpotSociete;
 
-  const coutBureauExterneAnnuel = inputs.loyerBureauExterneMensuel * 12;
+  const coutBureauExterneAnnuel =
+    inputs.typeComparaisonExterne === "coworking"
+      ? inputs.coworkingTarifJournalier * inputs.coworkingJoursParMois * 12
+      : inputs.loyerBureauExterneMensuel * 12;
   const economieVsBureauExterne = coutBureauExterneAnnuel - coutNetSociete;
 
   return {

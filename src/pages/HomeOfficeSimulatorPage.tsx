@@ -46,7 +46,9 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
     push(`Gain net dirigeant — 1ère année (après frais de mise en place) : ${formatEUR(r.gainNetGerantAnnee1)}`);
   }
   push(`Coût net société (après économie d'impôt) : ${formatEUR(r.coutNetSociete)}`);
-  push(`Économie vs bureau externe : ${formatEUR(r.economieVsBureauExterne)}`);
+  push(
+    `Bureau externe (${sim.typeComparaisonExterne === "coworking" ? "coworking" : "location classique"}) : ${formatEUR(r.coutBureauExterneAnnuel)}/an · Économie vs bureau externe : ${formatEUR(r.economieVsBureauExterne)}`,
+  );
   push("");
   push("Généré par le simulateur de coûts d'entreprise — outil d'aide à la décision, ne remplace pas l'avis d'un expert-comptable.");
 
@@ -272,13 +274,39 @@ export function HomeOfficeSimulatorPage() {
             />
           </Section>
 
-          <Section title="Comparaison — bureau externe">
-            <Field label="Loyer d'un bureau externe équivalent (€/mois)">
-              <NumberInput
-                value={inputs.loyerBureauExterneMensuel}
-                onChange={(e) => update("loyerBureauExterneMensuel", Number(e.target.value))}
-              />
+          <Section title="Comparaison — bureau externe" subtitle="Bail classique (loyer fixe) ou espace de coworking (tarification flexible à la journée).">
+            <Field label="Type de comparaison">
+              <select
+                value={inputs.typeComparaisonExterne}
+                onChange={(e) => update("typeComparaisonExterne", e.target.value as HomeOfficeInputs["typeComparaisonExterne"])}
+              >
+                <option value="location">Location classique (bail)</option>
+                <option value="coworking">Espace de coworking</option>
+              </select>
             </Field>
+            {inputs.typeComparaisonExterne === "location" ? (
+              <Field label="Loyer d'un bureau externe équivalent (€/mois)">
+                <NumberInput
+                  value={inputs.loyerBureauExterneMensuel}
+                  onChange={(e) => update("loyerBureauExterneMensuel", Number(e.target.value))}
+                />
+              </Field>
+            ) : (
+              <div className="grid grid--2">
+                <Field label="Tarif journalier coworking (€/jour)">
+                  <NumberInput
+                    value={inputs.coworkingTarifJournalier}
+                    onChange={(e) => update("coworkingTarifJournalier", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Jours d'utilisation par mois">
+                  <NumberInput
+                    value={inputs.coworkingJoursParMois}
+                    onChange={(e) => update("coworkingJoursParMois", Number(e.target.value))}
+                  />
+                </Field>
+              </div>
+            )}
           </Section>
 
           <Field label="Nom de la simulation">

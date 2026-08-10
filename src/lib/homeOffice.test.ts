@@ -97,3 +97,35 @@ describe("computeHomeOffice — régime IS et bénéfice prévisionnel", () => {
     expect(r.coutNetSociete).toBeCloseTo(r.indemniteAnnuelleBrute - r.economieImpotSociete, 6);
   });
 });
+
+describe("computeHomeOffice — comparaison bureau externe : bail classique vs coworking", () => {
+  it("régime location : coût annuel = loyer mensuel × 12", () => {
+    const inputs: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      typeComparaisonExterne: "location",
+      loyerBureauExterneMensuel: 400,
+    };
+    expect(computeHomeOffice(inputs).coutBureauExterneAnnuel).toBeCloseTo(4800, 6);
+  });
+
+  it("régime coworking : coût annuel = tarif journalier × jours/mois × 12", () => {
+    const inputs: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      typeComparaisonExterne: "coworking",
+      coworkingTarifJournalier: 25,
+      coworkingJoursParMois: 20,
+    };
+    expect(computeHomeOffice(inputs).coutBureauExterneAnnuel).toBeCloseTo(25 * 20 * 12, 6);
+  });
+
+  it("le champ loyer mensuel est ignoré en mode coworking", () => {
+    const inputs: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      typeComparaisonExterne: "coworking",
+      loyerBureauExterneMensuel: 999999,
+      coworkingTarifJournalier: 25,
+      coworkingJoursParMois: 20,
+    };
+    expect(computeHomeOffice(inputs).coutBureauExterneAnnuel).toBeCloseTo(25 * 20 * 12, 6);
+  });
+});
