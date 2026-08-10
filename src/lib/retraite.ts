@@ -83,6 +83,9 @@ export interface RetraiteResults {
   economieImpotDirigeant: number; // assimilé salarié uniquement (versement personnel)
   coutNetGlobal: number; // versementAnnuel − (economieImpotSociete + economieImpotDirigeant)
   tauxEconomieGlobal: number; // 1 − coutNetGlobal / versementAnnuel
+  /** Détail du calcul, dans l'ordre d'affichage — qui paie quoi et où se réalise l'économie
+   * d'impôt (société pour un TNS, dirigeant/IR pour un assimilé salarié). */
+  detail: { label: string; value: number }[];
 }
 
 export function computeRetraite(inputs: RetraiteInputs): RetraiteResults {
@@ -118,6 +121,17 @@ export function computeRetraite(inputs: RetraiteInputs): RetraiteResults {
       economieImpotDirigeant: 0,
       coutNetGlobal,
       tauxEconomieGlobal: inputs.versementAnnuel > 0 ? 1 - coutNetGlobal / inputs.versementAnnuel : 0,
+      detail: [
+        { label: "Versement annuel (pris en charge par la société)", value: inputs.versementAnnuel },
+        { label: "dont déductible du résultat société (plafond Madelin)", value: versementDeductible },
+        ...(versementNonDeductible > 0
+          ? [{ label: "dont NON déductible (au-delà du plafond)", value: versementNonDeductible }]
+          : []),
+        { label: "− Économie d'impôt société (sur la part déductible)", value: -economieImpotSociete },
+        { label: "= Coût net société", value: coutNetGlobal },
+        { label: "Coût net dirigeant (aucun décaissement personnel)", value: 0 },
+        { label: "= Coût net global", value: coutNetGlobal },
+      ],
     };
   }
 
@@ -144,5 +158,16 @@ export function computeRetraite(inputs: RetraiteInputs): RetraiteResults {
     economieImpotDirigeant,
     coutNetGlobal,
     tauxEconomieGlobal: inputs.versementAnnuel > 0 ? 1 - coutNetGlobal / inputs.versementAnnuel : 0,
+    detail: [
+      { label: "Versement annuel (financé personnellement par le dirigeant)", value: inputs.versementAnnuel },
+      { label: "dont déductible du revenu imposable (plafond PER)", value: versementDeductible },
+      ...(versementNonDeductible > 0
+        ? [{ label: "dont NON déductible (au-delà du plafond)", value: versementNonDeductible }]
+        : []),
+      { label: "− Économie d'impôt (IR) sur la part déductible", value: -economieImpotDirigeant },
+      { label: "= Coût net dirigeant", value: coutNetGlobal },
+      { label: "Coût net société (aucune charge société)", value: 0 },
+      { label: "= Coût net global", value: coutNetGlobal },
+    ],
   };
 }

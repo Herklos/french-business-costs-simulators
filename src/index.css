@@ -406,6 +406,12 @@ select:focus {
   background: transparent;
 }
 
+.detail-toggle {
+  margin: 0.75rem 0;
+  width: 100%;
+  text-align: left;
+}
+
 .btn--danger:hover {
   border-color: var(--bad);
   color: var(--bad);

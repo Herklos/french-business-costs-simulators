@@ -45,6 +45,7 @@ function buildRetraiteExportText(sim: RetraiteInputs): string {
 export function RetraiteSimulatorPage() {
   const [inputs, setInputs] = useState<RetraiteInputs>(() => withPersistedPersonalTaxProfile(createDefaultRetraiteInputs()));
   const [saveVersion, setSaveVersion] = useState(0);
+  const [showDetail, setShowDetail] = useState(false);
   const results = useMemo(() => computeRetraite(inputs), [inputs]);
 
   useEffect(() => {
@@ -228,6 +229,20 @@ export function RetraiteSimulatorPage() {
               tone="neutral"
             />
           </div>
+
+          <button type="button" className="btn btn--ghost detail-toggle" onClick={() => setShowDetail((s) => !s)}>
+            <span className="option-row__caret">{showDetail ? "▾" : "▸"}</span>
+            Détail du calcul — où et pour qui se réalise l'économie ({results.dirigeantStatus === "TNS" ? "société" : "dirigeant"})
+          </button>
+          {showDetail && (
+            <ul className="detail-list">
+              {results.detail.map((line) => (
+                <li key={line.label}>
+                  {line.label} : {formatEUR(line.value)}
+                </li>
+              ))}
+            </ul>
+          )}
 
           <Section title="Sauvegarde & comparaison">
             <SavedSimulationsPanel

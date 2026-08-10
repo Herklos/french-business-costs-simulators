@@ -86,3 +86,30 @@ describe("computeRetraite — cohérence générale", () => {
     expect(createDefaultRetraiteInputs().id).not.toBe(createDefaultRetraiteInputs().id);
   });
 });
+
+describe("computeRetraite — détail du calcul (breakdown société vs dirigeant)", () => {
+  it("TNS : le détail additionne bien versement − économie société = coût net société, coût dirigeant nul", () => {
+    const r = computeRetraite(withCompany("EURL", { versementAnnuel: 4000 }));
+    const find = (label: string) => r.detail.find((d) => d.label === label);
+    expect(find("Versement annuel (pris en charge par la société)")?.value).toBeCloseTo(4000, 6);
+    expect(find("= Coût net société")?.value).toBeCloseTo(r.coutNetGlobal, 6);
+    expect(find("Coût net dirigeant (aucun décaissement personnel)")?.value).toBe(0);
+    expect(find("= Coût net global")?.value).toBeCloseTo(r.coutNetGlobal, 6);
+  });
+
+  it("assimilé salarié : le détail additionne bien versement − économie IR = coût net dirigeant, coût société nul", () => {
+    const r = computeRetraite(withCompany("SASU", { versementAnnuel: 4000 }));
+    const find = (label: string) => r.detail.find((d) => d.label === label);
+    expect(find("Versement annuel (financé personnellement par le dirigeant)")?.value).toBeCloseTo(4000, 6);
+    expect(find("= Coût net dirigeant")?.value).toBeCloseTo(r.coutNetGlobal, 6);
+    expect(find("Coût net société (aucune charge société)")?.value).toBe(0);
+    expect(find("= Coût net global")?.value).toBeCloseTo(r.coutNetGlobal, 6);
+  });
+
+  it("le détail n'inclut la ligne 'non déductible' que si le versement dépasse le plafond", () => {
+    const sousPlafond = computeRetraite(withCompany("EURL", { versementAnnuel: 500, beneficeAvantChargePrevisionnel: 40000 }));
+    const auDessusPlafond = computeRetraite(withCompany("EURL", { versementAnnuel: 100000, beneficeAvantChargePrevisionnel: 40000 }));
+    expect(sousPlafond.detail.some((d) => d.label.includes("NON déductible"))).toBe(false);
+    expect(auDessusPlafond.detail.some((d) => d.label.includes("NON déductible"))).toBe(true);
+  });
+});
