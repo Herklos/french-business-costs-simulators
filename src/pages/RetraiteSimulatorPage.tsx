@@ -1,0 +1,219 @@
+import { useEffect, useMemo, useState } from "react";
+import { type RetraiteInputs, computeRetraite, createDefaultRetraiteInputs } from "../lib/retraite";
+import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
+import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
+import { RuleNote } from "../components/RuleNote";
+import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
+import { CopyButton } from "../components/CopyButton";
+import { CompanyTypeFields } from "../components/CompanyTypeFields";
+import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
+import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import { formatEUR, formatPercent } from "../lib/format";
+
+/** Résumé texte complet d'une simulation épargne retraite, destiné à être copié dans le presse-papier. */
+function buildRetraiteExportText(sim: RetraiteInputs): string {
+  const r = computeRetraite(sim);
+  const lines: string[] = [];
+  const push = (line = "") => lines.push(line);
+
+  push(`🏦 ${sim.name} — Simulateur épargne retraite du dirigeant (PER / Madelin)`);
+  push(`Généré le ${new Date().toLocaleDateString("fr-FR")}`);
+  push("");
+  push(`Forme juridique : ${sim.companyType} · Statut : ${r.dirigeantStatus === "TNS" ? "TNS (Madelin retraite)" : "Assimilé salarié (PER individuel classique)"}`);
+  push(`Versement annuel : ${formatEUR(sim.versementAnnuel)}`);
+  push(`Plafond de déduction : ${formatEUR(r.plafondDeduction)} · Déductible : ${formatEUR(r.versementDeductible)} · Non déductible : ${formatEUR(r.versementNonDeductible)}`);
+  push("");
+  push("— Résultats —");
+  if (r.dirigeantStatus === "TNS") {
+    push(`Versement pris en charge par la société · Économie d'impôt société : ${formatEUR(r.economieImpotSociete)}`);
+  } else {
+    push(`Versement financé personnellement · Économie d'impôt (IR) : ${formatEUR(r.economieImpotDirigeant)}`);
+  }
+  push(`Coût net global : ${formatEUR(r.coutNetGlobal)} (${formatPercent(r.tauxEconomieGlobal)} d'économie vs versement brut)`);
+  push("");
+  push("Généré par le simulateur de coûts d'entreprise — outil d'aide à la décision, ne remplace pas l'avis d'un expert-comptable.");
+
+  return lines.join("\n");
+}
+
+export function RetraiteSimulatorPage() {
+  const [inputs, setInputs] = useState<RetraiteInputs>(() => withPersistedPersonalTaxProfile(createDefaultRetraiteInputs()));
+  const [saveVersion, setSaveVersion] = useState(0);
+  const results = useMemo(() => computeRetraite(inputs), [inputs]);
+
+  useEffect(() => {
+    savePersonalTaxProfile(inputs.personalTaxProfile);
+  }, [inputs.personalTaxProfile]);
+
+  function update<K extends keyof RetraiteInputs>(key: K, value: RetraiteInputs[K]) {
+    setInputs((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function handleCompanyTypeChange(code: string) {
+    setInputs((prev) => ({ ...prev, companyType: code, gerantMajoritaire: true }));
+  }
+
+  return (
+    <div className="page">
+      <h2>🏦 Épargne retraite du dirigeant (PER individuel / Madelin retraite)</h2>
+      <p className="page__intro">
+        Le plafond de déduction fiscale d'un versement sur un plan d'épargne retraite dépend du statut du dirigeant :
+        formule TNS (« Madelin retraite »), nettement plus généreuse dès que le bénéfice dépasse le PASS, ou plafond
+        classique de 10% du revenu professionnel pour un assimilé salarié.
+      </p>
+
+      <div className="results-toolbar results-toolbar--top">
+        <CopyButton getText={() => buildRetraiteExportText(inputs)} />
+      </div>
+
+      <div className="layout">
+        <div className="layout__form">
+          <Section title="Forme juridique & statut du dirigeant">
+            <CompanyTypeFields
+              country={inputs.country}
+              companyType={inputs.companyType}
+              gerantMajoritaire={inputs.gerantMajoritaire}
+              impositionSociete={inputs.impositionSociete}
+              onCountryChange={(country) => update("country", country)}
+              onCompanyTypeChange={handleCompanyTypeChange}
+              onGerantMajoritaireChange={(v) => update("gerantMajoritaire", v)}
+              onImpositionChange={(v) => update("impositionSociete", v)}
+            />
+          </Section>
+
+          <Section title="Versement sur le plan d'épargne retraite">
+            <Field label="Versement annuel envisagé (€/an)">
+              <NumberInput value={inputs.versementAnnuel} onChange={(e) => update("versementAnnuel", Number(e.target.value))} />
+            </Field>
+
+            {results.dirigeantStatus === "TNS" ? (
+              <>
+                <p className="hint-block">
+                  Versement pris en charge par la société (Madelin retraite). Plafond déductible :{" "}
+                  <strong>{formatEUR(results.plafondDeduction)}</strong>/an
+                  {results.versementNonDeductible > 0 && (
+                    <>
+                      {" "}
+                      · Fraction non déductible : <strong>{formatEUR(results.versementNonDeductible)}</strong>
+                    </>
+                  )}
+                </p>
+                <RuleNote ruleId="per-plafond-deduction-tns" />
+              </>
+            ) : (
+              <>
+                <Field label="Revenu professionnel net N-1 (€)" hint="Base du plafond de déduction (10% du revenu, plafonné à 8×PASS).">
+                  <NumberInput
+                    value={inputs.revenuNetImposableN1}
+                    onChange={(e) => update("revenuNetImposableN1", Number(e.target.value))}
+                  />
+                </Field>
+                <p className="hint-block">
+                  Versement financé personnellement (PER individuel classique). Plafond déductible :{" "}
+                  <strong>{formatEUR(results.plafondDeduction)}</strong>/an
+                  {results.versementNonDeductible > 0 && (
+                    <>
+                      {" "}
+                      · Fraction non déductible : <strong>{formatEUR(results.versementNonDeductible)}</strong>
+                    </>
+                  )}
+                </p>
+                <RuleNote ruleId="per-plafond-deduction-salarie" />
+              </>
+            )}
+          </Section>
+
+          {results.dirigeantStatus === "TNS" && (
+            <Section title="Régime fiscal & rentabilité de la société">
+              <div className="grid grid--2">
+                <Field label="Taux d'IS normal (tranche &gt; 42 500€, si régime IS)">
+                  <ResetableNumberInput
+                    step="0.01"
+                    value={inputs.corporateTaxRate}
+                    defaultValue={DEFAULT_CORPORATE_TAX_RATE}
+                    formatDefault={(v) => `${Math.round(v * 100)}%`}
+                    onChange={(v) => update("corporateTaxRate", v)}
+                  />
+                </Field>
+                <Field label="Éligible au taux réduit IS 15% ?">
+                  <select
+                    value={inputs.eligibleTauxReduitPME ? "oui" : "non"}
+                    onChange={(e) => update("eligibleTauxReduitPME", e.target.value === "oui")}
+                  >
+                    <option value="oui">Oui (capital détenu ≥75% par des personnes physiques)</option>
+                    <option value="non">Non</option>
+                  </select>
+                </Field>
+              </div>
+              {inputs.impositionSociete === "IS" && (
+                <Field label="Bénéfice imposable prévisionnel avant charge (€/an)">
+                  <NumberInput
+                    value={inputs.beneficeAvantChargePrevisionnel}
+                    onChange={(e) => update("beneficeAvantChargePrevisionnel", Number(e.target.value))}
+                  />
+                </Field>
+              )}
+              <RuleNote ruleId="is-taux-normal" />
+            </Section>
+          )}
+
+          <Section title="Revenu de référence du foyer fiscal" subtitle="Utilisé pour calculer le taux marginal d'imposition (TMI) réel.">
+            <PersonalTaxProfileFields
+              profile={inputs.personalTaxProfile}
+              onChange={(profile) => update("personalTaxProfile", profile)}
+              showAutresRevenus={false}
+              footerAlways={<RuleNote ruleId="ir-bareme-2026" />}
+            />
+          </Section>
+
+          <Field label="Nom de la simulation">
+            <input value={inputs.name} onChange={(e) => update("name", e.target.value)} />
+          </Field>
+        </div>
+
+        <div className="layout__results">
+          <div className="stat-grid">
+            <StatCard label="Plafond de déduction" value={formatEUR(results.plafondDeduction)} />
+            <StatCard label="Versement déductible" value={formatEUR(results.versementDeductible)} tone="good" />
+            {results.versementNonDeductible > 0 && (
+              <StatCard label="Versement non déductible" value={formatEUR(results.versementNonDeductible)} tone="bad" />
+            )}
+            <StatCard
+              label={results.dirigeantStatus === "TNS" ? "Économie d'impôt société" : "Économie d'impôt dirigeant (IR)"}
+              value={formatEUR(results.dirigeantStatus === "TNS" ? results.economieImpotSociete : results.economieImpotDirigeant)}
+              tone="good"
+            />
+            <StatCard
+              label="Coût net global"
+              value={formatEUR(results.coutNetGlobal)}
+              sub={`${formatPercent(results.tauxEconomieGlobal)} d'économie vs versement brut`}
+              tone="neutral"
+            />
+          </div>
+
+          <Section title="Sauvegarde & comparaison">
+            <SavedSimulationsPanel
+              kind="retraite"
+              currentInputs={inputs}
+              version={saveVersion}
+              onLoad={(loaded) => {
+                setInputs(loaded);
+                setSaveVersion((v) => v + 1);
+              }}
+              metricsFor={(sim) => {
+                const r = computeRetraite(sim);
+                return [
+                  { label: "Plafond de déduction", value: formatEUR(r.plafondDeduction) },
+                  { label: "Versement déductible", value: formatEUR(r.versementDeductible) },
+                  { label: "Coût net global", value: formatEUR(r.coutNetGlobal) },
+                  { label: "Économie vs versement brut", value: formatPercent(r.tauxEconomieGlobal) },
+                ];
+              }}
+              exportText={buildRetraiteExportText}
+            />
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+}

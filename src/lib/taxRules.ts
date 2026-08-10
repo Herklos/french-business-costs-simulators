@@ -402,6 +402,32 @@ export const TAX_RULES: TaxRule[] = [
     notes:
       "Obligation légale de prise en charge patronale ≥50% (contrat collectif obligatoire, régime général). Au-delà du plafond, l'excédent est réintégré dans l'assiette des cotisations sociales et de l'impôt sur le revenu du salarié, comme un complément de rémunération — simplifié ici au seul coût IR (cf. note de module mutuellePrevoyance.ts).",
   },
+  {
+    id: "per-plafond-deduction-tns",
+    category: "epargne_retraite_dirigeant",
+    label: "Plafond de déduction du PER individuel / Madelin retraite (TNS)",
+    value: "10% du bénéfice imposable (plafonné à 8×PASS) + 15% sur la tranche 1×PASS à 8×PASS, plancher 10% du PASS",
+    legalReference: "Art. 154 bis, 163 quatervicies CGI ; ordonnance n°2019-766 (PER, ex-Madelin retraite)",
+    sourceLabel: "Service-Public.fr / URSSAF",
+    sourceUrl: "https://www.service-public.fr/particuliers/vosdroits/F35276",
+    validFrom: "2019-10-01",
+    validUntil: "2026-12-31",
+    notes:
+      "PASS 2026 = 48 060€. Plafond nettement plus généreux que celui des salariés dès que le bénéfice dépasse le PASS. Ne tient pas compte du report des plafonds non utilisés des 3 années précédentes (simplification).",
+  },
+  {
+    id: "per-plafond-deduction-salarie",
+    category: "epargne_retraite_dirigeant",
+    label: "Plafond de déduction du PER individuel (assimilé salarié / droit commun)",
+    value: "10% du revenu professionnel net N-1, plafonné à 8×PASS, plancher 10% du PASS",
+    legalReference: "Art. 163 quatervicies CGI",
+    sourceLabel: "Service-Public.fr / impots.gouv.fr",
+    sourceUrl: "https://www.service-public.fr/particuliers/vosdroits/F35276",
+    validFrom: "2019-10-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Plafond individuel affiché sur l'avis d'imposition (« plafond épargne retraite »). Comme pour le TNS, le report des plafonds non utilisés des 3 années précédentes n'est pas modélisé ici.",
+  },
 ];
 
 export function getRule(id: string): TaxRule | undefined {

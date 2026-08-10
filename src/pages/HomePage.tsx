@@ -49,6 +49,14 @@ const SIMULATORS: SimulatorCard[] = [
       "Cotisations Madelin déductibles (TNS) vs mutuelle collective obligatoire prise en charge par l'employeur (assimilé salarié) : plafonds légaux, économie d'impôt société et dirigeant, coût net global.",
     available: true,
   },
+  {
+    page: "retraite",
+    icon: "🏦",
+    title: "Épargne retraite du dirigeant",
+    description:
+      "PER individuel / Madelin retraite : plafond de déduction fiscale selon le statut (formule TNS plus généreuse dès que le bénéfice dépasse le PASS, ou 10% du revenu pour un assimilé salarié), économie d'impôt et coût net.",
+    available: true,
+  },
 ];
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
