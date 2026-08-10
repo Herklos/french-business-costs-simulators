@@ -13,6 +13,12 @@ import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMod
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
 import { VEHICLE_MODELS, getVehicleModel } from "../lib/vehicleModels";
 import { DEFAULT_DEPRECIATION_RATE_ANNUAL } from "../lib/vehicleDepreciation";
+import { estimateMalusPoids } from "../lib/vehicleTaxes";
+import {
+  type BorneRechargeInputs,
+  computeBorneRecharge,
+  createDefaultBorneRechargeInputs,
+} from "../lib/borneRecharge";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
@@ -114,6 +120,11 @@ export function VehicleSimulatorPage() {
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
   const [showResidualValue, setShowResidualValue] = useState(false);
+  const [borneInputs, setBorneInputs] = useState<BorneRechargeInputs>(() => createDefaultBorneRechargeInputs());
+
+  function updateBorne<K extends keyof BorneRechargeInputs>(key: K, value: BorneRechargeInputs[K]) {
+    setBorneInputs((prev) => ({ ...prev, [key]: value }));
+  }
 
   // Le revenu de référence du foyer fiscal est un réglage transversal (identique quel que soit le
   // simulateur) : on le persiste à chaque modification pour le retrouver pré-rempli sur les autres
@@ -132,6 +143,11 @@ export function VehicleSimulatorPage() {
   const defaultCotisationRate = companyTypeConfig?.defaultCotisationRate ?? DEFAULT_TNS_RATE;
   const selectedVehicleModel = inputs.vehicleModelId ? getVehicleModel(inputs.vehicleModelId) : undefined;
   const lldToutCompris = selectedVehicleModel?.defaultLldOffer?.toutComprisEntretienAssurance ?? false;
+  const malusPoidsEstime = estimateMalusPoids(inputs.vehicleWeightKg, inputs.isElectric);
+  const borneResults = useMemo(
+    () => computeBorneRecharge(borneInputs, inputs, results.tauxIRUtilise),
+    [borneInputs, inputs, results.tauxIRUtilise],
+  );
 
   function update<K extends keyof SimulationInputs>(key: K, value: SimulationInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));
@@ -255,6 +271,23 @@ export function VehicleSimulatorPage() {
                 <NumberInput value={inputs.co2EmissionsGkm} onChange={(e) => update("co2EmissionsGkm", Number(e.target.value))} />
               </Field>
             )}
+            <div className="grid grid--2">
+              <Field
+                label="Poids en ordre de marche (kg)"
+                hint={`Malus au poids estimé (informatif, non déduit du prix saisi) : ${formatEUR(malusPoidsEstime)}`}
+              >
+                <NumberInput value={inputs.vehicleWeightKg} onChange={(e) => update("vehicleWeightKg", Number(e.target.value))} />
+              </Field>
+              <Field
+                label="Aide à l'achat perçue (bonus écologique / prime à la conversion) (€)"
+                hint="Informatif : à déduire vous-même du prix TTC ci-dessus si la société en a déjà bénéficié."
+              >
+                <NumberInput
+                  value={inputs.aideAchatVehicule}
+                  onChange={(e) => update("aideAchatVehicule", Number(e.target.value))}
+                />
+              </Field>
+            </div>
             <RuleNote ruleId="aen-amortissement-taux" />
             <RuleNote ruleId="aen-vehicule-loue-taux" />
             <RuleNote ruleId="malus-ecologique" />
@@ -292,6 +325,51 @@ export function VehicleSimulatorPage() {
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-taux" />}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-plafond" />}
           </Section>
+
+          {inputs.isElectric && (
+            <Section
+              title="⚡ Borne de recharge professionnelle"
+              subtitle="Installation d'une borne sur le lieu de travail et indemnité de recharge à domicile — dispositifs propres au véhicule électrique."
+            >
+              <div className="grid grid--3">
+                <Field label="Coût d'installation de la borne, TTC (€)">
+                  <NumberInput
+                    value={borneInputs.coutInstallationTTC}
+                    onChange={(e) => updateBorne("coutInstallationTTC", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Durée d'amortissement (années)">
+                  <NumberInput
+                    value={borneInputs.dureeAmortissementAnnees}
+                    onChange={(e) => updateBorne("dureeAmortissementAnnees", Number(e.target.value))}
+                  />
+                </Field>
+                <Field label="Indemnité de recharge à domicile (€/mois)">
+                  <NumberInput
+                    value={borneInputs.indemniteRechargeDomicileMensuelle}
+                    onChange={(e) => updateBorne("indemniteRechargeDomicileMensuelle", Number(e.target.value))}
+                  />
+                </Field>
+              </div>
+              <div className="stat-grid">
+                <StatCard label="Crédit d'impôt IRVE (75%, plafonné 20 000€)" value={formatEUR(borneResults.creditImpotIRVE)} tone="good" />
+                <StatCard
+                  label="Coût net société — année d'installation"
+                  value={formatEUR(borneResults.coutNetSocieteAnnee1)}
+                  sub={`${formatEUR(borneResults.coutNetSocieteAnneesSuivantes)}/an les années suivantes`}
+                  tone="bad"
+                />
+                <StatCard
+                  label="Indemnité de recharge — coût net société"
+                  value={formatEUR(borneResults.coutNetIndemniteRecharge)}
+                  sub={`${formatEUR(borneResults.indemniteRechargeAnnuelle)}/an brut`}
+                  tone="bad"
+                />
+              </div>
+              <RuleNote ruleId="credit-impot-irve" />
+              <RuleNote ruleId="indemnite-recharge-domicile" />
+            </Section>
+          )}
 
           <Section title="Usage" subtitle="La répartition pro/privé doit être justifiable (carnet de bord, application...).">
             <div className="grid grid--2">

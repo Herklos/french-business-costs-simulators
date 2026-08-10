@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
+import {
+  MALUS_POIDS_PLAFOND,
+  MALUS_POIDS_SEUIL_KG,
+  estimateAnnualVehicleTax,
+  estimateMalusPoids,
+  getPlafondAmortissementDeductible,
+} from "./vehicleTaxes";
 
 describe("getPlafondAmortissementDeductible", () => {
   it("30 000€ pour un véhicule électrique, quel que soit le CO2 saisi", () => {
@@ -43,5 +49,28 @@ describe("estimateAnnualVehicleTax", () => {
 
   it("ne retourne jamais de valeur négative pour un CO2 négatif saisi par erreur", () => {
     expect(estimateAnnualVehicleTax(-10, false)).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("estimateMalusPoids", () => {
+  it("exonération totale pour un véhicule électrique, quel que soit le poids", () => {
+    expect(estimateMalusPoids(2500, true)).toBe(0);
+  });
+
+  it("aucun malus sous le seuil (1500kg)", () => {
+    expect(estimateMalusPoids(1500, false)).toBe(0);
+    expect(estimateMalusPoids(MALUS_POIDS_SEUIL_KG, false)).toBe(0);
+  });
+
+  it("10€/kg au-delà du seuil", () => {
+    expect(estimateMalusPoids(MALUS_POIDS_SEUIL_KG + 100, false)).toBeCloseTo(1000, 6);
+  });
+
+  it("plafonné à MALUS_POIDS_PLAFOND pour un véhicule très lourd", () => {
+    expect(estimateMalusPoids(5000, false)).toBe(MALUS_POIDS_PLAFOND);
+  });
+
+  it("ne retourne jamais de valeur négative pour un poids négatif saisi par erreur", () => {
+    expect(estimateMalusPoids(-100, false)).toBe(0);
   });
 });

@@ -53,6 +53,8 @@ export interface SimulationInputs {
   co2EmissionsGkm: number; // émissions CO2 WLTP (g/km) — détermine le plafond de déduction fiscale et la taxe annuelle
   annualVehicleTaxOverride: number | null; // surcharge manuelle de la taxe annuelle CO2+polluants (null = estimation automatique)
   tauxDeprecationAnnuel: number; // 0-1, taux de décote annuel estimé, pour chiffrer la valeur résiduelle en fin de période
+  vehicleWeightKg: number; // poids en ordre de marche (kg) — pour l'estimation informative du malus au poids
+  aideAchatVehicule: number; // bonus écologique / prime à la conversion perçus (€), informatif — cf. estimateMalusPoids/aide dans vehicleTaxes.ts
 
   // Usage
   privateUsePercent: number; // 0-100
@@ -121,6 +123,8 @@ export function createDefaultInputs(): SimulationInputs {
     co2EmissionsGkm: 0,
     annualVehicleTaxOverride: null,
     tauxDeprecationAnnuel: DEFAULT_DEPRECIATION_RATE_ANNUAL,
+    vehicleWeightKg: 1980, // Tesla Model Y (modèle par défaut) — poids en ordre de marche
+    aideAchatVehicule: 0,
 
     privateUsePercent: 50,
     totalKmAnnual: 15000,

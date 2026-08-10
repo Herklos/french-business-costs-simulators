@@ -223,7 +223,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2026-01-01",
     validUntil: "2026-12-31",
     notes:
-      "Coût ponctuel généralement déjà inclus dans le prix TTC facturé par le concessionnaire : non recalculé séparément par le simulateur — à vérifier que le « prix d'achat TTC » saisi l'intègre bien. Les véhicules 100% électriques sont exonérés du malus au poids sur toute l'année 2026.",
+      "Coût ponctuel généralement déjà inclus dans le prix TTC facturé par le concessionnaire : le simulateur en propose une estimation informative (champ « poids en ordre de marche ») pour vérifier la cohérence d'un prix catalogue, mais ne le déduit pas automatiquement — à vérifier que le « prix d'achat TTC » saisi l'intègre bien. Les véhicules 100% électriques sont exonérés du malus au poids sur toute l'année 2026.",
   },
   {
     id: "bonus-ecologique",
@@ -235,7 +235,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2026-01-01",
     validUntil: "2026-12-31",
     notes:
-      "Réduit le prix d'achat effectif si perçu par la société. Non intégré automatiquement au calcul : à déduire manuellement du « prix d'achat TTC » saisi si la société en bénéficie.",
+      "Réduit le prix d'achat effectif si perçu par la société. Le champ « aide à l'achat perçue » du simulateur permet de le renseigner à titre informatif (affiché dans l'export), mais il reste à déduire manuellement du « prix d'achat TTC » saisi si la société en a déjà bénéficié — pour ne pas fausser la base de calcul de l'AEN/amortissement si le prix saisi est déjà net.",
   },
   {
     id: "tva-vehicule-carburant",
@@ -454,6 +454,32 @@ export const TAX_RULES: TaxRule[] = [
     validUntil: null,
     notes:
       "Relèvement progressif de 62 à 64 ans par génération, jusqu'à atteindre 64 ans pour les personnes nées à partir de 1968. Hors cas de déblocage anticipé, le PER n'est liquidable qu'à cet âge légal ou lors de la liquidation effective de la pension d'un régime obligatoire si l'activité se poursuit au-delà.",
+  },
+  {
+    id: "credit-impot-irve",
+    category: "fiscalite_vehicule_societe",
+    label: "Crédit d'impôt pour l'achat et l'installation d'une borne de recharge (IRVE)",
+    value: "75% du prix de revient TTC, plafonné à 20 000€ par système de charge",
+    legalReference: "Art. 200 quater C CGI",
+    sourceLabel: "impots.gouv.fr / economie.gouv.fr",
+    sourceUrl: "https://www.economie.gouv.fr/entreprises/credit-impot-borne-recharge-vehicules-electriques",
+    validFrom: "2021-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Dispositif prorogé par les lois de finances successives — vérifier la reconduction pour 2026/2027 avant application. S'impute directement sur l'IS dû (crédit d'impôt), en plus de la déductibilité normale de l'amortissement du solde non couvert.",
+  },
+  {
+    id: "indemnite-recharge-domicile",
+    category: "fiscalite_vehicule_societe",
+    label: "Indemnité de recharge à domicile d'un véhicule de fonction électrique",
+    value: "Forfait mensuel exonéré de charges sociales (ordre de grandeur ≈ 30€/mois), ou remboursement au réel sur justificatifs",
+    legalReference: "BOSS (Bulletin officiel de la sécurité sociale) — frais professionnels, rubrique véhicules électriques",
+    sourceLabel: "URSSAF",
+    sourceUrl: "https://boss.gouv.fr/portail/accueil/remuneration/frais-professionnels.html",
+    validFrom: "2023-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Le forfait exact dépend de la présence ou non d'un compteur dédié permettant de mesurer précisément la consommation liée à la recharge du véhicule — à défaut, un forfait simplifié s'applique. Valeur retenue ici à titre d'ordre de grandeur, à ajuster selon la situation réelle et le barème URSSAF en vigueur.",
   },
 ];
 

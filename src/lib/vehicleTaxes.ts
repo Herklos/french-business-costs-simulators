@@ -4,9 +4,11 @@
 //  - Taxes annuelles sur l'affectation des véhicules de tourisme à des fins économiques
 //    (ex-TVS, scindée depuis 2023 en taxe CO2 + taxe polluants), exonérées pour les véhicules
 //    100% électriques/hydrogène.
-// Le malus écologique (CO2 + poids) est un coût ponctuel intégré à la facture d'achat : on
-// considère qu'il est déjà compris dans le "prix d'achat TTC" saisi par l'utilisateur, il n'est
-// donc pas recalculé séparément ici (voir note dans le registre des règles fiscales).
+// Le malus écologique CO2 est un coût ponctuel intégré à la facture d'achat : on considère qu'il
+// est déjà compris dans le "prix d'achat TTC" saisi par l'utilisateur, il n'est donc pas recalculé
+// séparément ici. Le malus au poids, en revanche, est estimé ci-dessous à titre INFORMATIF — pour
+// aider à vérifier/expliquer un prix catalogue, sans être soustrait automatiquement du prix saisi
+// (qui reste, comme le malus CO2, censé déjà l'inclure).
 
 /** Plafond de déduction fiscale de l'amortissement/loyer selon les émissions de CO2 (art. 39-4 CGI). */
 export function getPlafondAmortissementDeductible(co2EmissionsGkm: number, isElectric: boolean): number {
@@ -32,3 +34,20 @@ export function estimateAnnualVehicleTax(co2EmissionsGkm: number, isElectric: bo
   if (co2 <= 160) return 500 + ((co2 - 130) / (160 - 130)) * (1000 - 500);
   return Math.min(3000, 1000 + ((co2 - 160) / (250 - 160)) * (3000 - 1000));
 }
+
+export const MALUS_POIDS_SEUIL_KG = 1500; // seuil 2026 (cf. règle "malus-ecologique" du registre taxRules.ts)
+export const MALUS_POIDS_TAUX_PAR_KG = 10; // €/kg au-delà du seuil — approximation linéaire (barème réel progressif par tranches de 100kg)
+export const MALUS_POIDS_PLAFOND = 30000; // plafonné, ne peut excéder 50% du prix d'achat TTC (plafond additionnel non modélisé ici)
+
+/**
+ * Estimation simplifiée du malus au poids (taxe sur la masse en ordre de marche), à titre
+ * INFORMATIF — ce montant est déjà supposé inclus dans le prix d'achat TTC saisi par ailleurs (au
+ * même titre que le malus CO2), il n'est pas soustrait automatiquement. Exonéré pour les véhicules
+ * 100% électriques/hydrogène, ainsi que pour certaines familles nombreuses (non modélisé).
+ */
+export function estimateMalusPoids(weightKg: number, isElectric: boolean): number {
+  if (isElectric) return 0;
+  const excedent = Math.max(0, weightKg - MALUS_POIDS_SEUIL_KG);
+  return Math.min(MALUS_POIDS_PLAFOND, excedent * MALUS_POIDS_TAUX_PAR_KG);
+}
+
