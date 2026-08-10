@@ -54,6 +54,29 @@ describe("computeRemuneration — cohérence générale", () => {
   });
 });
 
+describe("computeRemuneration — coût pour 1€ net perçu", () => {
+  it("coutPour1EuroNet = coût total entreprise / net total annuel", () => {
+    const r = computeRemuneration(createDefaultRemunerationInputs());
+    for (const s of r.scenarios) {
+      expect(s.coutPour1EuroNet).toBeCloseTo(s.coutTotalEntreprise / s.netTotalAnnuel, 6);
+    }
+  });
+
+  it("le meilleur scénario (net le plus élevé) a aussi le coût pour 1€ net le plus bas — à budget égal, les deux classements coïncident", () => {
+    const r = computeRemuneration(createDefaultRemunerationInputs());
+    const minCout = Math.min(...r.scenarios.map((s) => s.coutPour1EuroNet));
+    expect(r.meilleurScenario.coutPour1EuroNet).toBeCloseTo(minCout, 6);
+  });
+
+  it("coutPour1EuroNet vaut Infinity si le net du scénario est nul", () => {
+    // Budget nul : aucun net dans aucun scénario.
+    const r = computeRemuneration(withCompany("EURL", { budgetAnnuelDisponible: 0 }));
+    for (const s of r.scenarios) {
+      expect(s.coutPour1EuroNet).toBe(Infinity);
+    }
+  });
+});
+
 describe("computeRemuneration — statut du dirigeant selon la forme juridique", () => {
   it("EURL : statut TNS, cotisations calculées sur le net", () => {
     const r = computeRemuneration(withCompany("EURL"));

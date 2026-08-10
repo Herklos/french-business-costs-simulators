@@ -16,7 +16,7 @@ import { CopyButton } from "../components/CopyButton";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
-import { formatEUR, formatPercent } from "../lib/format";
+import { formatEUR, formatEURPrecise, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation rémunération, destiné à être copié dans le presse-papier. */
 function buildRemunerationExportText(sim: RemunerationInputs): string {
@@ -26,7 +26,7 @@ function buildRemunerationExportText(sim: RemunerationInputs): string {
 
   const scenarioLine = (s: ScenarioResult) =>
     push(
-      `  ${s.label} : net ${formatEUR(s.netTotalAnnuel)}/an (${formatEUR(s.netTotalMensuel)}/mois) — brut ${formatEUR(s.bruteTotalAnnuel)}/an — prélèvement global ${formatPercent(s.tauxPrelevementGlobal)}`,
+      `  ${s.label} : net ${formatEUR(s.netTotalAnnuel)}/an (${formatEUR(s.netTotalMensuel)}/mois) — brut ${formatEUR(s.bruteTotalAnnuel)}/an — coût pour 1€ net : ${Number.isFinite(s.coutPour1EuroNet) ? formatEURPrecise(s.coutPour1EuroNet) : "—"} (prélèvement global ${formatPercent(s.tauxPrelevementGlobal)})`,
     );
 
   push(`💰 ${sim.name} — Simulateur de rémunération du dirigeant`);
@@ -270,6 +270,23 @@ export function RemunerationSimulatorPage() {
             {formatEUR(results.meilleurScenario.netTotalMensuel)}/mois)
           </p>
 
+          <Section
+            title="Coût, tout compris, pour 1€ net perçu par le dirigeant"
+            subtitle="À enveloppe entreprise égale : combien l'entreprise doit-elle décaisser pour que le dirigeant touche 1€ net, selon le mode retenu ? Le plus bas est le plus efficace."
+          >
+            <div className="stat-grid">
+              {[results.scenarioSalaire, results.scenarioDividendes, results.scenarioMixte].map((s) => (
+                <StatCard
+                  key={s.key}
+                  label={s.label}
+                  value={Number.isFinite(s.coutPour1EuroNet) ? `${formatEURPrecise(s.coutPour1EuroNet)}` : "—"}
+                  sub={s.key === results.meilleurScenario.key ? "🏆 le plus efficace" : undefined}
+                  tone={s.key === results.meilleurScenario.key ? "good" : "neutral"}
+                />
+              ))}
+            </div>
+          </Section>
+
           {[results.scenarioSalaire, results.scenarioDividendes, results.scenarioMixte].map((s) => (
             <Section
               key={s.key}
@@ -277,6 +294,12 @@ export function RemunerationSimulatorPage() {
               subtitle={s.key === results.meilleurScenario.key ? "🏆 Le plus avantageux pour le dirigeant" : undefined}
             >
               <div className="stat-grid">
+                <StatCard
+                  label="Coût pour 1€ net perçu"
+                  value={Number.isFinite(s.coutPour1EuroNet) ? formatEURPrecise(s.coutPour1EuroNet) : "—"}
+                  sub={`prélèvement global : ${formatPercent(s.tauxPrelevementGlobal)}`}
+                  tone={s.key === results.meilleurScenario.key ? "good" : "bad"}
+                />
                 <StatCard label="Brut annuel" value={formatEUR(s.bruteTotalAnnuel)} sub={`${formatEUR(s.bruteTotalMensuel)}/mois`} />
                 <StatCard
                   label="Net annuel"
@@ -284,7 +307,6 @@ export function RemunerationSimulatorPage() {
                   sub={`${formatEUR(s.netTotalMensuel)}/mois`}
                   tone={s.key === results.meilleurScenario.key ? "good" : "neutral"}
                 />
-                <StatCard label="Prélèvement global" value={formatPercent(s.tauxPrelevementGlobal)} sub="charges + IS + IR/PFU, vs enveloppe" tone="bad" />
               </div>
               <p className="field__hint">
                 Salaire : brut {formatEUR(s.salaireBrutAnnuel)} · net après IR {formatEUR(s.salaireNetApresImpotAnnuel)}

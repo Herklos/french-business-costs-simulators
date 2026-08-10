@@ -132,6 +132,7 @@ export interface ScenarioResult {
   netTotalMensuel: number;
   bruteTotalMensuel: number;
   tauxPrelevementGlobal: number; // 1 − net / coût total : part de l'enveloppe perdue en charges + impôts
+  coutPour1EuroNet: number; // coût total entreprise / net dirigeant : ce qu'il faut décaisser pour que le dirigeant perçoive 1€ net — plus c'est bas, plus le mode est efficace ; Infinity si net nul
 }
 
 export interface RemunerationResults {
@@ -238,6 +239,7 @@ function computeScenario(
   const bruteTotalAnnuel = salaireBrutAnnuel + dividendeBrutDistribuable;
   const netTotalAnnuel = salaireNetApresImpotAnnuel + dividendeNetAnnuel;
   const tauxPrelevementGlobal = coutTotalEntreprise > 0 ? 1 - netTotalAnnuel / coutTotalEntreprise : 0;
+  const coutPour1EuroNet = netTotalAnnuel > 0 ? coutTotalEntreprise / netTotalAnnuel : Infinity;
 
   return {
     key,
@@ -266,6 +268,7 @@ function computeScenario(
     netTotalMensuel: netTotalAnnuel / 12,
     bruteTotalMensuel: bruteTotalAnnuel / 12,
     tauxPrelevementGlobal,
+    coutPour1EuroNet,
   };
 }
 
