@@ -575,6 +575,19 @@ export const TAX_RULES: TaxRule[] = [
       "Régime optionnel (sur choix exprimé dans la liasse fiscale de la holding), à ne pas confondre avec l'intégration fiscale (régime distinct, ≥95% de détention, permettant en plus la compensation des résultats du groupe). Si les conditions de détention ne sont pas remplies, le dividende reçu par la holding est imposé à l'IS pour son montant brut entier, sans aucune exonération.",
   },
   {
+    id: "integration-fiscale-qpfc-reduite",
+    category: "holding_montage_patrimonial",
+    label: "Intégration fiscale — quote-part de frais et charges réduite sur les dividendes intra-groupe",
+    value: "QPFC réduite à 1% (au lieu de 5% du régime mère-fille), sous condition de détention ≥95% du capital pendant ≥2 ans",
+    legalReference: "Art. 216, I ; 223 A et suiv. CGI",
+    sourceLabel: "impots.gouv.fr / BOFiP-Impôts",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1438-PGP.html",
+    validFrom: "2016-01-01",
+    validUntil: null,
+    notes:
+      "L'intégration fiscale est un régime distinct du mère-fille (option formalisée pour 5 exercices, détention ≥95% au lieu de ≥5%), qui permet surtout de compenser les résultats (bénéfices et déficits) de toutes les sociétés du groupe au niveau de la holding tête de groupe — effet NON modélisé ici (nécessiterait de chiffrer une filiale déficitaire, hors du champ à deux sociétés de ce simulateur). Seul l'effet directement chiffrable est repris : depuis la loi de finances pour 2016 (mise en conformité avec l'arrêt Steria de la CJUE, qui a jugé discriminatoire l'ancienne neutralisation à 100% des dividendes intra-groupe), la QPFC du régime mère-fille est réduite à 1% au lieu de 5% pour les dividendes versés au sein d'un groupe intégré.",
+  },
+  {
     id: "pfu-dividendes",
     category: "holding_montage_patrimonial",
     label: "Prélèvement forfaitaire unique (PFU / flat tax) sur les dividendes perçus par une personne physique",

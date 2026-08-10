@@ -1,7 +1,9 @@
 import { useMemo, useState } from "react";
 import {
+  DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES,
   DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES,
   type HoldingInputs,
+  SEUIL_DETENTION_INTEGRATION_FISCALE_POURCENT,
   SEUIL_DETENTION_MERE_FILLE_POURCENT,
   computeHolding,
   createDefaultHoldingInputs,
@@ -28,7 +30,7 @@ function buildHoldingExportText(sim: HoldingInputs): string {
   push("");
   push(`Dividende annuel de la filiale : ${formatEUR(sim.dividendeAnnuelFiliale)}`);
   push(
-    `Détention : ${sim.tauxDetentionFilialePourcent}% depuis ${sim.dureeDetentionFilialeAnnees} an(s) → régime mère-fille ${r.eligibleRegimeMereFille ? "APPLICABLE" : "NON applicable"}`,
+    `Détention : ${sim.tauxDetentionFilialePourcent}% depuis ${sim.dureeDetentionFilialeAnnees} an(s) → régime mère-fille ${r.eligibleRegimeMereFille ? "APPLICABLE" : "NON applicable"}${r.eligibleIntegrationFiscale ? " · intégration fiscale APPLICABLE (QPFC réduite à 1%)" : ""}`,
   );
   push("");
   push("— Année 1 (indicatif) —");
@@ -98,10 +100,19 @@ export function HoldingSimulatorPage({ initialShareData }: { initialShareData?: 
             </div>
             <p className={results.eligibleRegimeMereFille ? "hint-block" : "warning-block"}>
               {results.eligibleRegimeMereFille
-                ? `Régime mère-fille applicable (détention ≥${SEUIL_DETENTION_MERE_FILLE_POURCENT}% depuis ≥${DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES} ans) : seule une quote-part de frais et charges de 5% du dividende est réintégrée au résultat imposable de la holding.`
+                ? `Régime mère-fille applicable (détention ≥${SEUIL_DETENTION_MERE_FILLE_POURCENT}% depuis ≥${DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES} ans) : seule une quote-part de frais et charges de ${results.eligibleIntegrationFiscale ? "1%" : "5%"} du dividende est réintégrée au résultat imposable de la holding.`
                 : `Régime mère-fille NON applicable (détention <${SEUIL_DETENTION_MERE_FILLE_POURCENT}% ou détenue depuis <${DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES} ans) : le dividende reçu par la holding est imposé à l'IS pour son montant brut entier, sans exonération.`}
             </p>
+            {results.eligibleIntegrationFiscale && (
+              <p className="hint-block">
+                <strong>Intégration fiscale également applicable</strong> (détention ≥{SEUIL_DETENTION_INTEGRATION_FISCALE_POURCENT}% depuis
+                ≥{DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES} ans) : la quote-part de frais et charges est réduite à 1% au lieu de 5% sur
+                ce dividende intra-groupe. L'intégration fiscale permet aussi de compenser les résultats des sociétés du groupe (non chiffré ici,
+                nécessite une filiale déficitaire).
+              </p>
+            )}
             <RuleNote ruleId="regime-mere-fille" />
+            {results.eligibleIntegrationFiscale && <RuleNote ruleId="integration-fiscale-qpfc-reduite" />}
           </Section>
 
           <Section title="Régime fiscal de la holding">

@@ -32,18 +32,20 @@ import type { ImpositionSociete } from "./companyTypes";
 
 export const SEUIL_CHARGE_IMMEDIATE_HT = 500; // art. 39-1 3° CGI — petit matériel, non revalorisé depuis des décennies
 
-export type CategorieMateriel = "informatique" | "mobilier" | "autre";
+export type CategorieMateriel = "informatique" | "mobilier" | "outillage" | "autre";
 export type ModeAcquisitionMateriel = "societe" | "personnel_rembourse" | "personnel_non_rembourse" | "loa";
 
 export const DUREE_AMORTISSEMENT_PAR_CATEGORIE: Record<CategorieMateriel, number> = {
   informatique: 3, // matériel informatique/bureautique : usage 3 ans (doctrine BOFiP courante)
   mobilier: 8, // mobilier de bureau : usage 8-10 ans, 8 retenu par défaut
+  outillage: 7, // matériel et outillage industriels/d'atelier : usage 5 à 10 ans selon la nature, 7 retenu par défaut (doctrine BOFiP courante)
   autre: 5,
 };
 
 export const CATEGORIE_LABELS: Record<CategorieMateriel, string> = {
   informatique: "Matériel informatique / bureautique",
   mobilier: "Mobilier de bureau",
+  outillage: "Outillage / matériel d'atelier professionnel",
   autre: "Autre matériel professionnel",
 };
 

@@ -13,6 +13,15 @@
 // Coût réel très faible (5% × taux d'IS, soit ≈1,25% du dividende à 25% d'IS) comparé à une taxation
 // personnelle immédiate au PFU de 30%.
 //
+// Intégration fiscale (art. 223 A et suiv. CGI) : régime DISTINCT du mère-fille, optionnel, qui
+// exige une détention ≥95% (vs ≥5%) et permet en plus de compenser les résultats (bénéfices et
+// déficits) de toutes les sociétés du groupe au niveau de la holding tête de groupe — non modélisé
+// ici (nécessiterait de chiffrer un déficit dans une autre filiale, hors du champ de ce simulateur
+// à deux sociétés). Seul un effet directement chiffrable est repris : depuis la loi de finances pour
+// 2016 (mise en conformité avec la jurisprudence Steria de la CJUE), les dividendes versés au sein
+// d'un groupe intégré ne sont plus totalement neutralisés, mais bénéficient en compensation d'une
+// QPFC réduite à 1% (au lieu de 5%) sur le régime mère-fille — art. 216, I CGI.
+//
 // Ce que ce simulateur compare, sur une durée de projection donnée, à dividende annuel identique
 // versé par la fille :
 //  - "Sans holding" : distribution directe au dirigeant, PFU 30% immédiat chaque année, puis
@@ -39,6 +48,10 @@ export const QUOTE_PART_FRAIS_ET_CHARGES_MERE_FILLE = 0.05; // art. 216 CGI
 export const SEUIL_DETENTION_MERE_FILLE_POURCENT = 5; // art. 145 CGI
 export const DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES = 2; // art. 145 CGI
 export const PFU_TAUX_DIVIDENDES = 0.3; // 12,8% IR + 17,2% PS, art. 200 A CGI
+
+export const QUOTE_PART_FRAIS_ET_CHARGES_INTEGRATION_FISCALE = 0.01; // art. 216, I CGI, depuis LF2016
+export const SEUIL_DETENTION_INTEGRATION_FISCALE_POURCENT = 95; // art. 223 A CGI
+export const DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES = 2; // même condition de durée que le régime mère-fille (simplification)
 
 export interface HoldingInputs {
   id: string;
@@ -75,9 +88,10 @@ export function createDefaultHoldingInputs(): HoldingInputs {
 
 export interface HoldingResults {
   eligibleRegimeMereFille: boolean;
+  eligibleIntegrationFiscale: boolean; // détention ≥95% : QPFC réduite à 1% au lieu de 5%
 
   // Coût du régime mère-fille sur le dividende de l'année 1 (indicatif, avant capitalisation).
-  baseImposableIS: number; // QPFC (5% du dividende) si éligible, dividende brut entier sinon
+  baseImposableIS: number; // QPFC (1% si intégration fiscale, 5% si mère-fille) si éligible, dividende brut entier sinon
   coutISAnnee1: number;
   netCapitaliseHoldingAnnee1: number;
   netDistributionDirecteAnnee1: number; // sans holding : dividende net de PFU, versé directement
@@ -99,9 +113,15 @@ export function computeHolding(inputs: HoldingInputs): HoldingResults {
   const eligibleRegimeMereFille =
     inputs.tauxDetentionFilialePourcent >= SEUIL_DETENTION_MERE_FILLE_POURCENT &&
     inputs.dureeDetentionFilialeAnnees >= DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES;
+  const eligibleIntegrationFiscale =
+    inputs.tauxDetentionFilialePourcent >= SEUIL_DETENTION_INTEGRATION_FISCALE_POURCENT &&
+    inputs.dureeDetentionFilialeAnnees >= DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES;
 
   const dividendeAnnuel = Math.max(0, inputs.dividendeAnnuelFiliale);
-  const baseImposableIS = eligibleRegimeMereFille ? dividendeAnnuel * QUOTE_PART_FRAIS_ET_CHARGES_MERE_FILLE : dividendeAnnuel;
+  const quotePartApplicable = eligibleIntegrationFiscale
+    ? QUOTE_PART_FRAIS_ET_CHARGES_INTEGRATION_FISCALE
+    : QUOTE_PART_FRAIS_ET_CHARGES_MERE_FILLE;
+  const baseImposableIS = eligibleRegimeMereFille ? dividendeAnnuel * quotePartApplicable : dividendeAnnuel;
   const coutISAnnee1 = computeIS(baseImposableIS, inputs.eligibleTauxReduitPMEHolding, inputs.corporateTaxRateHolding);
   const netCapitaliseHoldingAnnee1 = dividendeAnnuel - coutISAnnee1;
   const netDistributionDirecteAnnee1 = dividendeAnnuel * (1 - PFU_TAUX_DIVIDENDES);
@@ -130,6 +150,7 @@ export function computeHolding(inputs: HoldingInputs): HoldingResults {
 
   return {
     eligibleRegimeMereFille,
+    eligibleIntegrationFiscale,
     baseImposableIS,
     coutISAnnee1,
     netCapitaliseHoldingAnnee1,

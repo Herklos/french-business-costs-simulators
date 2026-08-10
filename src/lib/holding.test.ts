@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES,
   DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES,
   type HoldingInputs,
   PFU_TAUX_DIVIDENDES,
+  QUOTE_PART_FRAIS_ET_CHARGES_INTEGRATION_FISCALE,
   QUOTE_PART_FRAIS_ET_CHARGES_MERE_FILLE,
+  SEUIL_DETENTION_INTEGRATION_FISCALE_POURCENT,
   SEUIL_DETENTION_MERE_FILLE_POURCENT,
   computeHolding,
   createDefaultHoldingInputs,
@@ -41,8 +44,15 @@ describe("computeHolding — éligibilité au régime mère-fille", () => {
 });
 
 describe("computeHolding — coût IS de la remontée de dividendes", () => {
-  it("éligible : seule la quote-part de frais et charges (5%) est imposée à l'IS", () => {
-    const r = computeHolding(withPatch({ dividendeAnnuelFiliale: 100000, corporateTaxRateHolding: 0.25, eligibleTauxReduitPMEHolding: false }));
+  it("éligible mère-fille (sans intégration fiscale) : seule la quote-part de frais et charges (5%) est imposée à l'IS", () => {
+    const r = computeHolding(
+      withPatch({
+        dividendeAnnuelFiliale: 100000,
+        tauxDetentionFilialePourcent: 50, // sous le seuil de 95% de l'intégration fiscale, mais au-dessus du seuil de 5% du mère-fille
+        corporateTaxRateHolding: 0.25,
+        eligibleTauxReduitPMEHolding: false,
+      }),
+    );
     expect(r.baseImposableIS).toBeCloseTo(100000 * QUOTE_PART_FRAIS_ET_CHARGES_MERE_FILLE, 6);
     expect(r.coutISAnnee1).toBeCloseTo(5000 * 0.25, 6);
   });
@@ -68,6 +78,53 @@ describe("computeHolding — coût IS de la remontée de dividendes", () => {
   it("le coût de remontée avec holding (éligible) est très inférieur au PFU direct", () => {
     const r = computeHolding(withPatch({ dividendeAnnuelFiliale: 50000 }));
     expect(r.netCapitaliseHoldingAnnee1).toBeGreaterThan(r.netDistributionDirecteAnnee1);
+  });
+});
+
+describe("computeHolding — éligibilité à l'intégration fiscale (QPFC réduite à 1%)", () => {
+  it("éligible par défaut (détention 100%, 3 ans)", () => {
+    const r = computeHolding(createDefaultHoldingInputs());
+    expect(r.eligibleIntegrationFiscale).toBe(true);
+  });
+
+  it("non éligible si la détention est sous le seuil de 95% (mais reste éligible mère-fille)", () => {
+    const r = computeHolding(withPatch({ tauxDetentionFilialePourcent: 50 }));
+    expect(r.eligibleIntegrationFiscale).toBe(false);
+    expect(r.eligibleRegimeMereFille).toBe(true);
+  });
+
+  it("non éligible si la durée de détention est sous 2 ans", () => {
+    const r = computeHolding(withPatch({ dureeDetentionFilialeAnnees: 1 }));
+    expect(r.eligibleIntegrationFiscale).toBe(false);
+  });
+
+  it("éligible pile aux seuils (95%, 2 ans)", () => {
+    const r = computeHolding(
+      withPatch({
+        tauxDetentionFilialePourcent: SEUIL_DETENTION_INTEGRATION_FISCALE_POURCENT,
+        dureeDetentionFilialeAnnees: DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES,
+      }),
+    );
+    expect(r.eligibleIntegrationFiscale).toBe(true);
+  });
+
+  it("la QPFC appliquée est de 1% (et non 5%) quand l'intégration fiscale s'applique", () => {
+    const r = computeHolding(
+      withPatch({ dividendeAnnuelFiliale: 100000, tauxDetentionFilialePourcent: 100, dureeDetentionFilialeAnnees: 5 }),
+    );
+    expect(r.baseImposableIS).toBeCloseTo(100000 * QUOTE_PART_FRAIS_ET_CHARGES_INTEGRATION_FISCALE, 6);
+  });
+
+  it("la QPFC réduite (1%) génère un coût IS strictement inférieur à la QPFC mère-fille (5%), à dividende égal", () => {
+    const avecIntegration = computeHolding(
+      withPatch({ dividendeAnnuelFiliale: 100000, tauxDetentionFilialePourcent: 100, dureeDetentionFilialeAnnees: 5 }),
+    );
+    const sansIntegration = computeHolding(
+      withPatch({ dividendeAnnuelFiliale: 100000, tauxDetentionFilialePourcent: 50, dureeDetentionFilialeAnnees: 5 }),
+    );
+    expect(avecIntegration.eligibleIntegrationFiscale).toBe(true);
+    expect(sansIntegration.eligibleIntegrationFiscale).toBe(false);
+    expect(avecIntegration.coutISAnnee1).toBeLessThan(sansIntegration.coutISAnnee1);
   });
 });
 

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  CATEGORIE_LABELS,
+  type CategorieMateriel,
+  DUREE_AMORTISSEMENT_PAR_CATEGORIE,
   type MaterielInputs,
   SEUIL_CHARGE_IMMEDIATE_HT,
   computeMateriel,
@@ -124,6 +127,27 @@ describe("computeMateriel — plan de renouvellement périodique", () => {
   it("avec inflation, le coût total dépasse le simple produit linéaire", () => {
     const r = computeMateriel(withPatch({ prixHT: 1800, dureeAmortissementAnnees: 3, horizonRenouvellementAnnees: 9, tauxInflationMateriel: 0.05 }));
     expect(r.coutTotalSurHorizon).toBeGreaterThan(r.coutNetSocieteTotalSurDuree * 3);
+  });
+});
+
+describe("computeMateriel — catégorie outillage / matériel d'atelier", () => {
+  it("la durée d'amortissement par défaut de l'outillage est de 7 ans", () => {
+    expect(DUREE_AMORTISSEMENT_PAR_CATEGORIE.outillage).toBe(7);
+  });
+
+  it("chaque catégorie a un libellé, y compris outillage", () => {
+    const categories: CategorieMateriel[] = ["informatique", "mobilier", "outillage", "autre"];
+    for (const c of categories) {
+      expect(CATEGORIE_LABELS[c]).toBeTruthy();
+    }
+  });
+
+  it("un outillage amorti sur sa durée par défaut se calcule comme les autres catégories", () => {
+    const r = computeMateriel(
+      withPatch({ categorie: "outillage", prixHT: 3500, dureeAmortissementAnnees: DUREE_AMORTISSEMENT_PAR_CATEGORIE.outillage }),
+    );
+    expect(r.eligibleChargeImmediate).toBe(false);
+    expect(r.annuiteAmortissement).toBeCloseTo(3500 / 7, 6);
   });
 });
 
