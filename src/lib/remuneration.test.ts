@@ -148,3 +148,17 @@ describe("computeRemuneration — export/texte", () => {
     expect(a.modeRemuneration).toBe("mixte");
   });
 });
+
+describe("computeRemuneration — régime IR (société translucide)", () => {
+  it("aucun IS n'est dû sur le bénéfice affecté aux dividendes", () => {
+    const r = computeRemuneration(withCompany("EURL", { impositionSociete: "IR", budgetAnnuelDisponible: 60000 }));
+    expect(r.scenarioDividendes.isDue).toBe(0);
+    expect(r.scenarioDividendes.dividendeBrutDistribuable).toBeCloseTo(r.scenarioDividendes.beneficeSoumisIS, 6);
+  });
+
+  it("un budget plus élevé pousse le TMI du foyer plus haut (bénéfice intégré au revenu imposable) — prélèvement marginal croissant", () => {
+    const petit = computeRemuneration(withCompany("EURL", { impositionSociete: "IR", budgetAnnuelDisponible: 10000 }));
+    const grand = computeRemuneration(withCompany("EURL", { impositionSociete: "IR", budgetAnnuelDisponible: 200000 }));
+    expect(grand.scenarioDividendes.tauxPrelevementGlobal).toBeGreaterThan(petit.scenarioDividendes.tauxPrelevementGlobal);
+  });
+});

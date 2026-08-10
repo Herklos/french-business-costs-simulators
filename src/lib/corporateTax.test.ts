@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { IS_SEUIL_TAUX_REDUIT, IS_TAUX_REDUIT, computeEconomieImpotIS, computeIS } from "./corporateTax";
+import {
+  IS_SEUIL_TAUX_REDUIT,
+  IS_TAUX_REDUIT,
+  type CompanyTaxContext,
+  computeEconomieImpotIS,
+  computeEconomieImpotSociete,
+  computeIS,
+} from "./corporateTax";
 
 describe("computeIS", () => {
   it("applique le taux normal uniquement si non éligible au taux réduit", () => {
@@ -52,5 +59,37 @@ describe("computeEconomieImpotIS", () => {
   it("l'économie ne peut jamais être négative", () => {
     const economie = computeEconomieImpotIS(50000, 0, true, 0.25);
     expect(economie).toBe(0);
+  });
+});
+
+describe("computeEconomieImpotSociete", () => {
+  const ctxIS: CompanyTaxContext = {
+    impositionSociete: "IS",
+    beneficeAvantChargePrevisionnel: 40000,
+    eligibleTauxReduitPME: true,
+    corporateTaxRate: 0.25,
+  };
+
+  it("régime IS : délègue à computeEconomieImpotIS (barème progressif + plafonnement)", () => {
+    const viaHelper = computeEconomieImpotSociete(ctxIS, 5000, 0.3);
+    const viaDirect = computeEconomieImpotIS(40000, 5000, true, 0.25);
+    expect(viaHelper).toBeCloseTo(viaDirect, 6);
+  });
+
+  it("régime IS : le taux IR passé en paramètre est ignoré (utilise le barème IS, pas le TMI foyer)", () => {
+    const avecTaux10 = computeEconomieImpotSociete(ctxIS, 5000, 0.1);
+    const avecTaux45 = computeEconomieImpotSociete(ctxIS, 5000, 0.45);
+    expect(avecTaux10).toBeCloseTo(avecTaux45, 6);
+  });
+
+  it("régime IR (société translucide) : économie = charge × taux marginal du foyer, sans barème IS", () => {
+    const ctxIR: CompanyTaxContext = { ...ctxIS, impositionSociete: "IR" };
+    expect(computeEconomieImpotSociete(ctxIR, 5000, 0.3)).toBeCloseTo(5000 * 0.3, 6);
+    expect(computeEconomieImpotSociete(ctxIR, 5000, 0)).toBe(0);
+  });
+
+  it("régime IR : le bénéfice/taux réduit du contexte IS sont sans effet", () => {
+    const ctxIR: CompanyTaxContext = { ...ctxIS, impositionSociete: "IR", beneficeAvantChargePrevisionnel: 0, eligibleTauxReduitPME: false };
+    expect(computeEconomieImpotSociete(ctxIR, 5000, 0.3)).toBeCloseTo(5000 * 0.3, 6);
   });
 });

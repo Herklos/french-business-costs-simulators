@@ -113,3 +113,26 @@ describe("computeRetraite — détail du calcul (breakdown société vs dirigean
     expect(auDessusPlafond.detail.some((d) => d.label.includes("NON déductible"))).toBe(true);
   });
 });
+
+describe("computeRetraite — régime IR (société translucide, TNS)", () => {
+  it("utilise le taux marginal manuel du foyer plutôt que le barème IS", () => {
+    const inputs = withCompany("EURL", {
+      impositionSociete: "IR",
+      versementAnnuel: 3000,
+      personalTaxProfile: { ...createDefaultRetraiteInputs().personalTaxProfile, mode: "manuel", tauxManuel: 0.3 },
+    });
+    const r = computeRetraite(inputs);
+    expect(r.economieImpotSociete).toBeCloseTo(r.versementDeductible * 0.3, 6);
+  });
+
+  it("le taux réduit PME et le bénéfice prévisionnel sont sans effet en régime IR", () => {
+    const base = withCompany("EURL", {
+      impositionSociete: "IR",
+      versementAnnuel: 3000,
+      personalTaxProfile: { ...createDefaultRetraiteInputs().personalTaxProfile, mode: "manuel", tauxManuel: 0.3 },
+    });
+    const avecReduit = computeRetraite({ ...base, eligibleTauxReduitPME: true });
+    const sansReduit = computeRetraite({ ...base, eligibleTauxReduitPME: false });
+    expect(avecReduit.economieImpotSociete).toBeCloseTo(sansReduit.economieImpotSociete, 6);
+  });
+});

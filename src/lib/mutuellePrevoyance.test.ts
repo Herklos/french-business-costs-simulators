@@ -101,3 +101,15 @@ describe("computeMutuellePrevoyance — cas limites", () => {
     expect(createDefaultMutuellePrevoyanceInputs().id).not.toBe(createDefaultMutuellePrevoyanceInputs().id);
   });
 });
+
+describe("computeMutuellePrevoyance — régime IR (société translucide, assimilé salarié)", () => {
+  it("la part patronale utilise le taux marginal manuel du foyer plutôt que le barème IS", () => {
+    const inputs = withCompany("SASU", {
+      impositionSociete: "IR",
+      cotisationAnnuelle: 1500,
+      personalTaxProfile: { ...createDefaultMutuellePrevoyanceInputs().personalTaxProfile, mode: "manuel", tauxManuel: 0.3 },
+    });
+    const r = computeMutuellePrevoyance(inputs);
+    expect(r.economieImpotSociete).toBeCloseTo(r.partPatronale * 0.3, 6);
+  });
+});
