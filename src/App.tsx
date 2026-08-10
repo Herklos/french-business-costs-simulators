@@ -4,9 +4,10 @@ import { VehicleSimulatorPage } from "./pages/VehicleSimulatorPage";
 import { HomeOfficeSimulatorPage } from "./pages/HomeOfficeSimulatorPage";
 import { RemunerationSimulatorPage } from "./pages/RemunerationSimulatorPage";
 import { MaterielSimulatorPage } from "./pages/MaterielSimulatorPage";
+import { MutuellePrevoyanceSimulatorPage } from "./pages/MutuellePrevoyanceSimulatorPage";
 import { RulesPage } from "./pages/RulesPage";
 
-export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "materiel" | "rules";
+export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "materiel" | "mutuelle" | "rules";
 
 function App() {
   const [page, setPage] = useState<Page>("home");
@@ -30,6 +31,9 @@ function App() {
           <button type="button" className={page === "materiel" ? "active" : ""} onClick={() => setPage("materiel")}>
             💻 Matériel
           </button>
+          <button type="button" className={page === "mutuelle" ? "active" : ""} onClick={() => setPage("mutuelle")}>
+            🩺 Mutuelle
+          </button>
           <button type="button" className={page === "rules" ? "active" : ""} onClick={() => setPage("rules")}>
             📚 Règles fiscales
           </button>
@@ -42,6 +46,7 @@ function App() {
         {page === "homeOffice" && <HomeOfficeSimulatorPage />}
         {page === "remuneration" && <RemunerationSimulatorPage />}
         {page === "materiel" && <MaterielSimulatorPage />}
+        {page === "mutuelle" && <MutuellePrevoyanceSimulatorPage />}
         {page === "rules" && <RulesPage />}
       </main>
 

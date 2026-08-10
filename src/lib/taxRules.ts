@@ -376,6 +376,32 @@ export const TAX_RULES: TaxRule[] = [
     notes:
       "Seuil fixe (500€ HT), non revalorisé depuis des décennies. Au-delà, le matériel est immobilisé et amorti sur sa durée d'usage (généralement 3 ans pour l'informatique, 8-10 ans pour le mobilier de bureau).",
   },
+  {
+    id: "madelin-plafond-deduction-tns",
+    category: "protection_sociale_dirigeant",
+    label: "Plafond de déduction des cotisations Madelin santé/prévoyance (TNS)",
+    value: "7% du PASS + 3,75% du bénéfice imposable, plafonné à 3% de 8×PASS",
+    legalReference: "Art. 154 bis CGI ; loi n°94-126 du 11 février 1994 (loi Madelin)",
+    sourceLabel: "URSSAF / Service-Public.fr",
+    sourceUrl: "https://www.urssaf.fr/accueil/independants/vos-cotisations/exonerations/contrat-madelin.html",
+    validFrom: "1994-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "PASS 2026 = 48 060€. Ne s'applique qu'aux gérants majoritaires (statut TNS) — un président de SASU/SAS (assimilé salarié) n'y a pas droit, mais bénéficie en contrepartie d'une mutuelle collective obligatoire prise en charge à 50% minimum par l'employeur.",
+  },
+  {
+    id: "mutuelle-collective-plafond-exoneration",
+    category: "protection_sociale_dirigeant",
+    label: "Plafond d'exonération sociale/fiscale de la mutuelle collective obligatoire (assimilé salarié)",
+    value: "6% du PASS + 1,5% du salaire brut annuel, plafonné à 12% du PASS",
+    legalReference: "Art. D242-1 CSS ; loi ANI du 11 janvier 2013 (généralisation au 1er janvier 2016)",
+    sourceLabel: "URSSAF",
+    sourceUrl: "https://www.urssaf.fr/accueil/employeur/dossiers-reglementaires/exonerations-de-cotisations/protection-sociale-complementair.html",
+    validFrom: "2016-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Obligation légale de prise en charge patronale ≥50% (contrat collectif obligatoire, régime général). Au-delà du plafond, l'excédent est réintégré dans l'assiette des cotisations sociales et de l'impôt sur le revenu du salarié, comme un complément de rémunération — simplifié ici au seul coût IR (cf. note de module mutuellePrevoyance.ts).",
+  },
 ];
 
 export function getRule(id: string): TaxRule | undefined {

@@ -41,6 +41,14 @@ const SIMULATORS: SimulatorCard[] = [
       "Ordinateur, mobilier de bureau : charge immédiate ou amortissement selon le seuil des 500€ HT, et comparaison achat société / achat personnel remboursé (identique) / achat personnel non remboursé (aucun avantage fiscal).",
     available: true,
   },
+  {
+    page: "mutuelle",
+    icon: "🩺",
+    title: "Mutuelle & prévoyance du dirigeant",
+    description:
+      "Cotisations Madelin déductibles (TNS) vs mutuelle collective obligatoire prise en charge par l'employeur (assimilé salarié) : plafonds légaux, économie d'impôt société et dirigeant, coût net global.",
+    available: true,
+  },
 ];
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {
