@@ -28,7 +28,7 @@ function buildMutuelleExportText(sim: MutuellePrevoyanceInputs): string {
   push("");
   if (r.dirigeantStatus === "TNS") {
     push("— TNS (Madelin) —");
-    push(`Prise en charge : ${sim.priseEnChargeParLaSociete ? "par la société" : "personnelle"}`);
+    push(`Prise en charge : 100% ${sim.priseEnChargeParLaSociete ? "par la société" : "personnelle (dirigeant)"}`);
     push(`Plafond Madelin déductible : ${formatEUR(r.plafondMadelin)} · Déductible : ${formatEUR(r.cotisationDeductibleTNS)} · Non déductible : ${formatEUR(r.cotisationNonDeductibleTNS)}`);
   } else {
     push("— Assimilé salarié (mutuelle collective) —");
@@ -100,13 +100,20 @@ export function MutuellePrevoyanceSimulatorPage() {
 
             {results.dirigeantStatus === "TNS" ? (
               <>
-                <Field label="Qui prend en charge la cotisation ?">
+                <Field
+                  label="Qui paie la cotisation ?"
+                  hint="Choix tout ou rien : la cotisation est payée en intégralité par l'un ou par l'autre, pas de partage possible."
+                >
                   <select
                     value={inputs.priseEnChargeParLaSociete ? "societe" : "personnel"}
                     onChange={(e) => update("priseEnChargeParLaSociete", e.target.value === "societe")}
                   >
-                    <option value="societe">La société (déductible du résultat société)</option>
-                    <option value="personnel">Le dirigeant personnellement (déductible de son revenu imposable)</option>
+                    <option value="societe">
+                      La société paie 100% de la cotisation ({formatEUR(inputs.cotisationAnnuelle)}, déductible du résultat société)
+                    </option>
+                    <option value="personnel">
+                      Le dirigeant paie 100% personnellement ({formatEUR(inputs.cotisationAnnuelle)}, déductible de son revenu imposable)
+                    </option>
                   </select>
                 </Field>
                 <p className="hint-block">
