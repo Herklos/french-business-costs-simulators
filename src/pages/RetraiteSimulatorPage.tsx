@@ -31,6 +31,12 @@ function buildRetraiteExportText(sim: RetraiteInputs): string {
   }
   push(`Coût net global : ${formatEUR(r.coutNetGlobal)} (${formatPercent(r.tauxEconomieGlobal)} d'économie vs versement brut)`);
   push("");
+  push("— Liquidité —");
+  push("Sortie normale : à l'âge légal de la retraite (62 à 64 ans selon l'année de naissance) ou à la liquidation de la pension.");
+  push(
+    "Déblocage anticipé (aucune durée minimale) : décès du conjoint/partenaire de PACS, invalidité, surendettement, fin de droits chômage, cessation d'activité non salariée suite à liquidation judiciaire, achat de la résidence principale (PER uniquement). Le mariage n'en fait PAS partie.",
+  );
+  push("");
   push("Généré par le simulateur de coûts d'entreprise — outil d'aide à la décision, ne remplace pas l'avis d'un expert-comptable.");
 
   return lines.join("\n");
@@ -121,6 +127,38 @@ export function RetraiteSimulatorPage() {
                 <RuleNote ruleId="per-plafond-deduction-salarie" />
               </>
             )}
+          </Section>
+
+          <Section
+            title="Liquidité : quand peut-on récupérer l'argent ?"
+            subtitle="L'avantage fiscal immédiat a une contrepartie : les fonds sont bloqués jusqu'à la retraite, sauf cas exceptionnels."
+          >
+            <p className="hint-block">
+              <strong>Sortie normale</strong> : à l'âge légal de départ à la retraite — actuellement relevé
+              progressivement de 62 à 64 ans selon l'année de naissance (64 ans pour les générations nées à partir de
+              1968) — ou à la liquidation effective de la pension d'un régime obligatoire si l'activité se poursuit
+              au-delà. Le PER (contrairement aux anciens contrats Madelin retraite d'avant 2019) permet une sortie en
+              capital, en rente viagère, ou un mixte des deux, au choix.
+            </p>
+            <p className="hint-block">
+              <strong>Déblocage anticipé</strong> — liste fermée de 6 cas, sans aucune durée de détention minimale
+              (contrairement à l'assurance-vie et son palier des 8 ans) :
+            </p>
+            <ul className="rules-list">
+              <li>Décès du conjoint ou du partenaire de PACS</li>
+              <li>Invalidité (du titulaire, de ses enfants, de son conjoint ou partenaire de PACS)</li>
+              <li>Surendettement</li>
+              <li>Expiration des droits à l'assurance chômage</li>
+              <li>Cessation d'activité non salariée suite à liquidation judiciaire</li>
+              <li>Achat de la résidence principale (1ère acquisition — PER uniquement, pas les anciens contrats Madelin)</li>
+            </ul>
+            <p className="warning-block">
+              Le mariage n'est PAS un cas de déblocage anticipé (seul le décès du conjoint/partenaire de PACS l'est)
+              — c'est une confusion fréquente. Aucun autre événement de vie (divorce, naissance...) n'y ouvre droit
+              non plus : la liste ci-dessus est limitative.
+            </p>
+            <RuleNote ruleId="per-cas-deblocage-anticipe" />
+            <RuleNote ruleId="age-legal-retraite" />
           </Section>
 
           {results.dirigeantStatus === "TNS" && (

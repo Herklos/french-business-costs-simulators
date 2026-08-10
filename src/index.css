@@ -243,6 +243,17 @@ select:focus {
   accent-color: var(--accent);
 }
 
+.rules-list {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+  padding-left: 1.25rem;
+}
+
+.rules-list li {
+  margin-bottom: 0.25rem;
+}
+
 .warning-block {
   font-size: 0.85rem;
   color: var(--warn);

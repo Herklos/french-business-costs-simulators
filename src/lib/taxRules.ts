@@ -428,6 +428,33 @@ export const TAX_RULES: TaxRule[] = [
     notes:
       "Plafond individuel affiché sur l'avis d'imposition (« plafond épargne retraite »). Comme pour le TNS, le report des plafonds non utilisés des 3 années précédentes n'est pas modélisé ici.",
   },
+  {
+    id: "per-cas-deblocage-anticipe",
+    category: "epargne_retraite_dirigeant",
+    label: "Cas de déblocage anticipé du PER (avant l'âge légal de la retraite)",
+    value:
+      "Liste limitative de 6 cas : décès du conjoint/partenaire de PACS, invalidité, surendettement, fin de droits au chômage, cessation d'activité non salariée suite à liquidation judiciaire, achat de la résidence principale",
+    legalReference: "Art. L224-4 code monétaire et financier",
+    sourceLabel: "Service-Public.fr",
+    sourceUrl: "https://www.service-public.fr/particuliers/vosdroits/F35223",
+    validFrom: "2019-10-01",
+    validUntil: null,
+    notes:
+      "Liste FERMÉE : aucun autre événement (mariage, divorce, naissance...) n'ouvre droit au déblocage anticipé — seul le décès du conjoint/partenaire de PACS y figure, pas le mariage. Aucune durée de détention minimale n'est exigée pour invoquer un de ces cas (contrairement à l'assurance-vie et son palier des 8 ans) : le déblocage est possible dès le lendemain de l'ouverture si l'événement survient. L'achat de la résidence principale n'est ouvert qu'aux PER (pas aux anciens contrats Madelin retraite d'avant 2019, qui ne prévoyaient qu'une sortie en rente viagère, sans ce cas de déblocage).",
+  },
+  {
+    id: "age-legal-retraite",
+    category: "epargne_retraite_dirigeant",
+    label: "Âge légal de départ à la retraite (sortie normale du PER)",
+    value: "62 à 64 ans selon l'année de naissance (relèvement progressif)",
+    legalReference: "Loi n°2023-270 du 14 avril 2023 (réforme des retraites)",
+    sourceLabel: "Service-Public.fr / Assurance retraite",
+    sourceUrl: "https://www.service-public.fr/particuliers/vosdroits/F31200",
+    validFrom: "2023-09-01",
+    validUntil: null,
+    notes:
+      "Relèvement progressif de 62 à 64 ans par génération, jusqu'à atteindre 64 ans pour les personnes nées à partir de 1968. Hors cas de déblocage anticipé, le PER n'est liquidable qu'à cet âge légal ou lors de la liquidation effective de la pension d'un régime obligatoire si l'activité se poursuit au-delà.",
+  },
 ];
 
 export function getRule(id: string): TaxRule | undefined {
