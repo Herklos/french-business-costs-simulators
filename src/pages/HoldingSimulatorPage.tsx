@@ -11,6 +11,10 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation holding, destiné à être copié dans le presse-papier. */
@@ -45,8 +49,10 @@ function buildHoldingExportText(sim: HoldingInputs): string {
   return lines.join("\n");
 }
 
-export function HoldingSimulatorPage() {
-  const [inputs, setInputs] = useState<HoldingInputs>(createDefaultHoldingInputs);
+export function HoldingSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<HoldingInputs>(
+    () => mergeSharedInputs(createDefaultHoldingInputs(), initialShareData),
+  );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeHolding(inputs), [inputs]);
 
@@ -65,7 +71,10 @@ export function HoldingSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildHoldingExportText(inputs)} />
+        <ShareButton page="holding" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildHoldingExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

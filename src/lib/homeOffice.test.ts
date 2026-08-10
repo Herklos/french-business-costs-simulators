@@ -105,6 +105,27 @@ describe("computeHomeOffice — régime IS et bénéfice prévisionnel", () => {
   });
 });
 
+describe("computeHomeOffice — coût net global (société + dirigeant ensemble)", () => {
+  it("coutNetGlobal = coût fiscal dirigeant − économie d'impôt société", () => {
+    const r = computeHomeOffice(createDefaultHomeOfficeInputs());
+    expect(r.coutNetGlobal).toBeCloseTo(r.coutFiscalGerant - r.economieImpotSociete, 6);
+  });
+
+  it("coutNetGlobal = coutNetSociete − gainNetGerant (les deux formulations coïncident)", () => {
+    const r = computeHomeOffice(createDefaultHomeOfficeInputs());
+    expect(r.coutNetGlobal).toBeCloseTo(r.coutNetSociete - r.gainNetGerant, 6);
+  });
+
+  it("indemnité nulle : coût net global nul", () => {
+    let inputs = createDefaultHomeOfficeInputs();
+    for (const c of inputs.chargeLines) {
+      inputs = disableCharge(inputs, c.id);
+    }
+    const r = computeHomeOffice(inputs);
+    expect(r.coutNetGlobal).toBe(0);
+  });
+});
+
 describe("computeHomeOffice — comparaison bureau externe : bail classique vs coworking", () => {
   it("régime location : coût annuel = loyer mensuel × 12", () => {
     const inputs: HomeOfficeInputs = {

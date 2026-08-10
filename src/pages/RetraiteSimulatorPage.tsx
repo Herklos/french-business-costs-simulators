@@ -5,6 +5,10 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
@@ -58,8 +62,10 @@ function buildRetraiteExportText(sim: RetraiteInputs): string {
   return lines.join("\n");
 }
 
-export function RetraiteSimulatorPage() {
-  const [inputs, setInputs] = useState<RetraiteInputs>(() => withPersistedPersonalTaxProfile(createDefaultRetraiteInputs()));
+export function RetraiteSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<RetraiteInputs>(
+    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultRetraiteInputs()), initialShareData),
+  );
   const [saveVersion, setSaveVersion] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
   const results = useMemo(() => computeRetraite(inputs), [inputs]);
@@ -87,7 +93,10 @@ export function RetraiteSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildRetraiteExportText(inputs)} />
+        <ShareButton page="retraite" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildRetraiteExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

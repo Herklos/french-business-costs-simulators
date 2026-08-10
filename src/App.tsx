@@ -7,12 +7,52 @@ import { MaterielSimulatorPage } from "./pages/MaterielSimulatorPage";
 import { MutuellePrevoyanceSimulatorPage } from "./pages/MutuellePrevoyanceSimulatorPage";
 import { RetraiteSimulatorPage } from "./pages/RetraiteSimulatorPage";
 import { HoldingSimulatorPage } from "./pages/HoldingSimulatorPage";
+import { ConsolidatedPage } from "./pages/ConsolidatedPage";
 import { RulesPage } from "./pages/RulesPage";
+import { clearShareFromUrl, readShareFromUrl } from "./lib/urlShare";
 
-export type Page = "home" | "vehicle" | "homeOffice" | "remuneration" | "materiel" | "mutuelle" | "retraite" | "holding" | "rules";
+export type Page =
+  | "home"
+  | "vehicle"
+  | "homeOffice"
+  | "remuneration"
+  | "materiel"
+  | "mutuelle"
+  | "retraite"
+  | "holding"
+  | "consolidated"
+  | "rules";
+
+const VALID_PAGES: Page[] = [
+  "home",
+  "vehicle",
+  "homeOffice",
+  "remuneration",
+  "materiel",
+  "mutuelle",
+  "retraite",
+  "holding",
+  "consolidated",
+  "rules",
+];
+
+// Lue une seule fois, avant le premier rendu : si l'URL contient un lien de partage
+// (?page=...&data=...), on démarre directement sur la page concernée — le simulateur ciblé lit
+// ensuite lui-même `initialShareData` pour pré-remplir son formulaire. cf. lib/urlShare.ts.
+const initialShare = readShareFromUrl();
+const initialPage: Page =
+  initialShare && VALID_PAGES.includes(initialShare.page as Page) ? (initialShare.page as Page) : "home";
+if (initialShare) clearShareFromUrl();
+
+// Ne renvoie les données partagées QUE pour la page qu'elles ciblent — sinon, en cas de navigation
+// ultérieure vers un autre simulateur, ce dernier tenterait de décoder un objet de forme différente
+// (ex. un partage "matériel" injecté dans le formulaire "véhicule"), silencieusement corrompu.
+function shareDataFor(kind: Page): string | undefined {
+  return initialShare?.page === kind ? initialShare.data : undefined;
+}
 
 function App() {
-  const [page, setPage] = useState<Page>("home");
+  const [page, setPage] = useState<Page>(initialPage);
 
   return (
     <div className="app">
@@ -42,6 +82,9 @@ function App() {
           <button type="button" className={page === "holding" ? "active" : ""} onClick={() => setPage("holding")}>
             🏛️ Holding
           </button>
+          <button type="button" className={page === "consolidated" ? "active" : ""} onClick={() => setPage("consolidated")}>
+            📊 Vue consolidée
+          </button>
           <button type="button" className={page === "rules" ? "active" : ""} onClick={() => setPage("rules")}>
             📚 Règles fiscales
           </button>
@@ -50,13 +93,14 @@ function App() {
 
       <main className="app__main">
         {page === "home" && <HomePage onNavigate={setPage} />}
-        {page === "vehicle" && <VehicleSimulatorPage />}
-        {page === "homeOffice" && <HomeOfficeSimulatorPage />}
-        {page === "remuneration" && <RemunerationSimulatorPage />}
-        {page === "materiel" && <MaterielSimulatorPage />}
-        {page === "mutuelle" && <MutuellePrevoyanceSimulatorPage />}
-        {page === "retraite" && <RetraiteSimulatorPage />}
-        {page === "holding" && <HoldingSimulatorPage />}
+        {page === "vehicle" && <VehicleSimulatorPage initialShareData={shareDataFor("vehicle")} />}
+        {page === "homeOffice" && <HomeOfficeSimulatorPage initialShareData={shareDataFor("homeOffice")} />}
+        {page === "remuneration" && <RemunerationSimulatorPage initialShareData={shareDataFor("remuneration")} />}
+        {page === "materiel" && <MaterielSimulatorPage initialShareData={shareDataFor("materiel")} />}
+        {page === "mutuelle" && <MutuellePrevoyanceSimulatorPage initialShareData={shareDataFor("mutuelle")} />}
+        {page === "retraite" && <RetraiteSimulatorPage initialShareData={shareDataFor("retraite")} />}
+        {page === "holding" && <HoldingSimulatorPage initialShareData={shareDataFor("holding")} />}
+        {page === "consolidated" && <ConsolidatedPage onNavigate={setPage} />}
         {page === "rules" && <RulesPage />}
       </main>
 

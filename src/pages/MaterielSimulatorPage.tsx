@@ -14,6 +14,10 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatEURPrecise } from "../lib/format";
@@ -62,8 +66,10 @@ function buildMaterielExportText(sim: MaterielInputs): string {
   return lines.join("\n");
 }
 
-export function MaterielSimulatorPage() {
-  const [inputs, setInputs] = useState<MaterielInputs>(() => withPersistedPersonalTaxProfile(createDefaultMaterielInputs()));
+export function MaterielSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<MaterielInputs>(
+    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultMaterielInputs()), initialShareData),
+  );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeMateriel(inputs), [inputs]);
 
@@ -91,7 +97,10 @@ export function MaterielSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildMaterielExportText(inputs)} />
+        <ShareButton page="materiel" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildMaterielExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

@@ -10,6 +10,10 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
@@ -55,8 +59,10 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   return lines.join("\n");
 }
 
-export function HomeOfficeSimulatorPage() {
-  const [inputs, setInputs] = useState<HomeOfficeInputs>(() => withPersistedPersonalTaxProfile(createDefaultHomeOfficeInputs()));
+export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<HomeOfficeInputs>(
+    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultHomeOfficeInputs()), initialShareData),
+  );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeHomeOffice(inputs), [inputs]);
 
@@ -92,7 +98,10 @@ export function HomeOfficeSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildHomeOfficeExportText(inputs)} />
+        <ShareButton page="homeOffice" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildHomeOfficeExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

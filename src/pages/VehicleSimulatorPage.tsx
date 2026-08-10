@@ -24,6 +24,10 @@ import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { formatEUR, formatPercent } from "../lib/format";
@@ -113,8 +117,10 @@ function buildVehicleExportText(sim: SimulationInputs): string {
 
 const PERIOD_SUFFIX: Record<CostPeriod, string> = { annuel: "/an", mensuel: "/mois" };
 
-export function VehicleSimulatorPage() {
-  const [inputs, setInputs] = useState<SimulationInputs>(() => withPersistedPersonalTaxProfile(createDefaultInputs()));
+export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<SimulationInputs>(
+    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultInputs()), initialShareData),
+  );
   const [saveVersion, setSaveVersion] = useState(0);
   const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
@@ -222,7 +228,10 @@ export function VehicleSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildVehicleExportText(inputs)} />
+        <ShareButton page="vehicle" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildVehicleExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

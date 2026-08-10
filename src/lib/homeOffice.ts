@@ -141,6 +141,7 @@ export interface HomeOfficeResults {
 
   economieImpotSociete: number; // économie d'IS (ou d'IR foyer en régime translucide) sur la charge déductible
   coutNetSociete: number;
+  coutNetGlobal: number; // coût (ou gain si négatif) net pour société+dirigeant ENSEMBLE, cf. calcul dans computeHomeOffice
 
   coutBureauExterneAnnuel: number;
   economieVsBureauExterne: number; // positif = le bureau à domicile coûte moins cher à la société
@@ -211,6 +212,17 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
       : inputs.loyerBureauExterneMensuel * 12;
   const economieVsBureauExterne = coutBureauExterneAnnuel - coutNetSociete;
 
+  // Coût net GLOBAL de la décision, pour le dirigeant et sa société pris ENSEMBLE (utilisé par la
+  // vue consolidée multi-simulateurs). L'indemnité elle-même n'est qu'un transfert interne entre la
+  // société et le dirigeant (ni gain ni perte pour l'ensemble) : seule la fiscalité de part et
+  // d'autre représente un coût (ou un gain) réel pour le groupe. D'où :
+  //   coutNetGlobal = coutNetSociete − gainNetGerant
+  //                 = (indemnité − économie IS société) − (indemnité − coût fiscal dirigeant)
+  //                 = coût fiscal dirigeant − économie IS société
+  // Peut être NÉGATIF (gain net pour le groupe) : c'est précisément l'intérêt de ce montage quand
+  // l'économie d'IS société dépasse l'impôt foncier du dirigeant.
+  const coutNetGlobal = coutFiscalGerant - economieImpotSociete;
+
   return {
     quotePartSurface,
     totalChargesRetenuesAnnuel,
@@ -226,6 +238,7 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
     gainNetGerantAnnee1,
     economieImpotSociete,
     coutNetSociete,
+    coutNetGlobal,
     coutBureauExterneAnnuel,
     economieVsBureauExterne,
   };

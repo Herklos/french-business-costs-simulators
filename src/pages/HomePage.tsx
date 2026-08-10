@@ -65,6 +65,14 @@ const SIMULATORS: SimulatorCard[] = [
       "Régime mère-fille : coût de la remontée de dividendes vers une holding (quote-part de frais et charges de 5%) vs distribution directe au PFU, projection de la capitalisation dans le temps et coût de sortie finale.",
     available: true,
   },
+  {
+    page: "consolidated",
+    icon: "📊",
+    title: "Vue consolidée",
+    description:
+      "Rassemble toutes les simulations sauvegardées et additionne leur coût net global annuel (société + dirigeant) pour donner une vue d'ensemble du coût réel de l'ensemble des décisions déjà chiffrées.",
+    available: true,
+  },
 ];
 
 export function HomePage({ onNavigate }: { onNavigate: (page: Page) => void }) {

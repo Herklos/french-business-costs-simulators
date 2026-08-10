@@ -122,6 +122,8 @@ export interface MaterielResults {
   cotisationsSocialesAEN: number;
   irSurAEN: number;
   coutDirigeantAEN: number; // cotisations sociales + IR sur l'AEN, à la charge du dirigeant
+
+  coutNetGlobalAnnee1: number; // coût net société + coût dirigeant (non remboursé et/ou AEN), année 1 — cf. calcul dans computeMateriel
 }
 
 export function computeMateriel(inputs: MaterielInputs): MaterielResults {
@@ -182,6 +184,13 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
   const irSurAEN = aenAnnuelle * tauxIRUtilise;
   const coutDirigeantAEN = cotisationsSocialesAEN + irSurAEN;
 
+  // Coût net GLOBAL année 1, pour le dirigeant et sa société pris ENSEMBLE (utilisé par la vue
+  // consolidée multi-simulateurs) : coût net société + coût personnel non remboursé (payé cash par
+  // le dirigeant, sans aucune charge société) + coût dirigeant lié à l'AEN d'usage mixte. Les deux
+  // derniers termes sont mutuellement exclusifs par construction (l'AEN ne se déclenche que si le
+  // matériel est financé par la société, donc jamais en même temps qu'un achat non remboursé).
+  const coutNetGlobalAnnee1 = coutNetSocieteAnnee1 + coutDirigeantNonRembourse + coutDirigeantAEN;
+
   return {
     eligibleChargeImmediate,
     chargeAnnee1,
@@ -198,5 +207,6 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
     cotisationsSocialesAEN,
     irSurAEN,
     coutDirigeantAEN,
+    coutNetGlobalAnnee1,
   };
 }

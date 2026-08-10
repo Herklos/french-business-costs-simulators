@@ -24,6 +24,10 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
@@ -72,9 +76,9 @@ function buildRemunerationExportText(sim: RemunerationInputs): string {
   return lines.join("\n");
 }
 
-export function RemunerationSimulatorPage() {
-  const [inputs, setInputs] = useState<RemunerationInputs>(() =>
-    withPersistedPersonalTaxProfile(createDefaultRemunerationInputs()),
+export function RemunerationSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<RemunerationInputs>(
+    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultRemunerationInputs()), initialShareData),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeRemuneration(inputs), [inputs]);
@@ -139,7 +143,10 @@ export function RemunerationSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildRemunerationExportText(inputs)} />
+        <ShareButton page="remuneration" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildRemunerationExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

@@ -10,6 +10,10 @@ import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
+import { ShareButton } from "../components/ShareButton";
+import { PdfButton } from "../components/PdfButton";
+import { PrintableReport } from "../components/PrintableReport";
+import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
@@ -46,9 +50,9 @@ function buildMutuelleExportText(sim: MutuellePrevoyanceInputs): string {
   return lines.join("\n");
 }
 
-export function MutuellePrevoyanceSimulatorPage() {
-  const [inputs, setInputs] = useState<MutuellePrevoyanceInputs>(() =>
-    withPersistedPersonalTaxProfile(createDefaultMutuellePrevoyanceInputs()),
+export function MutuellePrevoyanceSimulatorPage({ initialShareData }: { initialShareData?: string }) {
+  const [inputs, setInputs] = useState<MutuellePrevoyanceInputs>(
+    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultMutuellePrevoyanceInputs()), initialShareData),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeMutuellePrevoyance(inputs), [inputs]);
@@ -76,7 +80,10 @@ export function MutuellePrevoyanceSimulatorPage() {
 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildMutuelleExportText(inputs)} />
+        <ShareButton page="mutuelle" getInputs={() => inputs} />
+        <PdfButton />
       </div>
+      <PrintableReport text={buildMutuelleExportText(inputs)} />
 
       <div className="layout">
         <div className="layout__form">

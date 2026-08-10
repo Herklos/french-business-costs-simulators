@@ -149,3 +149,20 @@ describe("computeMateriel — usage mixte pro/privé (avantage en nature)", () =
     expect(r.aenAnnuelle).toBe(0);
   });
 });
+
+describe("computeMateriel — coût net global année 1 (société + dirigeant ensemble)", () => {
+  it("achat société sans AEN : coutNetGlobalAnnee1 = coutNetSocieteAnnee1 (rien à la charge du dirigeant)", () => {
+    const r = computeMateriel(withPatch({ prixHT: 1800, modeAcquisition: "societe", usagePrivePercent: 0 }));
+    expect(r.coutNetGlobalAnnee1).toBeCloseTo(r.coutNetSocieteAnnee1, 6);
+  });
+
+  it("achat personnel non remboursé : coutNetGlobalAnnee1 = prix plein (aucune charge société)", () => {
+    const r = computeMateriel(withPatch({ prixHT: 1800, modeAcquisition: "personnel_non_rembourse" }));
+    expect(r.coutNetGlobalAnnee1).toBeCloseTo(1800, 6);
+  });
+
+  it("usage mixte : coutNetGlobalAnnee1 = coutNetSocieteAnnee1 + coutDirigeantAEN", () => {
+    const r = computeMateriel(withPatch({ prixHT: 1800, dureeAmortissementAnnees: 3, usagePrivePercent: 50 }));
+    expect(r.coutNetGlobalAnnee1).toBeCloseTo(r.coutNetSocieteAnnee1 + r.coutDirigeantAEN, 6);
+  });
+});

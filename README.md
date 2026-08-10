@@ -86,6 +86,16 @@ chacun avec sa source, sa période de validité et un indicateur de statut (en v
   simulations du même simulateur.
 - **Export presse-papier** — un bouton copie un résumé texte complet de la simulation (hypothèses, détail du
   calcul, résultats), prêt à coller dans un email ou un document.
+- **Export PDF** — un bouton déclenche l'impression navigateur (« Enregistrer en PDF ») sur un rendu imprimable
+  dédié, sans dépendance PDF côté client.
+- **Partage par lien** — un bouton copie une URL qui encode l'intégralité du formulaire (base64 dans le paramètre
+  `data`) : l'ouvrir pré-remplit directement le simulateur ciblé chez le destinataire, sans backend ni compte.
+  Robuste à un lien partiel/ancien (créé avant l'ajout d'un champ) : les valeurs manquantes retombent sur les
+  valeurs par défaut plutôt que de faire planter le formulaire.
+- **Vue consolidée** — agrège toutes les simulations sauvegardées, tous simulateurs confondus, et additionne le
+  coût net global annuel (société + dirigeant, après économies d'impôt de part et d'autre) des 5 simulateurs
+  récurrents (Véhicule, Bureau à domicile, Matériel, Mutuelle & prévoyance, Retraite) ; Rémunération et Holding
+  restent affichés à part, à titre informatif.
 - **Architecture multi-pays prévue** — seule la France est renseignée actuellement, mais la structure (forme
   juridique, barèmes, règles fiscales) est indexée par pays pour permettre l'ajout d'autres juridictions sans
   toucher au moteur de calcul.

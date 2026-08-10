@@ -724,6 +724,11 @@ td {
   overflow-x: auto;
 }
 
+.consolidated-cost--gain {
+  color: var(--good);
+  font-weight: 600;
+}
+
 .rules-table__notes {
   color: var(--text-muted);
   font-size: 0.75rem;
@@ -750,4 +755,52 @@ td {
 .status-badge--expired {
   background: rgba(248, 113, 113, 0.15);
   color: var(--bad);
+}
+
+/* Export PDF (cf. PrintableReport / PdfButton) : le rendu imprimable est toujours dans le DOM
+   (rendu via un portail directement sous <body>, cf. PrintableReport.tsx) mais invisible à l'écran ;
+   seule l'impression (window.print, cf. PdfButton) le révèle. `.app` est simplement masqué avec
+   `display: none` plutôt que `visibility: hidden` — ce dernier réserve son espace de mise en page et
+   produirait une page PDF blanche supplémentaire, l'arbre `.app` caché restant plus haut qu'une
+   page A4. */
+.printable-report {
+  display: none;
+}
+
+.printable-report__spacer {
+  height: 0.6rem;
+}
+
+@media print {
+  @page {
+    margin: 8mm;
+  }
+  html,
+  body {
+    height: auto;
+    min-height: 0;
+  }
+  .app {
+    display: none;
+  }
+  .printable-report {
+    display: block;
+    color: #000;
+    background: #fff;
+    font-family: Georgia, "Times New Roman", serif;
+  }
+  .printable-report h1 {
+    font-size: 1.4rem;
+    margin: 0 0 0.5rem;
+  }
+  .printable-report h3 {
+    font-size: 1.05rem;
+    margin: 1rem 0 0.4rem;
+    border-bottom: 1px solid #999;
+    padding-bottom: 0.2rem;
+  }
+  .printable-report p {
+    margin: 0.15rem 0;
+    font-size: 0.9rem;
+  }
 }
