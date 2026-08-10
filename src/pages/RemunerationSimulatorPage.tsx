@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type RemunerationInputs,
   type ScenarioResult,
@@ -15,6 +15,7 @@ import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
+import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation rémunération, destiné à être copié dans le presse-papier. */
@@ -60,9 +61,18 @@ function buildRemunerationExportText(sim: RemunerationInputs): string {
 }
 
 export function RemunerationSimulatorPage() {
-  const [inputs, setInputs] = useState<RemunerationInputs>(() => createDefaultRemunerationInputs());
+  const [inputs, setInputs] = useState<RemunerationInputs>(() =>
+    withPersistedPersonalTaxProfile(createDefaultRemunerationInputs()),
+  );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeRemuneration(inputs), [inputs]);
+
+  // Le revenu de référence du foyer fiscal est un réglage transversal (identique quel que soit le
+  // simulateur) : on le persiste à chaque modification pour le retrouver pré-rempli sur les autres
+  // simulateurs et à la prochaine visite.
+  useEffect(() => {
+    savePersonalTaxProfile(inputs.personalTaxProfile);
+  }, [inputs.personalTaxProfile]);
 
   function update<K extends keyof RemunerationInputs>(key: K, value: RemunerationInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

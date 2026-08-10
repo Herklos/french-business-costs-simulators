@@ -1,5 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { deleteSimulation, listSimulations, renameSimulation, saveSimulation } from "./storage";
+import {
+  deleteSimulation,
+  listSimulations,
+  loadPersonalTaxProfile,
+  renameSimulation,
+  saveSimulation,
+  savePersonalTaxProfile,
+  withPersistedPersonalTaxProfile,
+} from "./storage";
+import { createDefaultPersonalTaxProfile } from "./frenchIncomeTax";
 
 // storage.ts s'appuie sur le `localStorage` global du navigateur, absent de l'environnement Node
 // de test : on fournit ici un mock minimal en mémoire, réinitialisé avant chaque test.
@@ -80,5 +89,42 @@ describe("storage — sauvegarde, liste, suppression, renommage", () => {
     saveSimulation<FakeInputs>("vehicle", { id: "a", name: "A" });
     expect(() => deleteSimulation("vehicle", "inexistant")).not.toThrow();
     expect(listSimulations<FakeInputs>("vehicle")).toHaveLength(1);
+  });
+});
+
+describe("storage — revenu de référence du foyer fiscal (profil transversal)", () => {
+  it("aucun profil sauvegardé au départ", () => {
+    expect(loadPersonalTaxProfile()).toBeNull();
+  });
+
+  it("sauvegarde puis recharge le profil tel quel", () => {
+    const profile = { ...createDefaultPersonalTaxProfile(), situationFamiliale: "couple" as const, nombreEnfants: 2 };
+    savePersonalTaxProfile(profile);
+    expect(loadPersonalTaxProfile()).toEqual(profile);
+  });
+
+  it("une sauvegarde ultérieure remplace la précédente (dernier profil utilisé)", () => {
+    savePersonalTaxProfile({ ...createDefaultPersonalTaxProfile(), nombreEnfants: 1 });
+    savePersonalTaxProfile({ ...createDefaultPersonalTaxProfile(), nombreEnfants: 3 });
+    expect(loadPersonalTaxProfile()?.nombreEnfants).toBe(3);
+  });
+
+  it("un contenu corrompu en localStorage ne fait pas planter le chargement (retourne null)", () => {
+    localStorage.setItem("fbcs_personal_tax_profile_v1", "{ceci n'est pas du json");
+    expect(loadPersonalTaxProfile()).toBeNull();
+  });
+
+  it("withPersistedPersonalTaxProfile renvoie les valeurs par défaut telles quelles si rien n'est sauvegardé", () => {
+    const defaults = { id: "x", personalTaxProfile: createDefaultPersonalTaxProfile() };
+    expect(withPersistedPersonalTaxProfile(defaults)).toEqual(defaults);
+  });
+
+  it("withPersistedPersonalTaxProfile remplace le profil par défaut par celui sauvegardé, sans toucher au reste", () => {
+    const saved = { ...createDefaultPersonalTaxProfile(), nombreEnfants: 4 };
+    savePersonalTaxProfile(saved);
+    const defaults = { id: "x", personalTaxProfile: createDefaultPersonalTaxProfile() };
+    const result = withPersistedPersonalTaxProfile(defaults);
+    expect(result.id).toBe("x");
+    expect(result.personalTaxProfile.nombreEnfants).toBe(4);
   });
 });

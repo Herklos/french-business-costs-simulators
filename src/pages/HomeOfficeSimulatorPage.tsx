@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type ChargeLine,
   type HomeOfficeInputs,
@@ -11,6 +11,7 @@ import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
+import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
 
 const SURFACE_TOLERANCE = 0.3;
@@ -53,9 +54,16 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
 }
 
 export function HomeOfficeSimulatorPage() {
-  const [inputs, setInputs] = useState<HomeOfficeInputs>(() => createDefaultHomeOfficeInputs());
+  const [inputs, setInputs] = useState<HomeOfficeInputs>(() => withPersistedPersonalTaxProfile(createDefaultHomeOfficeInputs()));
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeHomeOffice(inputs), [inputs]);
+
+  // Le revenu de référence du foyer fiscal est un réglage transversal (identique quel que soit le
+  // simulateur) : on le persiste à chaque modification pour le retrouver pré-rempli sur les autres
+  // simulateurs et à la prochaine visite.
+  useEffect(() => {
+    savePersonalTaxProfile(inputs.personalTaxProfile);
+  }, [inputs.personalTaxProfile]);
 
   function update<K extends keyof HomeOfficeInputs>(key: K, value: HomeOfficeInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

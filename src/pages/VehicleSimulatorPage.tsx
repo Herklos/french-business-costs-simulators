@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import {
   type SimulationInputs,
   DEFAULT_CORPORATE_TAX_RATE,
@@ -16,6 +16,7 @@ import { DEFAULT_DEPRECIATION_RATE_ANNUAL } from "../lib/vehicleDepreciation";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
+import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { CopyButton } from "../components/CopyButton";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
@@ -107,12 +108,19 @@ function buildVehicleExportText(sim: SimulationInputs): string {
 const PERIOD_SUFFIX: Record<CostPeriod, string> = { annuel: "/an", mensuel: "/mois" };
 
 export function VehicleSimulatorPage() {
-  const [inputs, setInputs] = useState<SimulationInputs>(() => createDefaultInputs());
+  const [inputs, setInputs] = useState<SimulationInputs>(() => withPersistedPersonalTaxProfile(createDefaultInputs()));
   const [saveVersion, setSaveVersion] = useState(0);
   const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
   const [showResidualValue, setShowResidualValue] = useState(false);
+
+  // Le revenu de référence du foyer fiscal est un réglage transversal (identique quel que soit le
+  // simulateur) : on le persiste à chaque modification pour le retrouver pré-rempli sur les autres
+  // simulateurs et à la prochaine visite.
+  useEffect(() => {
+    savePersonalTaxProfile(inputs.personalTaxProfile);
+  }, [inputs.personalTaxProfile]);
 
   function toPeriod(annualValue: number): number {
     return costPeriod === "mensuel" ? annualValue / 12 : annualValue;
