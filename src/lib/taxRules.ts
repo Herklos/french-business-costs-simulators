@@ -507,6 +507,19 @@ export const TAX_RULES: TaxRule[] = [
     notes:
       "Réservé aux sociétés par actions (SAS/SASU) — impossible en EURL/SARL. RÉGIME PARTICULIÈREMENT COMPLEXE, simplifié ici au cas le plus courant : le PFU est un choix par défaut, une option pour le barème progressif avec abattements pour durée de détention existe et peut être plus favorable selon les cas ; une contribution salariale spécifique de 10% s'ajoute au-delà de 300 000€ de gain (non modélisée). Avis d'un expert-comptable fortement recommandé avant toute décision.",
   },
+  {
+    id: "materiel-avantage-en-nature",
+    category: "materiel_professionnel",
+    label: "Avantage en nature (AEN) sur un matériel professionnel à usage mixte",
+    value: "Évalué au prorata de l'usage privé, sur la base du coût de revient/durée d'amortissement (ou du loyer LOA)",
+    legalReference: "BOI-RSA-BASE-30-50",
+    sourceLabel: "BOFiP-Impôts",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1512-PGP.html",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Même principe général que l'AEN véhicule (mise à disposition d'un bien de l'entreprise à usage personnel), mais sans abattement spécifique (celui du véhicule électrique ne s'applique qu'aux véhicules). Nécessite un usage privé réel et documenté pour être opposable — sinon la déductibilité de la charge société elle-même peut être remise en cause (acte anormal de gestion).",
+  },
 ];
 
 export function getRule(id: string): TaxRule | undefined {

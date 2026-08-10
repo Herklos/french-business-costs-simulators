@@ -22,6 +22,7 @@ const MODE_LABELS: Record<ModeAcquisitionMateriel, string> = {
   societe: "Achat par la société",
   personnel_rembourse: "Achat personnel remboursé (note de frais)",
   personnel_non_rembourse: "Achat personnel non remboursé",
+  loa: "LOA / leasing par la société",
 };
 
 /** Résumé texte complet d'une simulation matériel, destiné à être copié dans le presse-papier. */
@@ -47,6 +48,14 @@ function buildMaterielExportText(sim: MaterielInputs): string {
     push(`Coût supporté par le dirigeant (aucune déduction) : ${formatEUR(r.coutDirigeantNonRembourse)}`);
   }
   push(`Économie totale vs achat personnel jamais remboursé : ${formatEUR(r.economieVsNonRembourse)}`);
+  push(
+    `Plan de renouvellement — ${r.nombreCycles} cycle(s) sur ${sim.horizonRenouvellementAnnees} ans : coût net société total ${formatEUR(r.coutTotalSurHorizon)}`,
+  );
+  if (sim.usagePrivePercent > 0) {
+    push(
+      `Usage mixte (${sim.usagePrivePercent}% privé) : AEN annuelle ${formatEUR(r.aenAnnuelle)} · coût dirigeant (cotisations + IR) ${formatEUR(r.coutDirigeantAEN)}`,
+    );
+  }
   push("");
   push("Généré par le simulateur de coûts d'entreprise — outil d'aide à la décision, ne remplace pas l'avis d'un expert-comptable.");
 
@@ -97,21 +106,32 @@ export function MaterielSimulatorPage() {
                   ))}
                 </select>
               </Field>
-              <Field label="Prix HT (€)">
+              <Field label="Prix HT (€)" hint={inputs.modeAcquisition === "loa" ? "Sans effet en LOA : indicatif seulement, cf. loyer LOA ci-dessous." : undefined}>
                 <NumberInput value={inputs.prixHT} onChange={(e) => update("prixHT", Number(e.target.value))} />
               </Field>
-              <Field label="Durée d'amortissement (années)" hint={results.eligibleChargeImmediate ? "Sans effet : déduction immédiate en charge." : undefined}>
+              <Field
+                label="Durée d'amortissement (années)"
+                hint={
+                  inputs.modeAcquisition === "loa"
+                    ? "Sans effet en LOA : cf. durée du contrat LOA ci-dessous."
+                    : results.eligibleChargeImmediate
+                      ? "Sans effet : déduction immédiate en charge."
+                      : undefined
+                }
+              >
                 <NumberInput
-                  disabled={results.eligibleChargeImmediate}
+                  disabled={results.eligibleChargeImmediate || inputs.modeAcquisition === "loa"}
                   value={inputs.dureeAmortissementAnnees}
                   onChange={(e) => update("dureeAmortissementAnnees", Number(e.target.value))}
                 />
               </Field>
             </div>
             <p className="hint-block">
-              {results.eligibleChargeImmediate
-                ? `Prix ≤ ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT : déduction immédiate en charge, sans amortissement.`
-                : `Prix > ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT : amorti sur ${inputs.dureeAmortissementAnnees} ans — annuité : ${formatEUR(results.annuiteAmortissement)}/an.`}
+              {inputs.modeAcquisition === "loa"
+                ? `LOA : loyers intégralement déductibles en charge, sans amortissement — annuité : ${formatEUR(results.chargeAnnee1)}/an.`
+                : results.eligibleChargeImmediate
+                  ? `Prix ≤ ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT : déduction immédiate en charge, sans amortissement.`
+                  : `Prix > ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT : amorti sur ${inputs.dureeAmortissementAnnees} ans — annuité : ${formatEUR(results.annuiteAmortissement)}/an.`}
             </p>
             <RuleNote ruleId="materiel-petit-equipement-charge-immediate" />
           </Section>
@@ -138,6 +158,70 @@ export function MaterielSimulatorPage() {
                 revenus déjà taxés, sans aucun avantage fiscal.
               </p>
             )}
+            {inputs.modeAcquisition === "loa" && (
+              <div className="grid grid--2">
+                <Field label="Loyer mensuel LOA (€)">
+                  <NumberInput value={inputs.loaLoyerMensuel} onChange={(e) => update("loaLoyerMensuel", Number(e.target.value))} />
+                </Field>
+                <Field label="Durée du contrat LOA (mois)">
+                  <NumberInput value={inputs.loaDureeMois} onChange={(e) => update("loaDureeMois", Number(e.target.value))} />
+                </Field>
+              </div>
+            )}
+          </Section>
+
+          <Section
+            title="Plan de renouvellement périodique"
+            subtitle="Projette le coût sur plusieurs cycles d'acquisition successifs (achat ou LOA renouvelé à chaque échéance)."
+          >
+            <div className="grid grid--2">
+              <Field label="Horizon de projection (années)">
+                <NumberInput
+                  value={inputs.horizonRenouvellementAnnees}
+                  onChange={(e) => update("horizonRenouvellementAnnees", Number(e.target.value))}
+                />
+              </Field>
+              <Field label="Inflation estimée du prix entre deux cycles (%)">
+                <ResetableNumberInput
+                  step="0.01"
+                  value={inputs.tauxInflationMateriel}
+                  defaultValue={0}
+                  formatDefault={(v) => `${Math.round(v * 100)}%`}
+                  onChange={(v) => update("tauxInflationMateriel", v)}
+                />
+              </Field>
+            </div>
+            <p className="hint-block">
+              {results.nombreCycles} cycle{results.nombreCycles > 1 ? "s" : ""} de {results.dureeCycleAnnees.toFixed(1)} an
+              {results.dureeCycleAnnees >= 2 ? "s" : ""} sur l'horizon choisi.
+            </p>
+          </Section>
+
+          <Section
+            title="Usage mixte pro/privé (avantage en nature)"
+            subtitle="Si le dirigeant utilise aussi le matériel à titre personnel, un avantage en nature (AEN) est généré au prorata."
+          >
+            <div className="grid grid--2">
+              <Field label={`% d'usage privé : ${inputs.usagePrivePercent}%`}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={inputs.usagePrivePercent}
+                  onChange={(e) => update("usagePrivePercent", Number(e.target.value))}
+                />
+              </Field>
+              <Field label="Taux de charges sociales sur l'AEN">
+                <ResetableNumberInput
+                  step="0.01"
+                  value={inputs.tauxChargesSocialesAEN}
+                  defaultValue={0.43}
+                  formatDefault={(v) => `${Math.round(v * 100)}%`}
+                  onChange={(v) => update("tauxChargesSocialesAEN", v)}
+                />
+              </Field>
+            </div>
+            <RuleNote ruleId="materiel-avantage-en-nature" />
           </Section>
 
           <Section title="Régime fiscal & rentabilité de la société">
@@ -211,6 +295,19 @@ export function MaterielSimulatorPage() {
               value={formatEURPrecise(results.economieVsNonRembourse)}
               tone={results.economieVsNonRembourse > 0 ? "good" : "neutral"}
             />
+            <StatCard
+              label={`Coût net société sur ${inputs.horizonRenouvellementAnnees} ans (${results.nombreCycles} cycle${results.nombreCycles > 1 ? "s" : ""})`}
+              value={formatEUR(results.coutTotalSurHorizon)}
+              tone="bad"
+            />
+            {inputs.usagePrivePercent > 0 && (
+              <StatCard
+                label="Coût dirigeant — avantage en nature (usage mixte)"
+                value={formatEUR(results.coutDirigeantAEN)}
+                sub={`AEN annuelle : ${formatEUR(results.aenAnnuelle)}`}
+                tone="bad"
+              />
+            )}
           </div>
 
           <Section title="Sauvegarde & comparaison">
