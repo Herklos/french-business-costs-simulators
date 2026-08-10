@@ -107,23 +107,31 @@ npm install
 npm run dev        # serveur de développement
 npm run build      # build de production (tsc + vite build)
 npm run lint       # oxlint
-npm run test       # tests unitaires (vitest) — moteurs de calcul (src/lib/*.test.ts)
+npm run test       # tests unitaires (vitest) — moteurs de calcul (src/lib/*.test.ts) et composants (*.test.tsx)
 npm run test:watch # tests en mode watch
 npm run preview    # prévisualiser le build
 ```
+
+Une GitHub Action (`.github/workflows/ci.yml`) exécute `tsc`, `lint`, `test` et `build` sur chaque push/PR.
 
 ### Structure du code
 
 - `src/lib/` — moteurs de calcul purs (un module par simulateur : `simulator.ts` (véhicule), `homeOffice.ts`,
   `remuneration.ts`, `materiel.ts`, `mutuellePrevoyance.ts`, `retraite.ts`, `holding.ts`, plus les add-ons
   `borneRecharge.ts`, `interessement.ts`, `attributionActionsGratuites.ts`), et les modules partagés
-  (`companyTypes.ts`, `frenchIncomeTax.ts`, `corporateTax.ts`, `financing.ts`, `taxRules.ts`, `storage.ts`...).
-  Chaque module a son fichier de tests associé (`*.test.ts`).
+  (`companyTypes.ts`, `frenchIncomeTax.ts`, `corporateTax.ts`, `financing.ts`, `taxRules.ts`, `storage.ts`,
+  `consolidated.ts`, `urlShare.ts`, `router.ts`...). Chaque module a son fichier de tests associé (`*.test.ts`).
 - `src/pages/` — une page React par simulateur, réutilisant les composants partagés de `src/components/`
   (`Field`, `Section`, `StatCard`, `CompanyTypeFields`, `PersonalTaxProfileFields`, `RuleNote`,
-  `SavedSimulationsPanel`, `CopyButton`...).
+  `SavedSimulationsPanel`, `CopyButton`, `ShareButton`, `PdfButton`, `ErrorBoundary`...). Certains composants et
+  `App.tsx` ont des tests `*.test.tsx` (vitest + `@testing-library/react`, environnement jsdom).
 - `src/lib/taxRules.ts` — registre unique de toutes les règles fiscales/sociales sourcées, consommé à la fois par
   les moteurs de calcul (documentation) et par la page Règles fiscales (affichage).
+- `src/lib/router.ts` — routage léger sans dépendance externe (`?page=...` en query string +
+  `history.pushState`/`popstate`) : rafraîchir la page reste sur le même simulateur, précédent/suivant
+  fonctionnent, aucune configuration serveur nécessaire (le chemin reste toujours `/`).
+- `src/components/ErrorBoundary.tsx` — filet de sécurité applicatif : une erreur de rendu dans un simulateur
+  affiche un message récupérable plutôt que de faire planter toute la page.
 
 ## Avertissement
 
