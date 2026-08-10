@@ -91,8 +91,14 @@ describe("computeMutuellePrevoyance — assimilé salarié (mutuelle collective)
 });
 
 describe("computeMutuellePrevoyance — cas limites", () => {
-  it("cotisation nulle : tous les résultats à zéro", () => {
+  it("cotisation nulle (TNS) : tous les résultats à zéro", () => {
     const r = computeMutuellePrevoyance(withCompany("EURL", { cotisationAnnuelle: 0 }));
+    expect(r.coutNetGlobal).toBe(0);
+    expect(r.tauxEconomieGlobal).toBe(0);
+  });
+
+  it("cotisation nulle (assimilé salarié) : tous les résultats à zéro", () => {
+    const r = computeMutuellePrevoyance(withCompany("SASU", { cotisationAnnuelle: 0 }));
     expect(r.coutNetGlobal).toBe(0);
     expect(r.tauxEconomieGlobal).toBe(0);
   });

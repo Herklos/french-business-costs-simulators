@@ -351,3 +351,31 @@ describe("computeSimulation — la valeur résiduelle annualisée (comptant/cré
     expect(residuComptant).toBeCloseTo(residuCredit, 6);
   });
 });
+
+describe("computeSimulation — seuil de bascule société ⇄ personnel (findBreakevenPercent)", () => {
+  it("retourne null quand les deux scénarios ne se croisent pas sur 0-100% d'usage privé (cas par défaut)", () => {
+    const r = computeSimulation(createDefaultInputs());
+    expect(r.seuilPrivateUsePercent).toBeNull();
+  });
+
+  it("retourne un seuil entre 0 et 100% quand les coûts globaux des deux scénarios se croisent", () => {
+    const inputs: SimulationInputs = {
+      ...createDefaultInputs(),
+      vehiclePrice: 10000,
+      totalKmAnnual: 5000,
+      financingMode: "comptant",
+      personalFinancingMode: "comptant",
+    };
+    const r = computeSimulation(inputs);
+    expect(r.seuilPrivateUsePercent).not.toBeNull();
+    expect(r.seuilPrivateUsePercent as number).toBeGreaterThan(0);
+    expect(r.seuilPrivateUsePercent as number).toBeLessThan(100);
+
+    // Au seuil trouvé, les deux coûts globaux doivent être quasi égaux (c'est la définition du seuil).
+    const p = r.seuilPrivateUsePercent as number;
+    const auSeuil = computeSimulation({ ...inputs, privateUsePercent: p });
+    const societeAuSeuil = auSeuil.allOptions.find((o) => o.owner === "societe" && o.mode === inputs.financingMode)!;
+    const personnelAuSeuil = auSeuil.allOptions.find((o) => o.owner === "personnel" && o.mode === inputs.personalFinancingMode)!;
+    expect(societeAuSeuil.globalCostAnnual).toBeCloseTo(personnelAuSeuil.globalCostAnnual, 0);
+  });
+});

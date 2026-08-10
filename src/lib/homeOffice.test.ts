@@ -12,6 +12,13 @@ describe("computeHomeOffice — quote-part et charges", () => {
     expect(r.quotePartSurface).toBe(1);
   });
 
+  it("surface totale nulle : quote-part nulle (division par zéro évitée)", () => {
+    const inputs = { ...createDefaultHomeOfficeInputs(), surfaceTotaleM2: 0, surfaceBureauM2: 12 };
+    const r = computeHomeOffice(inputs);
+    expect(r.quotePartSurface).toBe(0);
+    expect(r.indemniteAnnuelleBrute).toBe(0);
+  });
+
   it("désactiver un poste de charge réduit l'indemnité annuelle brute", () => {
     const inputs = createDefaultHomeOfficeInputs();
     const avecTout = computeHomeOffice(inputs);
@@ -127,5 +134,29 @@ describe("computeHomeOffice — comparaison bureau externe : bail classique vs c
       coworkingJoursParMois: 20,
     };
     expect(computeHomeOffice(inputs).coutBureauExterneAnnuel).toBeCloseTo(25 * 20 * 12, 6);
+  });
+});
+
+describe("computeHomeOffice — régime IR (société translucide)", () => {
+  it("utilise le taux marginal manuel du foyer plutôt que le barème IS pour l'économie société", () => {
+    const inputs: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      impositionSociete: "IR",
+      beneficeAvantChargePrevisionnel: 40000,
+      personalTaxProfile: { ...createDefaultHomeOfficeInputs().personalTaxProfile, mode: "manuel", tauxManuel: 0.3 },
+    };
+    const r = computeHomeOffice(inputs);
+    expect(r.economieImpotSociete).toBeCloseTo(r.indemniteAnnuelleBrute * 0.3, 6);
+  });
+
+  it("en régime IR, le bénéfice prévisionnel de la société s'ajoute au revenu du foyer pour le calcul du TMI", () => {
+    const base: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      impositionSociete: "IR",
+      personalTaxProfile: { ...createDefaultHomeOfficeInputs().personalTaxProfile, mode: "calcule" },
+    };
+    const faibleBenefice = computeHomeOffice({ ...base, beneficeAvantChargePrevisionnel: 5000 });
+    const fortBenefice = computeHomeOffice({ ...base, beneficeAvantChargePrevisionnel: 200000 });
+    expect(fortBenefice.tauxIRUtilise).toBeGreaterThan(faibleBenefice.tauxIRUtilise);
   });
 });

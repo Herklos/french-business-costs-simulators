@@ -82,8 +82,14 @@ describe("computeRetraite — cohérence générale", () => {
     expect(r.coutNetGlobal).toBeCloseTo(3000 - r.economieImpotSociete - r.economieImpotDirigeant, 6);
   });
 
-  it("versement nul : tous les résultats à zéro", () => {
+  it("versement nul (TNS) : tous les résultats à zéro", () => {
     const r = computeRetraite(withCompany("EURL", { versementAnnuel: 0 }));
+    expect(r.coutNetGlobal).toBe(0);
+    expect(r.tauxEconomieGlobal).toBe(0);
+  });
+
+  it("versement nul (assimilé salarié) : tous les résultats à zéro", () => {
+    const r = computeRetraite(withCompany("SASU", { versementAnnuel: 0 }));
     expect(r.coutNetGlobal).toBe(0);
     expect(r.tauxEconomieGlobal).toBe(0);
   });

@@ -49,6 +49,12 @@ describe("computeCredit", () => {
     const r = computeCredit({ prixTTC: 45000, apport: 45000, tauxAnnuel: 0.04, dureeMois: 60 });
     expect(r.coutTotal).toBeCloseTo(45000, 6);
   });
+
+  it("taux à 0% (financement promotionnel) : le coût total = prix TTC exact, mensualité linéaire", () => {
+    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0, dureeMois: 60 });
+    expect(r.coutTotal).toBeCloseTo(45000, 6);
+    expect(r.coutMensuelEquivalent).toBeCloseTo(45000 / 60, 6);
+  });
 });
 
 describe("computeLoa — régression : l'option d'achat ne doit pas gonfler le loyer annuel moyen", () => {

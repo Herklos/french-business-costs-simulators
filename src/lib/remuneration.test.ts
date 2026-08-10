@@ -139,6 +139,23 @@ describe("computeRemuneration — PFU sur les dividendes", () => {
     const irEtPsSurDividendes = s.irSurDividendes + s.prelevementsSociauxSurDividendes;
     expect(irEtPsSurDividendes).toBeCloseTo(s.dividendeBrutDistribuable * PFU_TAUX_GLOBAL, 6);
   });
+
+  it("avec option barème progressif, la fraction sous le seuil est imposée au TMI avec abattement de 40% (pas au PFU)", () => {
+    const rSansOption = computeRemuneration(
+      withCompany("SASU", { budgetAnnuelDisponible: 60000, optionBaremeProgressifDividendes: false }),
+    );
+    const rAvecOption = computeRemuneration(
+      withCompany("SASU", { budgetAnnuelDisponible: 60000, optionBaremeProgressifDividendes: true }),
+    );
+    // Avec option barème, aucun IR au taux fixe du PFU (12,8%) n'est appliqué à la fraction sous le seuil —
+    // l'IR dépend désormais du TMI du foyer sur une base abattue de 40%, donc généralement différent du PFU.
+    expect(rAvecOption.scenarioDividendes.irSurDividendes).not.toBeCloseTo(rSansOption.scenarioDividendes.irSurDividendes, 2);
+    // Les prélèvements sociaux de 17,2%, eux, restent dus dans tous les cas (option ou non) sur le brut.
+    expect(rAvecOption.scenarioDividendes.prelevementsSociauxSurDividendes).toBeCloseTo(
+      rSansOption.scenarioDividendes.prelevementsSociauxSurDividendes,
+      6,
+    );
+  });
 });
 
 describe("computeRemuneration — export/texte", () => {

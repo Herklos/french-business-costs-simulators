@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteSimulation,
   listSimulations,
@@ -65,6 +65,32 @@ describe("storage — sauvegarde, liste, suppression, renommage", () => {
     expect(listSimulations<FakeInputs>("vehicle")[0].inputs.name).toBe("Véhicule");
   });
 
+  it("liste les simulations par date de sauvegarde décroissante (la plus récente en premier)", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      saveSimulation<FakeInputs>("vehicle", { id: "a", name: "Première" });
+      vi.setSystemTime(new Date("2026-01-02T00:00:00.000Z"));
+      saveSimulation<FakeInputs>("vehicle", { id: "b", name: "Deuxième" });
+      vi.setSystemTime(new Date("2026-01-03T00:00:00.000Z"));
+      saveSimulation<FakeInputs>("vehicle", { id: "c", name: "Troisième" });
+      const items = listSimulations<FakeInputs>("vehicle");
+      expect(items.map((i) => i.inputs.name)).toEqual(["Troisième", "Deuxième", "Première"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("un contenu corrompu en localStorage ne fait pas planter la lecture (liste vide)", () => {
+    localStorage.setItem("fbcs_simulations_v1", "{ceci n'est pas du json");
+    expect(listSimulations<FakeInputs>("vehicle")).toEqual([]);
+  });
+
+  it("un contenu JSON valide mais de forme inattendue (pas un tableau) donne une liste vide", () => {
+    localStorage.setItem("fbcs_simulations_v1", JSON.stringify({ not: "an array" }));
+    expect(listSimulations<FakeInputs>("vehicle")).toEqual([]);
+  });
+
   it("supprime une simulation par id", () => {
     saveSimulation<FakeInputs>("vehicle", { id: "a", name: "A" });
     saveSimulation<FakeInputs>("vehicle", { id: "b", name: "B" });
@@ -111,6 +137,11 @@ describe("storage — revenu de référence du foyer fiscal (profil transversal)
 
   it("un contenu corrompu en localStorage ne fait pas planter le chargement (retourne null)", () => {
     localStorage.setItem("fbcs_personal_tax_profile_v1", "{ceci n'est pas du json");
+    expect(loadPersonalTaxProfile()).toBeNull();
+  });
+
+  it("un contenu JSON valide mais de forme inattendue (pas un objet) donne null", () => {
+    localStorage.setItem("fbcs_personal_tax_profile_v1", JSON.stringify(42));
     expect(loadPersonalTaxProfile()).toBeNull();
   });
 
