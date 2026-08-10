@@ -30,7 +30,23 @@ function buildRetraiteExportText(sim: RetraiteInputs): string {
     push(`Versement financé personnellement · Économie d'impôt (IR) : ${formatEUR(r.economieImpotDirigeant)}`);
   }
   push(`Coût net global : ${formatEUR(r.coutNetGlobal)} (${formatPercent(r.tauxEconomieGlobal)} d'économie vs versement brut)`);
+  if (sim.plafondNonUtiliseAnneesPrecedentes > 0) {
+    push(
+      `Report des plafonds non utilisés (3 ans) : +${formatEUR(sim.plafondNonUtiliseAnneesPrecedentes)} → plafond total ${formatEUR(r.plafondDeductionAvecReport)}, versement déductible ${formatEUR(r.versementDeductibleAvecReport)}`,
+    );
+  }
   push("");
+  if (r.dureeProjectionAnnees > 0) {
+    push("— Projection & rente viagère —");
+    push(
+      `À ${sim.ageDepartRetraite} ans (${r.dureeProjectionAnnees} ans de versements, rendement ${formatPercent(sim.tauxRendementAnnuelProjection)}/an) : capital brut projeté ${formatEUR(r.capitalBrutFinalProjete)} (dont plus-value ${formatEUR(r.plusValueLatenteFinale)})`,
+    );
+    push(`Rente viagère estimée : ${formatEUR(r.renteViagereAnnuelleEstimee)}/an, soit ${formatEUR(r.renteViagereMensuelleEstimee)}/mois`);
+    push(
+      `PER vs assurance-vie (capital net à la sortie) : PER ${formatEUR(r.comparaisonAssuranceVie.perCapitalNetApresImpot)} vs assurance-vie ${formatEUR(r.comparaisonAssuranceVie.assuranceVieCapitalNetApresImpot)}`,
+    );
+    push("");
+  }
   push("— Liquidité —");
   push("Sortie normale : à l'âge légal de la retraite (62 à 64 ans selon l'année de naissance) ou à la liquidation de la pension.");
   push(
@@ -128,6 +144,30 @@ export function RetraiteSimulatorPage() {
                 <RuleNote ruleId="per-plafond-deduction-salarie" />
               </>
             )}
+
+            <Field
+              label="Plafond non utilisé des 3 années précédentes (€)"
+              hint="Montant cumulé disponible en report, indiqué sur l'avis d'imposition (« plafond épargne retraite »)."
+            >
+              <NumberInput
+                value={inputs.plafondNonUtiliseAnneesPrecedentes}
+                onChange={(e) => update("plafondNonUtiliseAnneesPrecedentes", Number(e.target.value))}
+              />
+            </Field>
+            {inputs.plafondNonUtiliseAnneesPrecedentes > 0 && (
+              <p className="hint-block">
+                Avec report : plafond total <strong>{formatEUR(results.plafondDeductionAvecReport)}</strong>/an · versement
+                déductible <strong>{formatEUR(results.versementDeductibleAvecReport)}</strong>
+                {results.economieSupplementaireGraceAuReport > 0 && (
+                  <>
+                    {" "}
+                    · économie d'impôt supplémentaire grâce au report :{" "}
+                    <strong>{formatEUR(results.economieSupplementaireGraceAuReport)}</strong>
+                  </>
+                )}
+              </p>
+            )}
+            <RuleNote ruleId="per-report-plafonds-3-ans" />
           </Section>
 
           <Section
@@ -160,6 +200,81 @@ export function RetraiteSimulatorPage() {
             </p>
             <RuleNote ruleId="per-cas-deblocage-anticipe" />
             <RuleNote ruleId="age-legal-retraite" />
+          </Section>
+
+          <Section
+            title="📈 Projection du capital & estimation de rente viagère"
+            subtitle="Hypothèse de versement annuel constant jusqu'à l'âge de départ, avec rendement composé."
+          >
+            <div className="grid grid--2">
+              <Field label="Âge actuel">
+                <NumberInput value={inputs.ageActuel} onChange={(e) => update("ageActuel", Number(e.target.value))} />
+              </Field>
+              <Field label="Âge de départ à la retraite envisagé">
+                <NumberInput value={inputs.ageDepartRetraite} onChange={(e) => update("ageDepartRetraite", Number(e.target.value))} />
+              </Field>
+            </div>
+            <Field label="Rendement annuel net estimé du contrat (%)">
+              <ResetableNumberInput
+                step="0.01"
+                value={inputs.tauxRendementAnnuelProjection}
+                defaultValue={0.03}
+                formatDefault={(v) => formatPercent(v)}
+                onChange={(v) => update("tauxRendementAnnuelProjection", v)}
+              />
+            </Field>
+
+            {results.dureeProjectionAnnees > 0 ? (
+              <>
+                <div className="stat-grid">
+                  <StatCard label="Versements cumulés" value={formatEUR(results.versementsCumulesFinal)} />
+                  <StatCard label="Capital brut projeté" value={formatEUR(results.capitalBrutFinalProjete)} tone="good" />
+                  <StatCard label="dont plus-value latente" value={formatEUR(results.plusValueLatenteFinale)} />
+                </div>
+
+                <p className="hint-block">
+                  <strong>Rente viagère estimée</strong> à {inputs.ageDepartRetraite} ans (taux de conversion indicatif{" "}
+                  {formatPercent(results.renteViagereTauxConversion)}/an) :{" "}
+                  <strong>{formatEUR(results.renteViagereAnnuelleEstimee)}</strong>/an, soit environ{" "}
+                  <strong>{formatEUR(results.renteViagereMensuelleEstimee)}</strong>/mois.
+                </p>
+                <RuleNote ruleId="rente-viagere-conversion" />
+
+                <p className="hint-block">
+                  <strong>PER vs assurance-vie</strong> — capital net d'impôt à la sortie, à effort d'épargne brut
+                  identique : PER <strong>{formatEUR(results.comparaisonAssuranceVie.perCapitalNetApresImpot)}</strong> vs
+                  assurance-vie <strong>{formatEUR(results.comparaisonAssuranceVie.assuranceVieCapitalNetApresImpot)}</strong>
+                  {" — "}
+                  {results.comparaisonAssuranceVie.ecartEnFaveurPER >= 0 ? "le PER est" : "l'assurance-vie est"} plus
+                  avantageux de <strong>{formatEUR(Math.abs(results.comparaisonAssuranceVie.ecartEnFaveurPER))}</strong> ici,
+                  toutes choses égales par ailleurs.
+                </p>
+                <RuleNote ruleId="per-vs-assurance-vie-fiscalite" />
+
+                <div className="rules-table-wrap">
+                  <table className="rules-table">
+                    <thead>
+                      <tr>
+                        <th>Âge</th>
+                        <th>Versements cumulés</th>
+                        <th>Capital brut projeté</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {results.projectionCapital.map((p) => (
+                        <tr key={p.year}>
+                          <td>{p.age} ans</td>
+                          <td>{formatEUR(p.versementsCumules)}</td>
+                          <td>{formatEUR(p.capitalBrut)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              <p className="hint-block">L'âge de départ doit être postérieur à l'âge actuel pour projeter le capital.</p>
+            )}
           </Section>
 
           {results.dirigeantStatus === "TNS" && (

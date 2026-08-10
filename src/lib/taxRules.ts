@@ -413,7 +413,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2019-10-01",
     validUntil: "2026-12-31",
     notes:
-      "PASS 2026 = 48 060€. Plafond nettement plus généreux que celui des salariés dès que le bénéfice dépasse le PASS. Ne tient pas compte du report des plafonds non utilisés des 3 années précédentes (simplification).",
+      "PASS 2026 = 48 060€. Plafond nettement plus généreux que celui des salariés dès que le bénéfice dépasse le PASS. Le report des plafonds non utilisés des 3 années précédentes (cf. règle « per-report-plafonds-3-ans ») s'ajoute à ce plafond de base.",
   },
   {
     id: "per-plafond-deduction-salarie",
@@ -426,7 +426,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2019-10-01",
     validUntil: "2026-12-31",
     notes:
-      "Plafond individuel affiché sur l'avis d'imposition (« plafond épargne retraite »). Comme pour le TNS, le report des plafonds non utilisés des 3 années précédentes n'est pas modélisé ici.",
+      "Plafond individuel affiché sur l'avis d'imposition (« plafond épargne retraite »). Comme pour le TNS, le report des plafonds non utilisés des 3 années précédentes (cf. règle « per-report-plafonds-3-ans ») s'ajoute à ce plafond de base.",
   },
   {
     id: "per-cas-deblocage-anticipe",
@@ -454,6 +454,46 @@ export const TAX_RULES: TaxRule[] = [
     validUntil: null,
     notes:
       "Relèvement progressif de 62 à 64 ans par génération, jusqu'à atteindre 64 ans pour les personnes nées à partir de 1968. Hors cas de déblocage anticipé, le PER n'est liquidable qu'à cet âge légal ou lors de la liquidation effective de la pension d'un régime obligatoire si l'activité se poursuit au-delà.",
+  },
+  {
+    id: "per-report-plafonds-3-ans",
+    category: "epargne_retraite_dirigeant",
+    label: "Report des plafonds de déduction PER non utilisés des 3 années précédentes",
+    value: "Le plafond disponible cumule le plafond de l'année en cours et les fractions non utilisées des 3 années précédentes",
+    legalReference: "Art. 163 quatervicies CGI",
+    sourceLabel: "impots.gouv.fr",
+    sourceUrl: "https://www.impots.gouv.fr/particulier/questions/comment-fonctionne-le-plafond-de-versement-sur-un-plan-depargne-retraite",
+    validFrom: "2019-10-01",
+    validUntil: null,
+    notes:
+      "Le plafond disponible cumulé figure directement sur l'avis d'imposition (rubrique « plafond épargne retraite »). Modélisé ici par une saisie manuelle du montant cumulé non utilisé, sans reconstituer le détail année par année (simplification).",
+  },
+  {
+    id: "per-vs-assurance-vie-fiscalite",
+    category: "epargne_retraite_dirigeant",
+    label: "Comparaison de fiscalité à la sortie : PER (sortie en capital) vs assurance-vie",
+    value:
+      "PER : part correspondant aux versements déduits taxée au barème de l'IR (sans abattement) + PFU 30% sur la plus-value · Assurance-vie : PFU 30% sur la plus-value (avant 8 ans), ou après 8 ans abattement annuel 4 600€/9 200€ puis taux réduit 7,5%+17,2% de PS sur le solde (encours <150k€)",
+    legalReference: "Art. 158, 5° CGI (PER) ; art. 125-0 A CGI (assurance-vie)",
+    sourceLabel: "impots.gouv.fr / Service-Public.fr",
+    sourceUrl: "https://www.impots.gouv.fr/particulier/le-plan-depargne-retraite-individuel-perin",
+    validFrom: "2019-10-01",
+    validUntil: null,
+    notes:
+      "Comparaison fortement simplifiée dans le simulateur : un taux forfaitaire de 30% (PFU) est appliqué à la plus-value des deux enveloppes, sans modéliser l'abattement assurance-vie après 8 ans ni le taux réduit associé — l'assurance-vie y est donc probablement sous-évaluée dans la comparaison pour une détention longue. À affiner avec un conseiller en gestion de patrimoine pour une décision réelle.",
+  },
+  {
+    id: "rente-viagere-conversion",
+    category: "epargne_retraite_dirigeant",
+    label: "Conversion du capital PER en rente viagère à la sortie",
+    value: "Taux de conversion indicatif croissant avec l'âge de départ (≈3,5% à 60 ans à ≈6,2% à 75 ans)",
+    legalReference: "Table de mortalité assureur (non réglementaire)",
+    sourceLabel: "Estimation indicative — ordre de grandeur du marché",
+    sourceUrl: "https://www.service-public.fr/particuliers/vosdroits/F35223",
+    validFrom: "2019-10-01",
+    validUntil: null,
+    notes:
+      "Les taux de conversion réels ne sont pas fixés par la loi : ils dépendent de l'assureur, de sa table de mortalité, du sexe de l'assuré et des options choisies (réversion, annuités garanties). La table utilisée ici est une estimation indicative à but pédagogique, à ne pas utiliser pour un chiffrage contractuel — demander un devis à l'assureur du contrat pour un montant fiable.",
   },
   {
     id: "credit-impot-irve",
