@@ -74,6 +74,9 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`Taux de charges sociales sur l'AEN : ${formatPercent(sim.tnsContributionRate)} · Taux d'IS normal : ${formatPercent(sim.corporateTaxRate)}`);
   push(`Bénéfice imposable prévisionnel avant charges véhicule : ${formatEUR(sim.beneficeAvantChargePrevisionnel)}${sim.impositionSociete === "IS" ? ` (éligible taux réduit 15% : ${sim.eligibleTauxReduitPME ? "Oui" : "Non"})` : ""}`);
   push(`Participation financière mensuelle du dirigeant : ${formatEUR(sim.monthlyParticipation)} · Barème IK de base : ${sim.ikRatePerKm} €/km`);
+  if (sim.compenserMensualiteParAugmentationSalaire) {
+    push("Mensualité compensée par une augmentation de salaire : OUI (en plus des IK, sur les options « Personnel »)");
+  }
   push("");
   push("— Modes de financement (paramètres, hypothèses) —");
   push(`Comptant : durée de détention ${sim.financing.comptant.dureeDetentionMois} mois, taux d'opportunité ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an`);
@@ -580,6 +583,24 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               </Field>
             </div>
             <RuleNote ruleId="ik-bareme-2026" />
+
+            <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
+              <input
+                type="checkbox"
+                checked={inputs.compenserMensualiteParAugmentationSalaire}
+                onChange={(e) => update("compenserMensualiteParAugmentationSalaire", e.target.checked)}
+              />
+              <span>Compenser la mensualité par une augmentation de salaire (scénario achat personnel)</span>
+            </label>
+            <p className="hint-block">
+              Si activé, en plus des IK, la société verse au dirigeant une augmentation de salaire brute
+              annuelle égale à la mensualité de financement retenue pour l'achat personnel — chargée comme
+              toute rémunération (cotisations sociales, économie d'impôt société sur la part déductible). Ce
+              coût s'ajoute à celui des IK sur les options « Personnel », sans les remplacer. Le net
+              réellement perçu par le dirigeant sur cette augmentation (après ses propres cotisations et son
+              impôt sur le revenu) n'est pas déduit de son coût personnel affiché : ce montage n'est ici
+              chiffré que du point de vue du coût supplémentaire pour la société.
+            </p>
           </Section>
 
           <Section

@@ -82,6 +82,12 @@ export interface SimulationInputs {
   monthlyParticipation: number; // participation financière mensuelle du gérant
   ikRatePerKm: number; // barème IK €/km utilisé si achat perso + IK
 
+  // Alternative "achat perso, mensualité compensée par une augmentation de salaire" : quand activée,
+  // les options "Personnel + IK" ci-dessous reçoivent, EN PLUS du coût des IK, un coût société
+  // supplémentaire correspondant à une augmentation de salaire brute annuelle égale à la mensualité
+  // de financement — cf. detail de calcul dans computeSimulation.
+  compenserMensualiteParAugmentationSalaire: boolean;
+
   // Financement — mêmes paramètres, utilisés à la fois si la société achète le véhicule
   // et si le dirigeant l'achète à titre personnel (chacun retient le mode qui l'intéresse).
   financingMode: FinancingMode; // mode retenu côté société pour l'affichage détaillé
@@ -144,6 +150,7 @@ export function createDefaultInputs(): SimulationInputs {
 
     monthlyParticipation: 0,
     ikRatePerKm: DEFAULT_IK_RATE,
+    compenserMensualiteParAugmentationSalaire: false,
 
     financingMode: "credit",
     personalFinancingMode: "credit",
@@ -614,6 +621,20 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         ]
       : [{ label: "Valeur résiduelle en fin de contrat (véhicule restitué, non possédé)", value: 0 }];
 
+    // Alternative "mensualité compensée par une augmentation de salaire" (optionnelle) : la
+    // société verse, en plus des IK, une augmentation de salaire brute annuelle égale à la
+    // mensualité de financement — charge déductible comme toute rémunération, donc chargée des
+    // cotisations sociales (au même taux global que celui déjà utilisé pour l'AEN dans ce
+    // simulateur, cf. inputs.tnsContributionRate) puis nette de l'économie d'impôt société
+    // correspondante. Le net réellement perçu par le dirigeant sur cette augmentation (après ses
+    // propres cotisations/IR) n'est PAS déduit de son coût personnel ci-dessous : ce montage
+    // s'ajoute au calcul existant sans le modifier, par simplicité et pour rester lisible.
+    const augmentationSalaireBrute = inputs.compenserMensualiteParAugmentationSalaire ? p.personalFinancingAnnual : 0;
+    const chargesSurAugmentation = augmentationSalaireBrute * inputs.tnsContributionRate;
+    const coutBrutAugmentation = augmentationSalaireBrute + chargesSurAugmentation;
+    const economieImpotAugmentation = computeEconomieImpot(inputs, coutBrutAugmentation, tauxIRUtilise);
+    const coutNetSocieteAugmentation = coutBrutAugmentation - economieImpotAugmentation;
+
     return [
       {
         owner: "societe" as const,
@@ -650,9 +671,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
       {
         owner: "personnel" as const,
         mode,
-        label: `Personnel + IK — ${FINANCING_LABELS[mode]}`,
-        globalCostAnnual: p.globalCostPersonnel,
-        partSociete: p.ikReimbursement - p.economieImpotIK,
+        label: `Personnel + IK${inputs.compenserMensualiteParAugmentationSalaire ? " + augmentation salaire" : ""} — ${FINANCING_LABELS[mode]}`,
+        globalCostAnnual: p.globalCostPersonnel + coutNetSocieteAugmentation,
+        partSociete: p.ikReimbursement - p.economieImpotIK + coutNetSocieteAugmentation,
         partDirigeant: p.coutScenarioPersonnel,
         devientProprietaire,
         valeurResiduelleEstimee,
@@ -682,6 +703,15 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Coût net dirigeant (après IK)", value: p.coutScenarioPersonnel },
           { label: "Économie d'impôt société sur l'IK versée", value: p.economieImpotIK },
           { label: "Coût net société sur l'IK", value: p.ikReimbursement - p.economieImpotIK },
+          ...(inputs.compenserMensualiteParAugmentationSalaire
+            ? [
+                { label: "Augmentation de salaire brute (= mensualité de financement)", value: augmentationSalaireBrute },
+                { label: "Charges sociales sur cette augmentation", value: chargesSurAugmentation },
+                { label: "= Coût brut société de l'augmentation", value: coutBrutAugmentation },
+                { label: "− Économie d'impôt société sur l'augmentation", value: -economieImpotAugmentation },
+                { label: "= Coût net société de l'augmentation (en plus du coût des IK)", value: coutNetSocieteAugmentation },
+              ]
+            : []),
         ],
       },
     ];
