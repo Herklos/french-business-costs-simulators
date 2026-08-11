@@ -88,6 +88,14 @@ export interface SimulationInputs {
   // de financement — cf. detail de calcul dans computeSimulation.
   compenserMensualiteParAugmentationSalaire: boolean;
 
+  // Aides à l'achat d'un véhicule électrique — réduisent le prix effectivement payé (cf.
+  // applyPrixNetAchat dans computeSimulation). Ne s'appliquent qu'aux modes comptant/crédit : les
+  // offres LOA/LLD sont des loyers constructeur publiés indépendants de ce paramètre.
+  ceeSelectedAmount: number; // montant du palier de prime CEE "Coup de pouce véhicules particuliers électriques" sélectionné (0 = aucune) — RÉSERVÉ AUX PARTICULIERS (personnes physiques), jamais appliqué à un achat société, cf. taxRules "cee-coup-de-pouce-vehicule-electrique"
+  bonusRepriseActif: boolean; // bonus de reprise commercial constructeur (état + reprise d'un ancien véhicule)
+  bonusRepriseMontant: number; // pré-rempli depuis le modèle de véhicule sélectionné (cf. vehicleModels.ts), éditable
+  bonusRepriseApplicableSociete: boolean; // l'offre de reprise est-elle aussi ouverte à un achat professionnel ? à confirmer au cas par cas avec le concessionnaire
+
   // Financement — mêmes paramètres, utilisés à la fois si la société achète le véhicule
   // et si le dirigeant l'achète à titre personnel (chacun retient le mode qui l'intéresse).
   financingMode: FinancingMode; // mode retenu côté société pour l'affichage détaillé
@@ -151,6 +159,10 @@ export function createDefaultInputs(): SimulationInputs {
     monthlyParticipation: 0,
     ikRatePerKm: DEFAULT_IK_RATE,
     compenserMensualiteParAugmentationSalaire: false,
+    ceeSelectedAmount: 0,
+    bonusRepriseActif: false,
+    bonusRepriseMontant: 0,
+    bonusRepriseApplicableSociete: true,
 
     financingMode: "credit",
     personalFinancingMode: "credit",
@@ -177,7 +189,17 @@ export function applyVehicleModel(inputs: SimulationInputs, modelId: string): Si
   const model = getVehicleModel(modelId);
   if (!model) return { ...inputs, vehicleModelId: modelId };
 
-  let next: SimulationInputs = { ...inputs, vehicleModelId: modelId };
+  // Les aides (CEE, bonus de reprise) sont propres à chaque modèle/offre : on les réinitialise à
+  // chaque changement de modèle plutôt que de laisser un montant obsolète d'un autre véhicule, et on
+  // pré-remplit le bonus de reprise du nouveau modèle (désactivé par défaut : à l'utilisateur de
+  // confirmer qu'il en bénéficie réellement).
+  let next: SimulationInputs = {
+    ...inputs,
+    vehicleModelId: modelId,
+    ceeSelectedAmount: 0,
+    bonusRepriseActif: false,
+    bonusRepriseMontant: model.bonusRepriseConstructeur ?? 0,
+  };
   if (model.id !== "autre") {
     next = { ...next, isElectric: model.isElectric, isEcoScoreEligible: model.ecoScoreEligible };
   }
@@ -284,6 +306,12 @@ export interface SimulationResults {
   // Projection (coûts globaux cumulés)
   anneeTransitionAmortissement: number | null; // année de la projection où l'amortissement passe de 20% à 10%/an (achat uniquement)
   projection: { year: number; cumulSociete: number; cumulPersonnel: number }[];
+
+  // Aides à l'achat effectivement déduites du prix (cf. applyPrixNetAchat) — 0 si aucune aide activée.
+  remiseSociete: number;
+  remisePersonnel: number;
+  prixNetSociete: number; // inputs.vehiclePrice − remiseSociete
+  prixNetPersonnel: number; // inputs.vehiclePrice − remisePersonnel
 }
 
 function getFinancingAnnual(financingResults: FinancingResult[], mode: FinancingMode): number {
@@ -512,15 +540,38 @@ function computePersonnelForMode(
   };
 }
 
+/**
+ * Réduit le prix effectivement payé (comptant/crédit uniquement — cf. note de SimulationInputs) d'un
+ * montant d'aide donné : aussi bien la base d'amortissement AEN/valeur résiduelle (`vehiclePrice`)
+ * que le montant réellement financé (`financing.comptant/credit.prixTTC`). Les offres LOA/LLD
+ * (loyers constructeur publiés) ne sont volontairement pas modifiées : les aides s'appliquent en
+ * pratique à une acquisition comptant/crédit, pas à un contrat de location déjà négocié.
+ */
+function applyPrixNetAchat(inputs: SimulationInputs, remise: number): SimulationInputs {
+  if (remise <= 0) return inputs;
+  return {
+    ...inputs,
+    vehiclePrice: Math.max(0, inputs.vehiclePrice - remise),
+    financing: {
+      ...inputs.financing,
+      comptant: { ...inputs.financing.comptant, prixTTC: Math.max(0, inputs.financing.comptant.prixTTC - remise) },
+      credit: { ...inputs.financing.credit, prixTTC: Math.max(0, inputs.financing.credit.prixTTC - remise) },
+    },
+  };
+}
+
 /** Recherche du seuil de % d'usage privé où les deux scénarios sélectionnés s'équivalent (coût global), par dichotomie. */
 function findBreakevenPercent(
-  inputs: SimulationInputs,
-  financingResults: FinancingResult[],
+  inputsSociete: SimulationInputs,
+  inputsPersonnel: SimulationInputs,
+  financingResultsSociete: FinancingResult[],
+  financingResultsPersonnel: FinancingResult[],
   tauxIRUtilise: number,
 ): number | null {
   const diffAt = (p: number) =>
-    computeSocieteForMode(inputs, inputs.financingMode, p, financingResults, tauxIRUtilise).globalCostSociete -
-    computePersonnelForMode(inputs, inputs.personalFinancingMode, p, financingResults, tauxIRUtilise)
+    computeSocieteForMode(inputsSociete, inputsSociete.financingMode, p, financingResultsSociete, tauxIRUtilise)
+      .globalCostSociete -
+    computePersonnelForMode(inputsPersonnel, inputsPersonnel.personalFinancingMode, p, financingResultsPersonnel, tauxIRUtilise)
       .globalCostPersonnel;
 
   const d0 = diffAt(0);
@@ -552,7 +603,19 @@ const FINANCING_LABELS: Record<FinancingMode, string> = {
 };
 
 export function computeSimulation(inputs: SimulationInputs): SimulationResults {
-  const financingResults = compareFinancingModes(inputs.financing);
+  // Aides à l'achat, distinctes selon l'acheteur (cf. notes de SimulationInputs/applyPrixNetAchat) :
+  //  - Bonus de reprise constructeur : réduit le prix des deux côtés si applicable à un achat
+  //    société (inputs.bonusRepriseApplicableSociete), sinon seulement côté personnel.
+  //  - Prime CEE "Coup de pouce véhicules particuliers électriques" : réservée aux personnes
+  //    physiques par la réglementation — ne réduit JAMAIS le prix côté société.
+  const bonusReprise = inputs.bonusRepriseActif ? Math.max(0, inputs.bonusRepriseMontant) : 0;
+  const remiseSociete = inputs.bonusRepriseApplicableSociete ? bonusReprise : 0;
+  const remisePersonnel = bonusReprise + Math.max(0, inputs.ceeSelectedAmount);
+
+  const inputsSociete = applyPrixNetAchat(inputs, remiseSociete);
+  const inputsPersonnel = applyPrixNetAchat(inputs, remisePersonnel);
+  const financingResultsSociete = compareFinancingModes(inputsSociete.financing);
+  const financingResultsPersonnel = compareFinancingModes(inputsPersonnel.financing);
   // Régime IR (société translucide) : le bénéfice de la société est directement imposé entre les
   // mains du dirigeant (BIC/BNC) — il doit donc être intégré au revenu imposable du foyer pour
   // déterminer le TMI réel, y compris celui appliqué à l'AEN elle-même.
@@ -568,29 +631,32 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const tauxIRUtilise = resolvedTax.tauxUtilise;
 
   const societe = computeSocieteForMode(
-    inputs,
-    inputs.financingMode,
-    inputs.privateUsePercent,
-    financingResults,
+    inputsSociete,
+    inputsSociete.financingMode,
+    inputsSociete.privateUsePercent,
+    financingResultsSociete,
     tauxIRUtilise,
   );
   const personnel = computePersonnelForMode(
-    inputs,
-    inputs.personalFinancingMode,
-    inputs.privateUsePercent,
-    financingResults,
+    inputsPersonnel,
+    inputsPersonnel.personalFinancingMode,
+    inputsPersonnel.privateUsePercent,
+    financingResultsPersonnel,
     tauxIRUtilise,
   );
 
   // Toutes les combinaisons possibles, pour trouver l'option la moins coûteuse globalement — sans opposer
   // par principe société et personnel : on compare le coût total consolidé de chaque option entre elles.
   const allOptions: GlobalOption[] = ALL_FINANCING_MODES.flatMap((mode) => {
-    const s = computeSocieteForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise);
-    const p = computePersonnelForMode(inputs, mode, inputs.privateUsePercent, financingResults, tauxIRUtilise);
+    const s = computeSocieteForMode(inputsSociete, mode, inputs.privateUsePercent, financingResultsSociete, tauxIRUtilise);
+    const p = computePersonnelForMode(inputsPersonnel, mode, inputs.privateUsePercent, financingResultsPersonnel, tauxIRUtilise);
     // Coût de l'option d'achat LOA, si levée : un versement UNIQUE en fin de contrat (achat de
     // capital), volontairement exclu du coût annuel récurrent ci-dessus (cf. computeLoa) — affiché
     // séparément pour rester visible sans gonfler artificiellement le coût mensuel/annuel affiché.
-    const optionAchatUnique = mode === "loa" ? (financingResults.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
+    // Le prix de la LOA n'étant pas affecté par les aides (cf. applyPrixNetAchat), société et
+    // personnel partagent la même offre LOA — le détail est donc identique des deux côtés.
+    const optionAchatUnique =
+      mode === "loa" ? (financingResultsSociete.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
     const optionAchatDetail: { label: string; value: number }[] =
       optionAchatUnique > 0
         ? [{ label: "Option d'achat LOA en fin de contrat (paiement unique, hors coût annuel ci-dessus)", value: optionAchatUnique }]
@@ -599,27 +665,38 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     // Valeur résiduelle : uniquement si le véhicule est effectivement possédé en fin de période
     // (comptant, crédit, ou LOA avec option d'achat levée). En LLD, ou en LOA sans option levée,
     // le véhicule est restitué : aucune valeur résiduelle (comme un loyer de logement).
-    const financingResult = financingResults.find((f) => f.mode === mode);
+    // devientProprietaire ne dépend que de la structure du montage (mode + option d'achat), pas du
+    // prix : identique société/personnel, peu importe le côté d'où on le lit.
+    const financingResult = financingResultsSociete.find((f) => f.mode === mode);
     const devientProprietaire = financingResult?.devientProprietaire ?? false;
     const dureeAnneesPourMode = getDureeMoisForMode(inputs, mode) / 12;
     // Valeur résiduelle "brute" (fin de période), affichée à titre informatif pour toute option
     // possédée (comptant, crédit, LOA avec option levée). Pour comptant/crédit uniquement, sa
     // contrepartie ANNUALISÉE est en outre déjà déduite du décaissement ci-dessus (cf.
     // getResidualValueAnnualized) — pour la LOA elle reste purement informative, cf. le
-    // commentaire sur loyerAnnuelMoyen dans financing.ts.
-    const valeurResiduelleEstimee = devientProprietaire
-      ? mode === "comptant" || mode === "credit"
-        ? getResidualValue(inputs, mode)
-        : estimateResidualValue(inputs.vehiclePrice, dureeAnneesPourMode, inputs.tauxDeprecationAnnuel)
-      : 0;
-    const valeurResiduelleDetail: { label: string; value: number }[] = devientProprietaire
-      ? [
-          {
-            label: `Valeur résiduelle estimée du véhicule (possédé, ${dureeAnneesPourMode.toFixed(1)} ans, décote ${(inputs.tauxDeprecationAnnuel * 100).toFixed(0)}%/an)`,
-            value: valeurResiduelleEstimee,
-          },
-        ]
-      : [{ label: "Valeur résiduelle en fin de contrat (véhicule restitué, non possédé)", value: 0 }];
+    // commentaire sur loyerAnnuelMoyen dans financing.ts. Calculée séparément société/personnel :
+    // les aides à l'achat (cf. applyPrixNetAchat) peuvent réduire le prix différemment des deux
+    // côtés pour comptant/crédit (jamais pour la LOA, dont le prix n'est pas affecté).
+    function estimerValeurResiduelle(inputsCote: SimulationInputs): number {
+      if (!devientProprietaire) return 0;
+      return mode === "comptant" || mode === "credit"
+        ? getResidualValue(inputsCote, mode)
+        : estimateResidualValue(inputsCote.vehiclePrice, dureeAnneesPourMode, inputsCote.tauxDeprecationAnnuel);
+    }
+    function buildValeurResiduelleDetail(valeur: number): { label: string; value: number }[] {
+      return devientProprietaire
+        ? [
+            {
+              label: `Valeur résiduelle estimée du véhicule (possédé, ${dureeAnneesPourMode.toFixed(1)} ans, décote ${(inputs.tauxDeprecationAnnuel * 100).toFixed(0)}%/an)`,
+              value: valeur,
+            },
+          ]
+        : [{ label: "Valeur résiduelle en fin de contrat (véhicule restitué, non possédé)", value: 0 }];
+    }
+    const valeurResiduelleEstimeeSociete = estimerValeurResiduelle(inputsSociete);
+    const valeurResiduelleEstimeePersonnel = estimerValeurResiduelle(inputsPersonnel);
+    const valeurResiduelleDetailSociete = buildValeurResiduelleDetail(valeurResiduelleEstimeeSociete);
+    const valeurResiduelleDetailPersonnel = buildValeurResiduelleDetail(valeurResiduelleEstimeePersonnel);
 
     // Alternative "mensualité compensée par une augmentation de salaire" (optionnelle) : la
     // société verse, en plus des IK, une augmentation de salaire brute annuelle égale à la
@@ -635,6 +712,20 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     const economieImpotAugmentation = computeEconomieImpot(inputs, coutBrutAugmentation, tauxIRUtilise);
     const coutNetSocieteAugmentation = coutBrutAugmentation - economieImpotAugmentation;
 
+    const remiseSocieteDetail: { label: string; value: number }[] =
+      (mode === "comptant" || mode === "credit") && remiseSociete > 0
+        ? [{ label: "Aides à l'achat déduites du prix (bonus de reprise)", value: remiseSociete }]
+        : [];
+    const remisePersonnelDetail: { label: string; value: number }[] =
+      (mode === "comptant" || mode === "credit") && remisePersonnel > 0
+        ? [
+            {
+              label: "Aides à l'achat déduites du prix (prime CEE + bonus de reprise)",
+              value: remisePersonnel,
+            },
+          ]
+        : [];
+
     return [
       {
         owner: "societe" as const,
@@ -644,8 +735,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         partSociete: s.coutNetSociete,
         partDirigeant: s.coutTotalGerantSociete,
         devientProprietaire,
-        valeurResiduelleEstimee,
+        valeurResiduelleEstimee: valeurResiduelleEstimeeSociete,
         detail: [
+          ...remiseSocieteDetail,
           { label: "AEN brut", value: s.aenBrut },
           { label: "Abattement électrique", value: s.abattement },
           { label: "AEN net", value: s.aenNet },
@@ -665,7 +757,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
           { label: "Coût net société", value: s.coutNetSociete },
           { label: "Coût cash dirigeant", value: s.coutTotalGerantSociete },
-          ...valeurResiduelleDetail,
+          ...valeurResiduelleDetailSociete,
         ],
       },
       {
@@ -676,8 +768,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         partSociete: p.ikReimbursement - p.economieImpotIK + coutNetSocieteAugmentation,
         partDirigeant: p.coutScenarioPersonnel,
         devientProprietaire,
-        valeurResiduelleEstimee,
+        valeurResiduelleEstimee: valeurResiduelleEstimeePersonnel,
         detail: [
+          ...remisePersonnelDetail,
           { label: "Km professionnels/an", value: p.proKmAnnual },
           { label: "Km privés/an", value: p.privateKmAnnual },
           { label: "Barème IK effectif (€/km)", value: p.effectiveIkRatePerKm },
@@ -692,7 +785,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
             ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: p.valeurResiduelleAnnualiseePersonnel }]
             : []),
           ...optionAchatDetail,
-          ...valeurResiduelleDetail,
+          ...valeurResiduelleDetailPersonnel,
           {
             label: "= Coût brut avant IK (dirigeant)",
             value: Math.max(
@@ -723,7 +816,13 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const recommandation: SimulationResults["recommandation"] =
     Math.abs(difference) < 1 ? "equivalent" : difference > 0 ? "personnel" : "societe";
 
-  const seuilPrivateUsePercent = findBreakevenPercent(inputs, financingResults, tauxIRUtilise);
+  const seuilPrivateUsePercent = findBreakevenPercent(
+    inputsSociete,
+    inputsPersonnel,
+    financingResultsSociete,
+    financingResultsPersonnel,
+    tauxIRUtilise,
+  );
 
   // Projection : le taux d'amortissement passe de 20% à 10%/an après 5 ans de détention (véhicule
   // acheté). Si le véhicule est neuf (≤5 ans) au démarrage de la simulation, ce basculement est
@@ -734,10 +833,10 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const societeApresTransition = inputs.vehicleOverFiveYears
     ? societe
     : computeSocieteForMode(
-        { ...inputs, vehicleOverFiveYears: true },
-        inputs.financingMode,
-        inputs.privateUsePercent,
-        financingResults,
+        { ...inputsSociete, vehicleOverFiveYears: true },
+        inputsSociete.financingMode,
+        inputsSociete.privateUsePercent,
+        financingResultsSociete,
         tauxIRUtilise,
       );
 
@@ -769,5 +868,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     seuilPrivateUsePercent,
     anneeTransitionAmortissement,
     projection,
+    remiseSociete,
+    remisePersonnel,
+    prixNetSociete: inputsSociete.vehiclePrice,
+    prixNetPersonnel: inputsPersonnel.vehiclePrice,
   };
 }

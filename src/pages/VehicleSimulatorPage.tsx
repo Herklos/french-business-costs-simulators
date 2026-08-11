@@ -77,6 +77,11 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   if (sim.compenserMensualiteParAugmentationSalaire) {
     push("Mensualité compensée par une augmentation de salaire : OUI (en plus des IK, sur les options « Personnel »)");
   }
+  if (r.remiseSociete > 0 || r.remisePersonnel > 0) {
+    push(
+      `Aides à l'achat déduites du prix (comptant/crédit) : société ${formatEUR(r.remiseSociete)} (prix net ${formatEUR(r.prixNetSociete)}) · personnel ${formatEUR(r.remisePersonnel)} (prix net ${formatEUR(r.prixNetPersonnel)})`,
+    );
+  }
   push("");
   push("— Modes de financement (paramètres, hypothèses) —");
   push(`Comptant : durée de détention ${sim.financing.comptant.dureeDetentionMois} mois, taux d'opportunité ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an`);
@@ -337,6 +342,80 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-taux" />}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-plafond" />}
           </Section>
+
+          {inputs.isElectric && ((selectedVehicleModel?.ceeOffers?.length ?? 0) > 0 || (selectedVehicleModel?.bonusRepriseConstructeur ?? 0) > 0 || inputs.bonusRepriseActif) && (
+            <Section
+              title="🎁 Aides à l'achat (prime CEE, bonus de reprise)"
+              subtitle="Déduites directement du prix TTC retenu pour le calcul (comptant/crédit uniquement — sans effet sur des loyers LOA/LLD déjà négociés)."
+            >
+              {(selectedVehicleModel?.ceeOffers?.length ?? 0) > 0 && (
+                <Field
+                  label="Prime CEE « Coup de pouce véhicules particuliers électriques »"
+                  hint="Réservée aux particuliers : déduite uniquement côté achat personnel, jamais côté société."
+                >
+                  <select
+                    value={inputs.ceeSelectedAmount}
+                    onChange={(e) => update("ceeSelectedAmount", Number(e.target.value))}
+                  >
+                    <option value={0}>Aucune</option>
+                    {selectedVehicleModel?.ceeOffers?.map((offer) => (
+                      <option key={offer.label} value={offer.amount}>
+                        {offer.label} — {formatEUR(offer.amount)}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+              )}
+              <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
+                <input
+                  type="checkbox"
+                  checked={inputs.bonusRepriseActif}
+                  onChange={(e) => update("bonusRepriseActif", e.target.checked)}
+                />
+                <span>Bonus de reprise constructeur (reprise d'un ancien véhicule)</span>
+              </label>
+              {inputs.bonusRepriseActif && (
+                <div className="grid grid--2" style={{ marginTop: "0.5rem" }}>
+                  <Field label="Montant du bonus de reprise (€)">
+                    <NumberInput
+                      value={inputs.bonusRepriseMontant}
+                      onChange={(e) => update("bonusRepriseMontant", Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field
+                    label="Applicable à un achat par la société ?"
+                    hint="Offre commerciale privée du constructeur, non réglementaire : à confirmer au cas par cas avec le concessionnaire."
+                  >
+                    <select
+                      value={inputs.bonusRepriseApplicableSociete ? "oui" : "non"}
+                      onChange={(e) => update("bonusRepriseApplicableSociete", e.target.value === "oui")}
+                    >
+                      <option value="oui">Oui — déduit aussi côté société</option>
+                      <option value="non">Non — déduit uniquement côté personnel</option>
+                    </select>
+                  </Field>
+                </div>
+              )}
+              {(results.remiseSociete > 0 || results.remisePersonnel > 0) && (
+                <div className="stat-grid" style={{ marginTop: "0.75rem" }}>
+                  <StatCard
+                    label="Prix net retenu — société"
+                    value={formatEUR(results.prixNetSociete)}
+                    sub={results.remiseSociete > 0 ? `− ${formatEUR(results.remiseSociete)} d'aides` : "Aucune aide applicable"}
+                    tone={results.remiseSociete > 0 ? "good" : "neutral"}
+                  />
+                  <StatCard
+                    label="Prix net retenu — personnel"
+                    value={formatEUR(results.prixNetPersonnel)}
+                    sub={results.remisePersonnel > 0 ? `− ${formatEUR(results.remisePersonnel)} d'aides` : "Aucune aide applicable"}
+                    tone={results.remisePersonnel > 0 ? "good" : "neutral"}
+                  />
+                </div>
+              )}
+              <RuleNote ruleId="cee-coup-de-pouce-vehicule-electrique" />
+              <RuleNote ruleId="bonus-reprise-constructeur" />
+            </Section>
+          )}
 
           {inputs.isElectric && (
             <Section

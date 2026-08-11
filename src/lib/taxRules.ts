@@ -236,7 +236,32 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2026-01-01",
     validUntil: "2026-12-31",
     notes:
-      "Réduit le prix d'achat effectif si perçu par la société. Le champ « aide à l'achat perçue » du simulateur permet de le renseigner à titre informatif (affiché dans l'export), mais il reste à déduire manuellement du « prix d'achat TTC » saisi si la société en a déjà bénéficié — pour ne pas fausser la base de calcul de l'AEN/amortissement si le prix saisi est déjà net.",
+      "Réduit le prix d'achat effectif si perçu par la société. Le champ « aide à l'achat perçue » du simulateur permet de le renseigner à titre informatif (affiché dans l'export), mais il reste à déduire manuellement du « prix d'achat TTC » saisi si la société en a déjà bénéficié — pour ne pas fausser la base de calcul de l'AEN/amortissement si le prix saisi est déjà net. À ne pas confondre avec le « Coup de pouce véhicules particuliers électriques » (cf. règle « cee-coup-de-pouce-vehicule-electrique »), un dispositif CEE DISTINCT, réservé aux personnes physiques et non cumulable de la même façon avec un achat société.",
+  },
+  {
+    id: "cee-coup-de-pouce-vehicule-electrique",
+    category: "fiscalite_vehicule_societe",
+    label: "Prime CEE « Coup de pouce véhicules particuliers électriques »",
+    value: "Selon modèle et revenu du foyer — ex. Tesla Model Y : 3 600€ à 5 700€ ; Renault Megane/Scenic E-Tech : 4 830€ à 8 240€",
+    legalReference: "Dispositif des certificats d'économies d'énergie (CEE) — fiche standardisée TRA-EQ-",
+    sourceLabel: "economie.gouv.fr",
+    sourceUrl: "https://www.economie.gouv.fr/particuliers/voyager-et-se-deplacer/achat-dun-vehicule-electrique-pouvez-vous-beneficier-de-la-prime-coup-de-pouce-vehicules-particuliers-electriques",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "RÉSERVÉ AUX PERSONNES PHYSIQUES (particuliers) : une société ne peut PAS bénéficier de ce dispositif spécifique pour un achat de véhicule de société — le simulateur ne le déduit donc jamais du prix côté société, quel que soit le paramétrage. Les entreprises/personnes morales peuvent en revanche bénéficier d'une prime CEE distincte pour véhicules professionnels (achat ou location ≥24 mois), sans condition de score environnemental — non modélisée ici (montants et conditions différents, non communiqués). Palier déterminé par le revenu fiscal de référence du foyer (plus le revenu est modeste, plus la prime est élevée) — montants bonifiés depuis le 01/10/2025 si la batterie et ses cellules sont assemblées en zone économique européenne. Montants exacts par modèle/finition à vérifier au moment de l'achat, le dispositif évoluant fréquemment.",
+  },
+  {
+    id: "bonus-reprise-constructeur",
+    category: "fiscalite_vehicule_societe",
+    label: "Bonus de reprise commercial constructeur (état + reprise d'un ancien véhicule)",
+    value: "Offre commerciale privée du constructeur, variable selon modèle/finition et période — ex. Tesla : 3 000€ à 5 000€ constatés 2026",
+    legalReference: "Offre commerciale privée (non réglementaire)",
+    sourceLabel: "Communication constructeur (Tesla, Renault...)",
+    validFrom: "2026-01-01",
+    validUntil: null,
+    notes:
+      "Contrairement à la prime CEE ci-dessus, il ne s'agit PAS d'un dispositif d'État mais d'une remise commerciale du constructeur — généralement ouverte aux achats professionnels (flotte d'entreprise) aussi, mais les conditions exactes (montant, éligibilité pro/particulier, période de validité) varient et doivent être confirmées au cas par cas avec le concessionnaire au moment de l'achat. Le simulateur laisse ce choix à l'utilisateur (case « applicable à un achat société »).",
   },
   {
     id: "tva-vehicule-carburant",

@@ -440,3 +440,117 @@ describe("computeSimulation — compenserMensualiteParAugmentationSalaire (achat
   });
 });
 
+describe("computeSimulation — aides à l'achat (prime CEE, bonus de reprise)", () => {
+  it("aucune aide par défaut : prix net = prix brut des deux côtés", () => {
+    const r = computeSimulation(createDefaultInputs());
+    expect(r.remiseSociete).toBe(0);
+    expect(r.remisePersonnel).toBe(0);
+    expect(r.prixNetSociete).toBeCloseTo(createDefaultInputs().vehiclePrice, 6);
+    expect(r.prixNetPersonnel).toBeCloseTo(createDefaultInputs().vehiclePrice, 6);
+  });
+
+  it("prime CEE seule : ne réduit JAMAIS le prix société, uniquement le prix personnel", () => {
+    const inputs: SimulationInputs = { ...createDefaultInputs(), ceeSelectedAmount: 5700 };
+    const r = computeSimulation(inputs);
+    expect(r.remiseSociete).toBe(0);
+    expect(r.remisePersonnel).toBeCloseTo(5700, 6);
+    expect(r.prixNetSociete).toBeCloseTo(inputs.vehiclePrice, 6);
+    expect(r.prixNetPersonnel).toBeCloseTo(inputs.vehiclePrice - 5700, 6);
+  });
+
+  it("bonus de reprise applicable société : réduit le prix des deux côtés", () => {
+    const inputs: SimulationInputs = {
+      ...createDefaultInputs(),
+      bonusRepriseActif: true,
+      bonusRepriseMontant: 5000,
+      bonusRepriseApplicableSociete: true,
+    };
+    const r = computeSimulation(inputs);
+    expect(r.remiseSociete).toBeCloseTo(5000, 6);
+    expect(r.remisePersonnel).toBeCloseTo(5000, 6);
+  });
+
+  it("bonus de reprise NON applicable société : réduit uniquement le prix personnel", () => {
+    const inputs: SimulationInputs = {
+      ...createDefaultInputs(),
+      bonusRepriseActif: true,
+      bonusRepriseMontant: 5000,
+      bonusRepriseApplicableSociete: false,
+    };
+    const r = computeSimulation(inputs);
+    expect(r.remiseSociete).toBe(0);
+    expect(r.remisePersonnel).toBeCloseTo(5000, 6);
+  });
+
+  it("prime CEE + bonus de reprise cumulés côté personnel", () => {
+    const inputs: SimulationInputs = {
+      ...createDefaultInputs(),
+      ceeSelectedAmount: 5700,
+      bonusRepriseActif: true,
+      bonusRepriseMontant: 5000,
+      bonusRepriseApplicableSociete: false,
+    };
+    const r = computeSimulation(inputs);
+    expect(r.remisePersonnel).toBeCloseTo(10700, 6);
+    expect(r.prixNetPersonnel).toBeCloseTo(inputs.vehiclePrice - 10700, 6);
+  });
+
+  it("le prix net réduit la mensualité de crédit (comptant/crédit affectés)", () => {
+    const base = { ...createDefaultInputs(), financingMode: "credit" as const, personalFinancingMode: "credit" as const };
+    const sansAide = computeSimulation(base);
+    const avecAide = computeSimulation({ ...base, ceeSelectedAmount: 5700 });
+    const persoSans = sansAide.allOptions.find((o) => o.owner === "personnel" && o.mode === "credit")!;
+    const persoAvec = avecAide.allOptions.find((o) => o.owner === "personnel" && o.mode === "credit")!;
+    const mensualiteSans = persoSans.detail.find((d) => d.label.includes("Financement du véhicule"))!.value;
+    const mensualiteAvec = persoAvec.detail.find((d) => d.label.includes("Financement du véhicule"))!.value;
+    expect(mensualiteAvec).toBeLessThan(mensualiteSans);
+  });
+
+  it("le prix net réduit la base d'amortissement AEN côté société (comptant/crédit)", () => {
+    const base = { ...createDefaultInputs(), financingMode: "credit" as const };
+    const sansAide = computeSimulation(base);
+    const avecAide = computeSimulation({ ...base, bonusRepriseActif: true, bonusRepriseMontant: 5000, bonusRepriseApplicableSociete: true });
+    expect(avecAide.aenBrut).toBeLessThan(sansAide.aenBrut);
+  });
+
+  it("n'affecte PAS les offres LOA/LLD (loyers constructeur publiés, indépendants du prix net)", () => {
+    const base = createDefaultInputs(); // Tesla Model Y par défaut, offre LOA/LLD constructeur réelle
+    const sansAide = computeSimulation(base);
+    const avecAide = computeSimulation({ ...base, ceeSelectedAmount: 5700, bonusRepriseActif: true, bonusRepriseMontant: 5000 });
+    const loaSans = sansAide.allOptions.find((o) => o.owner === "personnel" && o.mode === "loa")!;
+    const loaAvec = avecAide.allOptions.find((o) => o.owner === "personnel" && o.mode === "loa")!;
+    expect(loaAvec.globalCostAnnual).toBeCloseTo(loaSans.globalCostAnnual, 6);
+    const lldSans = sansAide.allOptions.find((o) => o.owner === "personnel" && o.mode === "lld")!;
+    const lldAvec = avecAide.allOptions.find((o) => o.owner === "personnel" && o.mode === "lld")!;
+    expect(lldAvec.globalCostAnnual).toBeCloseTo(lldSans.globalCostAnnual, 6);
+  });
+
+  it("un montant supérieur au prix du véhicule ne produit jamais un prix net négatif", () => {
+    const inputs: SimulationInputs = { ...createDefaultInputs(), vehiclePrice: 3000, ceeSelectedAmount: 8240 };
+    const r = computeSimulation(inputs);
+    expect(r.prixNetPersonnel).toBeGreaterThanOrEqual(0);
+  });
+
+  it("applyVehicleModel réinitialise les aides et pré-remplit le bonus de reprise du nouveau modèle", () => {
+    const withStaleAids: SimulationInputs = {
+      ...createDefaultInputs(),
+      ceeSelectedAmount: 8240,
+      bonusRepriseActif: true,
+      bonusRepriseMontant: 999,
+    };
+    const next = applyVehicleModel(withStaleAids, "tesla-model-3");
+    expect(next.ceeSelectedAmount).toBe(0);
+    expect(next.bonusRepriseActif).toBe(false);
+    expect(next.bonusRepriseMontant).toBeCloseTo(3000, 6); // bonus de reprise Tesla Model 3
+  });
+
+  it("le détail des options comptant/crédit affiche la ligne d'aide déduite quand applicable", () => {
+    const inputs: SimulationInputs = { ...createDefaultInputs(), financingMode: "credit", ceeSelectedAmount: 5700 };
+    const r = computeSimulation(inputs);
+    const perso = r.allOptions.find((o) => o.owner === "personnel" && o.mode === "credit")!;
+    const soc = r.allOptions.find((o) => o.owner === "societe" && o.mode === "credit")!;
+    expect(perso.detail.some((d) => d.label.includes("Aides à l'achat déduites"))).toBe(true);
+    expect(soc.detail.some((d) => d.label.includes("Aides à l'achat déduites"))).toBe(false);
+  });
+});
+

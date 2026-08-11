@@ -24,6 +24,12 @@ export interface VehicleLldOffer {
   toutComprisEntretienAssurance?: boolean; // si vrai, penser à réduire/annuler les champs assurance/entretien du simulateur pour éviter un double comptage
 }
 
+/** Palier de prime CEE (un seul applicable à la fois, selon le revenu du foyer). */
+export interface CeeOffer {
+  label: string;
+  amount: number;
+}
+
 export interface VehicleModel {
   id: string;
   label: string;
@@ -33,6 +39,16 @@ export interface VehicleModel {
   defaultPrice?: number; // prix TTC de référence, réappliqué à la sélection du modèle
   defaultLoaOffer?: VehicleLoaOffer; // offre LOA réelle publiée, réappliquée à la sélection du modèle
   defaultLldOffer?: VehicleLldOffer; // offre LLD réelle publiée, réappliquée à la sélection du modèle
+  // Prime CEE "Coup de pouce véhicules particuliers électriques" (cf. taxRules
+  // "cee-coup-de-pouce-vehicule-electrique") — RÉSERVÉE AUX PARTICULIERS (personnes physiques),
+  // jamais applicable à un achat par la société. Paliers selon le revenu fiscal de référence du
+  // foyer (plus le revenu est modeste, plus la prime est élevée) — l'utilisateur choisit celui qui
+  // correspond à sa situation, aucun n'est présélectionné par défaut.
+  ceeOffers?: CeeOffer[];
+  // Bonus de reprise commercial constructeur (état + reprise d'un ancien véhicule) — offre privée du
+  // constructeur, généralement ouverte aux achats professionnels aussi (à confirmer au cas par cas
+  // avec le concessionnaire au moment de l'achat, cf. RuleNote correspondante).
+  bonusRepriseConstructeur?: number;
 }
 
 export const VEHICLE_MODELS: VehicleModel[] = [
@@ -58,6 +74,14 @@ export const VEHICLE_MODELS: VehicleModel[] = [
       kmInclusAnnuel: 15000,
       toutComprisEntretienAssurance: true,
     },
+    // Coup de pouce constaté 2026 (combiné, cf. Tesla-mag) : 3 600€ (revenu standard) à 5 700€
+    // (revenu modeste/très modeste) — à vérifier au cas par cas (barème révisé régulièrement,
+    // bonifié depuis le 01/10/2025 si batterie/cellules assemblées en zone économique européenne).
+    ceeOffers: [
+      { label: "Revenu standard", amount: 3600 },
+      { label: "Revenu modeste / très modeste (bonifié)", amount: 5700 },
+    ],
+    bonusRepriseConstructeur: 5000, // offre Tesla constatée 2026 (Model Y Propulsion) — vérifier le montant en vigueur au moment de l'achat
   },
   {
     id: "tesla-model-3",
@@ -73,6 +97,10 @@ export const VEHICLE_MODELS: VehicleModel[] = [
       dureeMois: 36,
       valeurOptionAchat: 16745,
     },
+    // Prime CEE constatée 2026 (montant unique, non gradué par revenu pour ce modèle — remplace le
+    // bonus écologique, non éligible du fait de la production hors UE) — à vérifier au cas par cas.
+    ceeOffers: [{ label: "Prime CEE", amount: 400 }],
+    bonusRepriseConstructeur: 3000, // offre Tesla constatée 2026 — vérifier le montant en vigueur au moment de l'achat
   },
   {
     id: "renault-megane-e-tech",
@@ -82,6 +110,13 @@ export const VEHICLE_MODELS: VehicleModel[] = [
     notes:
       "Assemblée en France (Douai) — listée parmi les véhicules éligibles à l'éco-score ADEME. Prix catalogue constaté 2026 (finition Techno, restylée) ; pas d'offre LOA constructeur au format complet (1er loyer/mensualité/durée/option d'achat) trouvée de façon fiable — l'estimation générique (% du prix) s'applique pour la LOA/LLD/crédit.",
     defaultPrice: 37500,
+    // Prime « Coup de pouce bonifié » Renault constatée 2026, 3 paliers selon le revenu du foyer —
+    // à vérifier au cas par cas (montant et conditions par finition/motorisation).
+    ceeOffers: [
+      { label: "Revenu standard", amount: 4830 },
+      { label: "Revenu modeste", amount: 6030 },
+      { label: "Revenu très modeste", amount: 8240 },
+    ],
   },
   {
     id: "renault-scenic-e-tech",
@@ -91,6 +126,13 @@ export const VEHICLE_MODELS: VehicleModel[] = [
     notes:
       "Assemblé en France (Douai) — listé parmi les véhicules éligibles à l'éco-score ADEME. Prix catalogue constaté 2026 (finition Equilibre, 60 kWh) ; pas d'offre LOA constructeur au format complet trouvée de façon fiable — l'estimation générique (% du prix) s'applique pour la LOA/LLD/crédit.",
     defaultPrice: 40490,
+    // Prime « Coup de pouce bonifié » Renault constatée 2026, mêmes paliers que la Megane E-Tech —
+    // à vérifier au cas par cas (montant et conditions par finition/motorisation).
+    ceeOffers: [
+      { label: "Revenu standard", amount: 4830 },
+      { label: "Revenu modeste", amount: 6030 },
+      { label: "Revenu très modeste", amount: 8240 },
+    ],
   },
   {
     id: "autre",
