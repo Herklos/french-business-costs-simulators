@@ -269,6 +269,29 @@ select:focus {
   border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
+/* Bloc mis en avant pour un levier de calcul majeur (ex. participation financière). */
+.highlight-card {
+  border: 1px solid var(--accent);
+  border-left-width: 4px;
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(96, 165, 250, 0.07);
+}
+
+.highlight-card__title {
+  margin: 0 0 0.35rem;
+  font-size: 0.95rem;
+  color: var(--accent);
+}
+
+.highlight-card__intro {
+  margin: 0 0 0.75rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
 /* Bloc « voie à suivre » : constructif plutôt qu'alarmant (usage privé élevé). */
 .warning-block--info {
   color: var(--text);

@@ -708,77 +708,98 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
           </Section>
 
           <Section title="Optimisations">
-            <div className="grid grid--2">
-              <Field
-                label="Participation financière mensuelle du gérant (€)"
-                hint="Réduit l'AEN imposable. Depuis le 30/04/2025, si cette participation est facturée à un prix de marché, elle ouvre en plus le droit à déduction de la TVA sur le prix d'achat ou les loyers — un gain non chiffré ici (cf. note ci-dessous)."
-              >
-                <NumberInput
-                  value={inputs.monthlyParticipation}
-                  onChange={(e) => update("monthlyParticipation", Number(e.target.value))}
-                />
-              </Field>
-              <Field
-                label="Barème IK de base (€/km) — scénario achat personnel"
-                hint={inputs.isElectric ? `Majoré automatiquement de 20% (véhicule électrique) : ${results.effectiveIkRatePerKm.toFixed(3)} €/km retenu.` : undefined}
-              >
-                <ResetableNumberInput
-                  step="0.001"
-                  value={inputs.ikRatePerKm}
-                  defaultValue={DEFAULT_IK_RATE}
-                  onChange={(v) => update("ikRatePerKm", v)}
-                />
-              </Field>
-            </div>
-            <RuleNote ruleId="ik-bareme-2026" />
-
-            <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
-              <input
-                type="checkbox"
-                checked={inputs.tvaRecuperableVehicule}
-                onChange={(e) => update("tvaRecuperableVehicule", e.target.checked)}
-              />
-              <span>
-                Participation facturée au prix de marché → récupérer la TVA sur le véhicule (scénario société)
-              </span>
-            </label>
-            {inputs.tvaRecuperableVehicule && (
-              <>
-                <div className="grid grid--2" style={{ marginTop: "0.5rem" }}>
-                  <Field label="Taux de TVA applicable">
-                    <ResetableNumberInput
-                      step="0.01"
-                      value={inputs.tauxTVA}
-                      defaultValue={DEFAULT_TVA_RATE}
-                      formatDefault={(v) => formatPercent(v)}
-                      onChange={(v) => update("tauxTVA", v)}
-                    />
-                  </Field>
-                  <StatCard
-                    label="Gain net de TVA (mode société sélectionné)"
-                    value={`${formatEUR(results.gainTvaNet)}/an`}
-                    sub={`${formatEUR(results.tvaDeductible)} récupérés − ${formatEUR(results.tvaCollecteeSurParticipation)} collectés`}
-                    tone={results.gainTvaNet > 0 ? "good" : "neutral"}
+            <div className="highlight-card">
+              <h4 className="highlight-card__title">💶 Participation financière du dirigeant</h4>
+              <p className="highlight-card__intro">
+                Le levier le plus puissant du simulateur : la somme que le dirigeant verse chaque mois à la société pour
+                l'usage privé du véhicule. Elle joue sur <strong>deux tableaux à la fois</strong> — elle réduit l'AEN
+                imposable (donc les cotisations et l'IR du dirigeant), et depuis le 30/04/2025 elle peut ouvrir le droit
+                à déduction de la TVA sur le véhicule si elle est facturée à un prix de marché.
+              </p>
+              <div className="grid grid--2">
+                <Field label="Participation financière mensuelle (€/mois)">
+                  <NumberInput
+                    value={inputs.monthlyParticipation}
+                    onChange={(e) => update("monthlyParticipation", Number(e.target.value))}
                   />
-                </div>
-                {inputs.monthlyParticipation <= 0 && (
-                  <p className="warning-block warning-block--danger">
-                    ⚠️ Aucune participation financière saisie ci-dessus. Sans contrepartie réelle facturée au dirigeant,
-                    la mise à disposition n'est pas une prestation taxable et <strong>le droit à déduction n'est pas
-                    ouvert</strong> : le gain affiché ne serait pas défendable en contrôle. Saisissez une participation
-                    cohérente avec le prix du marché (proche de ce qu'un loueur facturerait pour un véhicule similaire).
-                  </p>
-                )}
+                </Field>
+                <StatCard
+                  label="Effet sur l'AEN net (mode société sélectionné)"
+                  value={`− ${formatEUR(Math.min(results.participationAnnual, results.aenNetBeforeParticipation))}/an`}
+                  sub={`AEN ${formatEUR(results.aenNetBeforeParticipation)} → ${formatEUR(results.aenNet)} · soit ${formatEUR(results.participationAnnual)}/an versés`}
+                  tone={results.participationAnnual > 0 ? "good" : "neutral"}
+                />
+              </div>
+              {inputs.monthlyParticipation > 0 && results.aenNet <= 0 && (
                 <p className="hint-block">
-                  Périmètre modélisé : TVA récupérée sur le véhicule (loyer LOA/LLD, ou amortissement annuel en
-                  comptant/crédit — ce qui en restitue bien 100 % sur la durée d'amortissement) et sur l'entretien.
-                  L'assurance en est exclue (opération exonérée de TVA, art. 261 C CGI), de même que les taxes annuelles.
-                  En contrepartie, la société collecte la TVA sur la participation encaissée. N'affecte que les options
-                  « Société » : un véhicule acheté par le dirigeant à titre personnel n'ouvre aucun droit à déduction.
+                  ℹ️ La participation dépasse l'AEN : celui-ci est ramené à 0 et l'excédent versé n'apporte plus aucune
+                  économie de cotisations. Au-delà de ce point, la participation ne se justifie plus que pour ouvrir ou
+                  sécuriser le droit à déduction de la TVA ci-dessous.
                 </p>
-              </>
-            )}
-            <RuleNote ruleId="tva-vehicule-fonction-participation-financiere" />
+              )}
+
+              <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
+                <input
+                  type="checkbox"
+                  checked={inputs.tvaRecuperableVehicule}
+                  onChange={(e) => update("tvaRecuperableVehicule", e.target.checked)}
+                />
+                <span>
+                  Participation facturée au prix de marché → récupérer la TVA sur le véhicule (scénario société)
+                </span>
+              </label>
+              {inputs.tvaRecuperableVehicule && (
+                <>
+                  <div className="grid grid--2" style={{ marginTop: "0.5rem" }}>
+                    <Field label="Taux de TVA applicable">
+                      <ResetableNumberInput
+                        step="0.01"
+                        value={inputs.tauxTVA}
+                        defaultValue={DEFAULT_TVA_RATE}
+                        formatDefault={(v) => formatPercent(v)}
+                        onChange={(v) => update("tauxTVA", v)}
+                      />
+                    </Field>
+                    <StatCard
+                      label="Gain net de TVA (mode société sélectionné)"
+                      value={`${formatEUR(results.gainTvaNet)}/an`}
+                      sub={`${formatEUR(results.tvaDeductible)} récupérés − ${formatEUR(results.tvaCollecteeSurParticipation)} collectés`}
+                      tone={results.gainTvaNet > 0 ? "good" : "neutral"}
+                    />
+                  </div>
+                  {inputs.monthlyParticipation <= 0 && (
+                    <p className="warning-block warning-block--danger">
+                      ⚠️ Aucune participation financière saisie ci-dessus. Sans contrepartie réelle facturée au dirigeant,
+                      la mise à disposition n'est pas une prestation taxable et <strong>le droit à déduction n'est pas
+                      ouvert</strong> : le gain affiché ne serait pas défendable en contrôle. Saisissez une participation
+                      cohérente avec le prix du marché (proche de ce qu'un loueur facturerait pour un véhicule similaire).
+                    </p>
+                  )}
+                  <p className="hint-block">
+                    Périmètre modélisé : TVA récupérée sur le véhicule (loyer LOA/LLD, ou amortissement annuel en
+                    comptant/crédit — ce qui en restitue bien 100 % sur la durée d'amortissement) et sur l'entretien.
+                    L'assurance en est exclue (opération exonérée de TVA, art. 261 C CGI), de même que les taxes
+                    annuelles. En contrepartie, la société collecte la TVA sur la participation encaissée. N'affecte que
+                    les options « Société » : un véhicule acheté par le dirigeant à titre personnel n'ouvre aucun droit à
+                    déduction.
+                  </p>
+                </>
+              )}
+              <RuleNote ruleId="tva-vehicule-fonction-participation-financiere" />
+            </div>
+
+            <Field
+              label="Barème IK de base (€/km) — scénario achat personnel"
+              hint={inputs.isElectric ? `Majoré automatiquement de 20% (véhicule électrique) : ${results.effectiveIkRatePerKm.toFixed(3)} €/km retenu.` : undefined}
+            >
+              <ResetableNumberInput
+                step="0.001"
+                value={inputs.ikRatePerKm}
+                defaultValue={DEFAULT_IK_RATE}
+                onChange={(v) => update("ikRatePerKm", v)}
+              />
+            </Field>
+            <RuleNote ruleId="ik-bareme-2026" />
             <RuleNote ruleId="coworking-deplacement-professionnel-vs-trajet-habituel" />
 
             <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
