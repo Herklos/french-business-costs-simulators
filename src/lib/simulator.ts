@@ -88,6 +88,13 @@ export interface SimulationInputs {
   // de financement — cf. detail de calcul dans computeSimulation.
   compenserMensualiteParAugmentationSalaire: boolean;
 
+  // TVA déductible sur un véhicule de tourisme mis à disposition contre une participation financière
+  // réelle du dirigeant (CJUE 20/01/2021 QM C-288/19 ; rescrit BOFiP du 30/04/2025) : la mise à
+  // disposition devient une prestation de location taxable, ce qui lève l'exclusion du droit à
+  // déduction de l'art. 206, IV-2-6° annexe II CGI. Ne concerne QUE le scénario "véhicule société".
+  tvaRecuperableVehicule: boolean;
+  tauxTVA: number; // taux normal, 20% en France
+
   // Aides à l'achat d'un véhicule électrique — réduisent le prix effectivement payé (cf.
   // applyPrixNetAchat dans computeSimulation). Ne s'appliquent qu'aux modes comptant/crédit : les
   // offres LOA/LLD sont des loyers constructeur publiés indépendants de ce paramètre.
@@ -110,6 +117,7 @@ export const DEFAULT_ABATTEMENT_CAP = 2026.3; // plafond 2026 abattement véhicu
 export const DEFAULT_TNS_RATE = 0.43;
 export const DEFAULT_CORPORATE_TAX_RATE = 0.25;
 export const DEFAULT_IK_RATE = 0.5;
+export const DEFAULT_TVA_RATE = 0.2;
 export const IK_MAJORATION_ELECTRIQUE = 0.2; // majoration légale de 20% du barème IK pour les véhicules électriques
 export const ALL_FINANCING_MODES: FinancingMode[] = ["comptant", "credit", "loa", "lld"];
 
@@ -159,6 +167,8 @@ export function createDefaultInputs(): SimulationInputs {
     monthlyParticipation: 0,
     ikRatePerKm: DEFAULT_IK_RATE,
     compenserMensualiteParAugmentationSalaire: false,
+    tvaRecuperableVehicule: false,
+    tauxTVA: DEFAULT_TVA_RATE,
     ceeSelectedAmount: 0,
     bonusRepriseActif: false,
     bonusRepriseMontant: 0,
@@ -276,7 +286,10 @@ export interface SimulationResults {
   annualVehicleTax: number; // taxes annuelles CO2 + polluants (ex-TVS), 0 si électrique
   financingAnnual: number; // coût annuel du financement seul (mensualités crédit, loyers LOA/LLD, ou coût comptant/opportunité)
   valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule (comptant/crédit) lissée sur la durée, déduite du décaissement — 0 sinon
-  companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes − valeur résiduelle annualisée)
+  tvaDeductible: number; // TVA récupérée sur le véhicule (loyer ou amortissement) + l'entretien — 0 si l'option n'est pas activée
+  tvaCollecteeSurParticipation: number; // TVA collectée sur la participation financière encaissée du dirigeant
+  gainTvaNet: number; // tvaDeductible − tvaCollecteeSurParticipation, déduit du décaissement société
+  companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes − valeur résiduelle annualisée − gain net de TVA)
   quotePartProfessionnelleDeductible: number;
   quotePartPrivéeNonDeductible: number;
   economieImpotQuotePartPro: number; // économie d'IS (régime IS) ou d'IR foyer (régime IR, société translucide)
@@ -457,9 +470,29 @@ function computeSocieteForMode(
   // de la valeur à l'issue de la période, contrairement à un loyer (LOA/LLD) définitivement perdu.
   const valeurResiduelleAnnualisee = getResidualValueAnnualized(inputs, mode);
 
-  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes − valeur résiduelle annualisée (si véhicule possédé).
+  // TVA déductible sur le véhicule (option "participation financière au prix de marché") — cf.
+  // règle "tva-vehicule-fonction-participation-financiere". Périmètre retenu, volontairement
+  // restreint aux postes dont l'assujettissement à la TVA est certain :
+  //  - le véhicule lui-même : loyer annuel (LOA/LLD) ou amortissement annuel (comptant/crédit —
+  //    étaler la TVA du prix d'achat sur la durée d'amortissement en restitue bien 100% au total) ;
+  //  - l'entretien, qui suit le régime du véhicule auquel il se rattache.
+  // Exclus : l'assurance (opération exonérée de TVA, art. 261 C CGI) et les taxes annuelles.
+  // En contrepartie, la mise à disposition devient une prestation taxable : la société collecte
+  // de la TVA sur la participation encaissée, qui vient en déduction du gain.
+  const coefTVA = inputs.tauxTVA / (1 + inputs.tauxTVA); // part de TVA contenue dans un montant TTC
+  const baseTvaDeductibleTTC = inputs.tvaRecuperableVehicule ? composantPlafonnee + inputs.annualMaintenance : 0;
+  const tvaDeductible = baseTvaDeductibleTTC * coefTVA;
+  const tvaCollecteeSurParticipation = inputs.tvaRecuperableVehicule ? participationAnnual * coefTVA : 0;
+  const gainTvaNet = tvaDeductible - tvaCollecteeSurParticipation;
+
+  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes − valeur résiduelle annualisée (si véhicule possédé) − gain net de TVA.
   const companyCashBaseAnnual =
-    financingAnnual + inputs.annualInsurance + inputs.annualMaintenance + annualVehicleTax - valeurResiduelleAnnualisee;
+    financingAnnual +
+    inputs.annualInsurance +
+    inputs.annualMaintenance +
+    annualVehicleTax -
+    valeurResiduelleAnnualisee -
+    gainTvaNet;
   const quotePartPrivéeNonDeductible = companyCashBaseAnnual * ratio;
   const quotePartProfessionnelleBrute = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
   const quotePartProfessionnelleDeductible = Math.max(0, quotePartProfessionnelleBrute - reintegrationFiscaleCO2);
@@ -487,6 +520,9 @@ function computeSocieteForMode(
     annualVehicleTax,
     financingAnnual,
     valeurResiduelleAnnualisee,
+    tvaDeductible,
+    tvaCollecteeSurParticipation,
+    gainTvaNet,
     companyCashBaseAnnual,
     quotePartProfessionnelleDeductible,
     quotePartPrivéeNonDeductible,
@@ -749,6 +785,13 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Taxes annuelles CO2 + polluants (ex-TVS)", value: s.annualVehicleTax },
           ...(s.valeurResiduelleAnnualisee > 0
             ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: s.valeurResiduelleAnnualisee }]
+            : []),
+          ...(inputs.tvaRecuperableVehicule
+            ? [
+                { label: "− TVA déductible récupérée (véhicule + entretien)", value: s.tvaDeductible },
+                { label: "+ TVA collectée sur la participation financière", value: s.tvaCollecteeSurParticipation },
+                { label: "= Gain net de TVA", value: s.gainTvaNet },
+              ]
             : []),
           { label: "= Décaissement réel société (total annuel)", value: s.companyCashBaseAnnual },
           ...optionAchatDetail,

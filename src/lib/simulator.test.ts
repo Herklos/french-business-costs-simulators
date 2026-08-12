@@ -554,3 +554,91 @@ describe("computeSimulation — aides à l'achat (prime CEE, bonus de reprise)",
   });
 });
 
+
+describe("computeSimulation — TVA déductible sur participation financière (rescrit 30/04/2025)", () => {
+  /** Base société : LOA, pour que la TVA porte sur un loyer annuel clairement identifié. */
+  function baseTva(patch: Partial<SimulationInputs> = {}): SimulationInputs {
+    return {
+      ...createDefaultInputs(),
+      financingMode: "loa",
+      monthlyParticipation: 100,
+      ...patch,
+    };
+  }
+
+  it("ne récupère aucune TVA quand l'option est désactivée (comportement par défaut)", () => {
+    const r = computeSimulation(baseTva({ tvaRecuperableVehicule: false }));
+    expect(r.tvaDeductible).toBe(0);
+    expect(r.tvaCollecteeSurParticipation).toBe(0);
+    expect(r.gainTvaNet).toBe(0);
+  });
+
+  it("récupère la TVA sur le loyer et l'entretien, nette de celle collectée sur la participation", () => {
+    const inputs = baseTva({ tvaRecuperableVehicule: true });
+    const r = computeSimulation(inputs);
+    const coef = inputs.tauxTVA / (1 + inputs.tauxTVA); // 20% TTC -> 1/6
+
+    // La base est le loyer annuel moyen (LOA) + l'entretien ; l'assurance en est exclue.
+    const loyerAnnuel = r.financingAnnual;
+    expect(r.tvaDeductible).toBeCloseTo((loyerAnnuel + inputs.annualMaintenance) * coef, 6);
+    expect(r.tvaCollecteeSurParticipation).toBeCloseTo(inputs.monthlyParticipation * 12 * coef, 6);
+    expect(r.gainTvaNet).toBeCloseTo(r.tvaDeductible - r.tvaCollecteeSurParticipation, 6);
+  });
+
+  it("exclut l'assurance de la base de TVA déductible (exonérée, art. 261 C CGI)", () => {
+    const sansAssurance = computeSimulation(baseTva({ tvaRecuperableVehicule: true, annualInsurance: 0 }));
+    const avecAssurance = computeSimulation(baseTva({ tvaRecuperableVehicule: true, annualInsurance: 5000 }));
+    expect(avecAssurance.tvaDeductible).toBeCloseTo(sansAssurance.tvaDeductible, 6);
+  });
+
+  it("inclut l'entretien dans la base de TVA déductible", () => {
+    const peu = computeSimulation(baseTva({ tvaRecuperableVehicule: true, annualMaintenance: 0 }));
+    const beaucoup = computeSimulation(baseTva({ tvaRecuperableVehicule: true, annualMaintenance: 1200 }));
+    const coef = 0.2 / 1.2;
+    expect(beaucoup.tvaDeductible - peu.tvaDeductible).toBeCloseTo(1200 * coef, 6);
+  });
+
+  it("réduit le décaissement réel de la société du gain net de TVA", () => {
+    const sans = computeSimulation(baseTva({ tvaRecuperableVehicule: false }));
+    const avec = computeSimulation(baseTva({ tvaRecuperableVehicule: true }));
+    expect(sans.companyCashBaseAnnual - avec.companyCashBaseAnnual).toBeCloseTo(avec.gainTvaNet, 6);
+    expect(avec.gainTvaNet).toBeGreaterThan(0);
+  });
+
+  it("en comptant/crédit, étale la TVA du prix d'achat sur l'amortissement annuel", () => {
+    const inputs = baseTva({ tvaRecuperableVehicule: true, financingMode: "comptant" });
+    const r = computeSimulation(inputs);
+    const coef = inputs.tauxTVA / (1 + inputs.tauxTVA);
+    // amortAnnual = prix × taux d'amortissement (20%/an pour un véhicule ≤ 5 ans).
+    expect(r.tvaDeductible).toBeCloseTo((r.amortAnnual + inputs.annualMaintenance) * coef, 6);
+    // Sur la durée d'amortissement complète, la TVA du prix est restituée à 100%.
+    expect(r.amortAnnual * 5).toBeCloseTo(inputs.vehiclePrice, 6);
+  });
+
+  it("n'affecte pas les options « Personnel + IK » (aucun droit à déduction pour un achat personnel)", () => {
+    const sans = computeSimulation(baseTva({ tvaRecuperableVehicule: false }));
+    const avec = computeSimulation(baseTva({ tvaRecuperableVehicule: true }));
+    const persoSans = sans.allOptions.filter((o) => o.owner === "personnel");
+    const persoAvec = avec.allOptions.filter((o) => o.owner === "personnel");
+    for (let i = 0; i < persoSans.length; i++) {
+      expect(persoAvec[i].globalCostAnnual).toBeCloseTo(persoSans[i].globalCostAnnual, 6);
+    }
+  });
+
+  it("réduit le coût des options « Société » et fait apparaître les lignes de détail TVA", () => {
+    const sans = computeSimulation(baseTva({ tvaRecuperableVehicule: false }));
+    const avec = computeSimulation(baseTva({ tvaRecuperableVehicule: true }));
+    const socSans = sans.allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    const socAvec = avec.allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    expect(socAvec.globalCostAnnual).toBeLessThan(socSans.globalCostAnnual);
+    expect(socAvec.detail.some((d) => d.label.includes("TVA déductible récupérée"))).toBe(true);
+    expect(socSans.detail.some((d) => d.label.includes("TVA déductible récupérée"))).toBe(false);
+  });
+
+  it("peut produire un gain net négatif si la participation dépasse la base déductible", () => {
+    const r = computeSimulation(
+      baseTva({ tvaRecuperableVehicule: true, monthlyParticipation: 5000, annualMaintenance: 0 }),
+    );
+    expect(r.gainTvaNet).toBeLessThan(0);
+  });
+});
