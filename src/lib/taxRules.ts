@@ -309,14 +309,17 @@ export const TAX_RULES: TaxRule[] = [
     category: "fiscalite_vehicule_societe",
     label: "TVA déductible sur un véhicule de fonction en cas de participation financière du dirigeant",
     value: "TVA sur l'achat/les loyers déductible si la mise à disposition est facturée à un prix de marché (sinon 0%)",
-    legalReference: "CJUE, 20 janvier 2021, QM, C-288/19 ; rescrit BOFiP du 30 avril 2025 ; art. 256 CGI",
-    sourceLabel: "Lefebvre Dalloz / EY Avocats",
-    sourceUrl: "https://formation.lefebvre-dalloz.fr/actualite/tva-et-vehicules-de-fonction-analyse-des-opportunites-fiscales-issues-du-rescrit-du-30-avril-2025",
+    legalReference: "CJUE, 20 janvier 2021, QM, C-288/19 ; rescrit BOI-RES-TVA-000161 du 30 avril 2025 ; art. 256 CGI",
+    sourceLabel: "BOFiP-Impôts (rescrit BOI-RES-TVA-000161)",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/14347-PGP.html/identifiant=BOI-RES-TVA-000161-20250430",
     validFrom: "2025-04-30",
     validUntil: null,
     notes:
       "MÉCANISME : si la société facture au dirigeant une contrepartie financière réelle pour l'usage privé du véhicule, cette mise à disposition devient une PRESTATION DE SERVICES À TITRE ONÉREUX soumise à TVA. La société collecte alors de la TVA sur cette participation, mais récupère en contrepartie la TVA sur le prix d'achat ou sur les loyers du véhicule — alors même que l'usage est privé.\n\n" +
-      "CONDITION IMPÉRATIVE : la contrepartie doit être RÉELLE et cohérente avec le prix du marché, c'est-à-dire proche de ce qu'un loueur professionnel facturerait pour un véhicule similaire. Une participation symbolique (quelques dizaines d'euros pour un véhicule à 45 000 €) ne suffit pas et fait tomber tout le dispositif.\n\n" +
+      "POINT DÉCISIF, SOURCE DE LA PLUPART DES ERREURS : déclarer un AVANTAGE EN NATURE sur le bulletin de paie NE CONSTITUE PAS une contrepartie. Le rescrit est explicite : l'octroi d'un avantage en nature constaté sur le bulletin, sans contrepartie réelle fournie par le bénéficiaire, N'OUVRE PAS le droit à déduction. Le dirigeant doit véritablement s'appauvrir.\n\n" +
+      "FORMES DE CONTREPARTIE ADMISES par le rescrit : (1) un paiement effectif par le bénéficiaire ; (2) une retenue sur le salaire brut ou net ; (3) le renoncement à un avantage contractuel (points/crédits convertibles en rémunération supplémentaire). Le principe commun : le bénéficiaire renonce à une part de sa rémunération monétaire en échange d'un avantage individualisé.\n\n" +
+      "CONDITION DE MONTANT : la contrepartie doit être RÉELLE et non symbolique. Les praticiens recommandent de l'aligner sur le prix du marché — proche de ce qu'un loueur professionnel facturerait pour un véhicule similaire — à double titre : pour caractériser le lien direct exigé par la CJUE, et pour prévenir une réévaluation de la base d'imposition, le dirigeant étant une partie liée à la société.\n\n" +
+      "AUTRE CONDITION, PRÉALABLE : la société doit être elle-même redevable de la TVA. Une société en franchise en base, ou dont l'activité est exonérée (certaines professions médicales, para-médicales, d'assurance...), ne récupère rien, quelle que soit la participation versée.\n\n" +
       "INTÉRÊT : dans de nombreux cas, la TVA récupérée sur le prix/les loyers excède la TVA collectée sur la participation, générant un gain net pour la société.\n\n" +
       "ATTENTION À NE PAS CONFONDRE deux effets opposés de la participation financière, tous deux modélisés par le simulateur : (1) côté AEN, elle RÉDUIT l'avantage en nature imposable ; (2) côté TVA, elle OUVRE le droit à déduction sur le véhicule.\n\n" +
       "PÉRIMÈTRE MODÉLISÉ (case « Participation facturée au prix de marché → récupérer la TVA », section Optimisations) : TVA récupérée sur le véhicule — loyer annuel en LOA/LLD, amortissement annuel en comptant/crédit (étaler la TVA du prix d'achat sur la durée d'amortissement en restitue bien 100% au total) — et sur l'entretien, qui suit le régime du véhicule. L'assurance en est exclue (opération exonérée de TVA, art. 261 C CGI), de même que les taxes annuelles. En contrepartie, la TVA collectée sur la participation encaissée est déduite du gain. N'affecte que les options « Société » : un achat personnel n'ouvre aucun droit à déduction.\n\n" +

@@ -269,6 +269,54 @@ select:focus {
   border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
+/* Encart d'auto-diagnostic d'éligibilité (conditions à remplir avant d'activer une option). */
+.eligibility-box {
+  margin-top: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: 6px;
+  border: 1px dashed var(--border);
+  background: rgba(148, 163, 184, 0.07);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.eligibility-box > strong {
+  display: block;
+  margin-bottom: 0.4rem;
+}
+
+.eligibility-box ol {
+  margin: 0.35rem 0;
+  padding-left: 1.1rem;
+  list-style: decimal;
+}
+
+.eligibility-box ol li {
+  margin-bottom: 0.35rem;
+}
+
+.market-price {
+  margin: 0.5rem 0 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 5px;
+  border-left: 3px solid var(--border);
+}
+
+.market-price--ok {
+  border-left-color: var(--good);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.market-price--low {
+  border-left-color: var(--warn);
+  background: rgba(251, 191, 36, 0.1);
+}
+
+.market-price--none {
+  border-left-color: var(--bad);
+  background: rgba(248, 113, 113, 0.1);
+}
+
 /* Ligne « valeur optimale suggérée » avec son bouton d'application. */
 .optimum-line {
   display: flex;

@@ -245,6 +245,18 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
     }));
   }
 
+  // Référence de "prix de marché" pour la participation ouvrant droit à déduction de TVA : le loyer
+  // mensuel d'une offre locative constructeur pour ce même véhicule est le meilleur proxy disponible
+  // de ce qu'un loueur professionnel facturerait, au prorata de la part d'usage privé facturée.
+  const loyerReferenceMensuel = Math.max(inputs.financing.loa.loyerMensuel, inputs.financing.lld.loyerMensuel);
+  const prixMarcheParticipation = loyerReferenceMensuel * (inputs.privateUsePercent / 100);
+  const participationStatus: "none" | "low" | "ok" =
+    inputs.monthlyParticipation <= 0
+      ? "none"
+      : prixMarcheParticipation > 0 && inputs.monthlyParticipation < prixMarcheParticipation * 0.7
+        ? "low"
+        : "ok";
+
   const best = results.bestOption;
   const currentIsBest = best.owner === "societe" ? inputs.financingMode === best.mode : inputs.personalFinancingMode === best.mode;
 
@@ -769,6 +781,55 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   est nécessaire pour atteindre un prix de marché crédible et sécuriser la déduction de TVA ci-dessous.
                 </p>
               )}
+
+              <div className="eligibility-box">
+                <strong>Puis-je activer la récupération de TVA ? — les 4 conditions</strong>
+                <ol className="detail-list">
+                  <li>
+                    <strong>La société est redevable de la TVA.</strong> Une société en franchise en base, ou dont
+                    l'activité est exonérée (médical, assurance…), ne récupère rien quelle que soit la participation.
+                  </li>
+                  <li>
+                    <strong>Le dirigeant verse une contrepartie réelle</strong> — paiement effectif, retenue sur salaire
+                    brut ou net, ou renoncement à un avantage contractuel convertible en rémunération.{" "}
+                    <em>
+                      ⚠️ Déclarer un avantage en nature sur le bulletin de paie ne suffit PAS : le rescrit exige que le
+                      bénéficiaire s'appauvrisse réellement. C'est l'erreur la plus fréquente.
+                    </em>
+                  </li>
+                  <li>
+                    <strong>Le montant n'est pas symbolique</strong> et se rapproche du prix de marché — voir la
+                    référence calculée ci-dessous.
+                  </li>
+                  <li>
+                    <strong>L'opération est facturée et déclarée</strong> : facture avec TVA à chaque échéance, TVA
+                    collectée reportée sur les déclarations. À cadrer avec votre expert-comptable.
+                  </li>
+                </ol>
+                {loyerReferenceMensuel > 0 && (
+                  <p className={`market-price market-price--${participationStatus}`}>
+                    📊 Référence de prix de marché pour ce véhicule :{" "}
+                    <strong>{formatEUR(prixMarcheParticipation)}/mois</strong> — soit le loyer mensuel d'une offre
+                    locative constructeur ({formatEUR(loyerReferenceMensuel)}) au prorata de l'usage privé (
+                    {inputs.privateUsePercent} %). Participation actuellement saisie :{" "}
+                    <strong>{formatEUR(inputs.monthlyParticipation)}/mois</strong>
+                    {participationStatus === "ok" && " — cohérent avec cette référence."}
+                    {participationStatus === "low" &&
+                      " — nettement en dessous : le caractère non symbolique serait difficile à défendre."}
+                    {participationStatus === "none" && " — aucune contrepartie, le dispositif ne peut pas s'appliquer."}
+                  </p>
+                )}
+                {prixMarcheParticipation > results.participationOptimaleMensuelle + 1 &&
+                  results.participationOptimaleMensuelle > 0 && (
+                    <p className="field__hint">
+                      ⚖️ Arbitrage à connaître : le prix de marché ({formatEUR(prixMarcheParticipation)}/mois) est
+                      supérieur à la participation optimale au sens de l'AEN (
+                      {formatEUR(results.participationOptimaleMensuelle)}/mois). Sécuriser la TVA suppose donc de verser
+                      plus que l'optimum fiscal de l'AEN — l'outil chiffre les deux effets, comparez le coût global avec
+                      et sans l'option activée.
+                    </p>
+                  )}
+              </div>
 
               <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
                 <input
