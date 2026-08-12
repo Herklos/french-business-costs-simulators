@@ -733,6 +733,7 @@ td {
   color: var(--text-muted);
   font-size: 0.75rem;
   margin-top: 0.2rem;
+  white-space: pre-line;
 }
 
 .status-badge {

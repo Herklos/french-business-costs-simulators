@@ -662,6 +662,7 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               </Field>
             </div>
             <RuleNote ruleId="ik-bareme-2026" />
+            <RuleNote ruleId="coworking-deplacement-professionnel-vs-trajet-habituel" />
 
             <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>
               <input
