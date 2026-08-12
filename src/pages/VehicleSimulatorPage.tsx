@@ -65,6 +65,17 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`Prix TTC : ${formatEUR(sim.vehiclePrice)} · Âge : ${sim.vehicleOverFiveYears ? "> 5 ans" : "≤ 5 ans"}`);
   push(`Motorisation : ${sim.isElectric ? "100% électrique" : "Thermique/hybride"}${sim.isElectric ? ` · Éco-score éligible : ${sim.isEcoScoreEligible ? "Oui" : "Non"}` : ` · CO2 : ${sim.co2EmissionsGkm} g/km`}`);
   push(`Usage privé : ${sim.privateUsePercent}% · Kilométrage annuel : ${sim.totalKmAnnual} km`);
+  if (sim.privateUsePercent >= 80) {
+    push("");
+    push("⚠️ Usage privé élevé — sécuriser via la qualification « véhicule de fonction » (élément de rémunération,");
+    push("art. 39-1-1° CGI) plutôt que « véhicule de service » (outil de travail) :");
+    push("  1. Formaliser par une décision d'organe social (registre de l'associé unique en SASU/EURL, ou convention");
+    push("     réglementée art. L227-10 / L223-19 c. com. en SAS/SARL) qualifiant le véhicule d'élément de rémunération.");
+    push("  2. Déclarer l'AEN à 100% de l'usage privé réel, sans minoration.");
+    push("  3. Vérifier que la rémunération globale (salaire + AEN) n'est pas excessive (art. 39-1-1° CGI).");
+    push("  4. Tenir un carnet de bord même sans usage pro (cohérence et bonne foi).");
+    push("  Réf. : CE 9e-10e ch., 4 oct. 2023, n°466887, Sté Collectivision (rémunération indirecte non anormale).");
+  }
   push("");
   push("— Charges annuelles réelles (hypothèses) —");
   push(`Assurance : ${formatEUR(sim.annualInsurance)}/an · Entretien : ${formatEUR(sim.annualMaintenance)}/an${!sim.isElectric ? ` · Carburant usage privé : ${formatEUR(sim.annualFuelPrivateCost)}/an` : ""}`);
@@ -479,25 +490,72 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
             </div>
             {inputs.privateUsePercent >= 100 && (
               <p className="warning-block warning-block--danger">
-                🚫 Usage 100% privé : le véhicule n'a alors aucun usage professionnel documenté. L'achat/financement par
-                la société est très difficilement justifiable — risque élevé d'abus de biens sociaux (jusqu'à 5 ans
-                d'emprisonnement, 375 000 € d'amende) et de remise en cause totale de la déductibilité (acte anormal de
-                gestion). Il n'existe pas de seuil légal chiffré : c'est l'absence de justification qui est sanctionnée.
+                🚫 Usage 100% privé : le véhicule n'a aucun usage professionnel documenté. Il ne peut pas être justifié
+                comme <strong>véhicule de service</strong> (outil de travail) — cette qualification supposerait un besoin
+                professionnel réel et prouvable. Sans requalification en véhicule de fonction (ci-dessous), le risque est
+                élevé : abus de biens sociaux (jusqu'à 5 ans d'emprisonnement, 375 000 € d'amende) et remise en cause
+                totale de la déductibilité (acte anormal de gestion).
               </p>
             )}
             {inputs.privateUsePercent >= 90 && inputs.privateUsePercent < 100 && (
               <p className="warning-block warning-block--danger">
-                ⚠️ Usage privé très majoritaire (≥90%) : risque élevé de requalification en abus de biens sociaux si
-                l'usage professionnel réel n'est pas solidement documenté (carnet de bord, missions).
+                ⚠️ Usage privé très majoritaire (≥90%) : l'usage professionnel résiduel ne suffit plus à justifier le
+                véhicule comme simple outil de travail. La voie à sécuriser est celle du véhicule de fonction
+                (ci-dessous).
               </p>
             )}
             {inputs.privateUsePercent >= 80 && inputs.privateUsePercent < 90 && (
               <p className="warning-block">
-                Usage privé élevé (≥80%) : documentez précisément l'usage professionnel réel pour limiter le risque de
-                redressement.
+                Usage privé élevé (≥80%) : documentez précisément l'usage professionnel réel, et envisagez la
+                qualification en véhicule de fonction pour sécuriser la part privée (ci-dessous).
               </p>
             )}
+            {inputs.privateUsePercent >= 80 && (
+              <div className="warning-block warning-block--info">
+                <strong>✅ Sécuriser un usage privé élevé : la piste du « véhicule de fonction »</strong>
+                <p>
+                  Avec peu ou pas de déplacements professionnels, ne cherchez pas à justifier un besoin pro inexistant :
+                  la bonne qualification juridique est le <strong>véhicule de fonction</strong>, c'est-à-dire un{" "}
+                  <strong>élément de rémunération</strong>. Sa déductibilité repose alors sur l'art. 39-1-1° CGI
+                  (rémunérations déductibles, <em>y compris les avantages en nature</em>), et non sur un usage
+                  professionnel. Un usage privé, même exclusif, est alors parfaitement admis.
+                </p>
+                <ol className="detail-list">
+                  <li>
+                    <strong>Formaliser par une décision d'organe social</strong> — le point le plus important, avant même
+                    le carnet de bord. SASU/EURL : mention au registre des décisions de l'associé unique. SAS/SARL :
+                    convention réglementée (art. L227-10 / L223-19 c. com.) votée par les associés. Y qualifier
+                    explicitement le véhicule d'élément de rémunération, avec usage privé autorisé sans restriction.
+                  </li>
+                  <li>
+                    <strong>Déclarer l'AEN à 100% de l'usage privé réel</strong>, sans minoration. Payer les cotisations
+                    sur cet AEN n'est pas un coût subi : c'est ce qui transforme une dépense suspecte en rémunération
+                    régulière. Déclarer un AEN partiel sans km pro documenté est la principale incohérence relevée en
+                    contrôle.
+                  </li>
+                  <li>
+                    <strong>Vérifier que la rémunération globale (salaire + AEN) n'est pas excessive</strong> au regard
+                    du service rendu, du secteur et du bénéfice de la société — c'est le risque résiduel principal, avec
+                    une double peine à la clé (réintégration au résultat + taxation en revenus de capitaux mobiliers).
+                  </li>
+                  <li>
+                    <strong>Tenir un carnet de bord même sans usage pro</strong> : un registre montrant honnêtement
+                    ~100% privé prouve la bonne foi et la cohérence avec l'AEN déclaré — bien mieux qu'un registre absent
+                    ou gonflé.
+                  </li>
+                </ol>
+                <p>
+                  Ce qui déclenche réellement les poursuites pour abus de biens sociaux, c'est l'usage privé{" "}
+                  <em>non déclaré</em> : l'infraction suppose une <strong>mauvaise foi</strong>, exclue lorsque les faits
+                  sont commis sans dissimulation et conformément à une convention prévoyant la contrepartie. La
+                  protection, c'est la transparence formalisée — pas la discrétion.
+                </p>
+              </div>
+            )}
             <RuleNote ruleId="risque-abus-biens-sociaux-usage-prive" />
+            <RuleNote ruleId="vehicule-fonction-vs-vehicule-service" />
+            <RuleNote ruleId="vehicule-fonction-formalisme-organe-social" />
+            <RuleNote ruleId="remuneration-globale-non-excessive" />
             <RuleNote ruleId="coworking-deplacement-professionnel-vs-trajet-habituel" />
           </Section>
 
@@ -644,7 +702,10 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
 
           <Section title="Optimisations">
             <div className="grid grid--2">
-              <Field label="Participation financière mensuelle du gérant (€)">
+              <Field
+                label="Participation financière mensuelle du gérant (€)"
+                hint="Réduit l'AEN imposable. Depuis le 30/04/2025, si cette participation est facturée à un prix de marché, elle ouvre en plus le droit à déduction de la TVA sur le prix d'achat ou les loyers — un gain non chiffré ici (cf. note ci-dessous)."
+              >
                 <NumberInput
                   value={inputs.monthlyParticipation}
                   onChange={(e) => update("monthlyParticipation", Number(e.target.value))}
@@ -663,6 +724,7 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               </Field>
             </div>
             <RuleNote ruleId="ik-bareme-2026" />
+            <RuleNote ruleId="tva-vehicule-fonction-participation-financiere" />
             <RuleNote ruleId="coworking-deplacement-professionnel-vs-trajet-habituel" />
 
             <label className="charge-line__toggle" style={{ marginTop: "0.75rem" }}>

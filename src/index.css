@@ -269,6 +269,31 @@ select:focus {
   border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
+/* Bloc « voie à suivre » : constructif plutôt qu'alarmant (usage privé élevé). */
+.warning-block--info {
+  color: var(--text);
+  background: rgba(74, 222, 128, 0.08);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+}
+
+.warning-block--info strong:first-child {
+  color: var(--good);
+}
+
+.warning-block--info p {
+  margin: 0.5rem 0;
+}
+
+.warning-block--info ol {
+  margin: 0.5rem 0;
+  padding-left: 1.1rem;
+  list-style: decimal;
+}
+
+.warning-block--info ol li {
+  margin-bottom: 0.4rem;
+}
+
 /* Rule note */
 .rule-note {
   display: flex;

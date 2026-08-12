@@ -293,13 +293,84 @@ export const TAX_RULES: TaxRule[] = [
     id: "tva-vehicule-carburant",
     category: "fiscalite_vehicule_societe",
     label: "TVA récupérable sur véhicule et carburant",
-    value: "Véhicule de tourisme : 0% récupérable (sauf mise à disposition avec participation financière réelle depuis le 30/04/2025) · Carburant : 80% récupérable (100% si utilitaire)",
+    value: "Véhicule de tourisme : 0% récupérable (sauf mise à disposition avec participation financière réelle, cf. règle dédiée) · Carburant : 80% récupérable · Électricité de recharge : 100% récupérable",
     legalReference: "Art. 206, IV, 2, 6° annexe II CGI",
     sourceLabel: "Qonto / Légifiscal",
     validFrom: "2025-04-30",
     validUntil: "2026-12-31",
     notes:
-      "Non modélisé dans le simulateur (les montants saisis sont considérés TTC nets de toute récupération) — impact potentiel à vérifier au cas par cas, notamment si une participation financière réelle du dirigeant est mise en place (cf. section Optimisations).",
+      "Principe : la TVA sur l'achat ou les loyers d'un véhicule de tourisme (VP) n'est pas déductible. Exceptions historiques : véhicules utilitaires (VU), taxis/VTC, auto-écoles, sociétés de location.\n\n" +
+      "L'électricité utilisée pour recharger un véhicule électrique est récupérable à 100%, contre 80% pour l'essence et le gazole — un avantage supplémentaire de l'électrique souvent oublié.\n\n" +
+      "Une exception nouvelle et importante existe depuis le 30/04/2025 en cas de participation financière réelle du dirigeant : cf. règle « tva-vehicule-fonction-participation-financiere ».\n\n" +
+      "Non modélisé dans le simulateur : les montants saisis sont considérés TTC nets de toute récupération.",
+  },
+  {
+    id: "tva-vehicule-fonction-participation-financiere",
+    category: "fiscalite_vehicule_societe",
+    label: "TVA déductible sur un véhicule de fonction en cas de participation financière du dirigeant",
+    value: "TVA sur l'achat/les loyers déductible si la mise à disposition est facturée à un prix de marché (sinon 0%)",
+    legalReference: "CJUE, 20 janvier 2021, QM, C-288/19 ; rescrit BOFiP du 30 avril 2025 ; art. 256 CGI",
+    sourceLabel: "Lefebvre Dalloz / EY Avocats",
+    sourceUrl: "https://formation.lefebvre-dalloz.fr/actualite/tva-et-vehicules-de-fonction-analyse-des-opportunites-fiscales-issues-du-rescrit-du-30-avril-2025",
+    validFrom: "2025-04-30",
+    validUntil: null,
+    notes:
+      "MÉCANISME : si la société facture au dirigeant une contrepartie financière réelle pour l'usage privé du véhicule, cette mise à disposition devient une PRESTATION DE SERVICES À TITRE ONÉREUX soumise à TVA. La société collecte alors de la TVA sur cette participation, mais récupère en contrepartie la TVA sur le prix d'achat ou sur les loyers du véhicule — alors même que l'usage est privé.\n\n" +
+      "CONDITION IMPÉRATIVE : la contrepartie doit être RÉELLE et cohérente avec le prix du marché, c'est-à-dire proche de ce qu'un loueur professionnel facturerait pour un véhicule similaire. Une participation symbolique (quelques dizaines d'euros pour un véhicule à 45 000 €) ne suffit pas et fait tomber tout le dispositif.\n\n" +
+      "INTÉRÊT : dans de nombreux cas, la TVA récupérée sur le prix/les loyers excède la TVA collectée sur la participation, générant un gain net pour la société.\n\n" +
+      "ATTENTION À NE PAS CONFONDRE deux effets opposés de la participation financière : (1) côté AEN, elle RÉDUIT l'avantage en nature imposable (c'est ce que modélise le champ « participation financière mensuelle du gérant ») ; (2) côté TVA, elle OUVRE le droit à déduction. Le simulateur ne modélise que le premier effet : le gain de TVA potentiel n'est PAS chiffré et vient donc en plus des résultats affichés. À valider avec un expert-comptable avant de mettre en place le dispositif (facturation, mentions, cohérence avec le prix de marché).",
+  },
+  {
+    id: "vehicule-fonction-vs-vehicule-service",
+    category: "fiscalite_vehicule_societe",
+    label: "Véhicule de fonction (élément de rémunération) vs véhicule de service (outil de travail)",
+    value: "Véhicule de fonction : usage privé autorisé sans limite, aucun besoin professionnel à justifier, AEN obligatoire",
+    legalReference: "Art. 39-1-1° CGI (rémunérations déductibles, y compris avantages en nature)",
+    sourceLabel: "Legalstart / BOFiP-Impôts",
+    sourceUrl: "https://www.legalstart.fr/fiches-pratiques/vehicule-professionnel/difference-vehicule-fonction-et-service/",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "DISTINCTION FONDAMENTALE, souvent ignorée, qui change la façon de justifier le véhicule quand l'usage professionnel est faible ou nul :\n\n" +
+      "— VÉHICULE DE SERVICE : outil de travail. L'usage privé est en principe exclu (restitution hors temps de travail). Sa déductibilité repose sur le BESOIN PROFESSIONNEL, qu'il faut pouvoir prouver (missions, clients, chantiers). Sans usage pro réel, cette qualification ne tient pas.\n\n" +
+      "— VÉHICULE DE FONCTION : ÉLÉMENT DE RÉMUNÉRATION. Mis à disposition de façon permanente, l'usage privé est autorisé, y compris exclusif. Sa déductibilité ne repose PAS sur un besoin professionnel mais sur l'art. 39-1-1° CGI, qui rend déductibles « les rémunérations directes ou indirectes, y compris les indemnités, allocations, AVANTAGES EN NATURE et remboursements de frais », dès lors qu'elles correspondent à un travail effectif et ne sont pas excessives.\n\n" +
+      "CONSÉQUENCE PRATIQUE : un dirigeant sans déplacement professionnel ne doit pas chercher à justifier un « besoin pro » inexistant, mais à qualifier et formaliser le véhicule comme un complément de rémunération (cf. règles « vehicule-fonction-formalisme-organe-social » et « remuneration-globale-non-excessive »). L'AEN doit alors être déclaré à 100% de l'usage privé réel, sans minoration.\n\n" +
+      "Un véhicule de fonction ne peut plus être retiré unilatéralement par la société sans compenser la perte de rémunération correspondante : c'est la contrepartie de cette qualification.",
+  },
+  {
+    id: "vehicule-fonction-formalisme-organe-social",
+    category: "fiscalite_vehicule_societe",
+    label: "Formalisme obligatoire : décision d'organe social / convention réglementée",
+    value: "PV d'AG ou registre des décisions de l'associé unique mentionnant la mise à disposition comme élément de rémunération",
+    legalReference: "Art. L227-10 (SAS) et L223-19 (SARL) code de commerce ; CE 9e-10e ch., 4 oct. 2023, n° 466887, Sté Collectivision",
+    sourceLabel: "Conseil d'État / Legalstart",
+    sourceUrl: "https://www.legifrance.gouv.fr/ceta/id/CETATEXT000048157006",
+    validFrom: "2023-10-04",
+    validUntil: null,
+    notes:
+      "C'EST LE POINT LE PLUS IMPORTANT quand l'usage privé est majoritaire ou exclusif — plus important que le carnet de bord.\n\n" +
+      "FONDEMENT JURISPRUDENTIEL : par la décision Sté Collectivision (CE, 4 oct. 2023, n° 466887), le Conseil d'État juge que « le choix d'un mode de rémunération indirect ne caractérise pas en lui-même un appauvrissement à des fins étrangères à l'intérêt de la société », dès lors que la société établit que SES ORGANES SOCIAUX COMPÉTENTS ONT ENTENDU rémunérer indirectement le dirigeant — le versement n'étant alors pas dépourvu de contrepartie pour elle. Cette décision porte sur des honoraires de management fees, mais le raisonnement s'applique par analogie à tout mode de rémunération indirecte, dont l'avantage en nature véhicule : la contrepartie pour la société n'est pas « le véhicule sert l'activité » mais « le véhicule rémunère le dirigeant ». Encore faut-il pouvoir le prouver, d'où l'exigence d'un écrit.\n\n" +
+      "CE QU'IL FAUT FAIRE :\n" +
+      "— SASU / EURL (associé unique dirigeant) : la procédure des conventions réglementées ne s'applique pas, mais la convention doit être MENTIONNÉE AU REGISTRE DES DÉCISIONS de l'associé unique.\n" +
+      "— SAS / SARL pluripersonnelles : convention réglementée (art. L227-10 / L223-19 c. com.), déclarée et soumise au vote des associés.\n" +
+      "— Contenu à faire figurer : mise à disposition permanente, usage privé expressément autorisé et sans restriction, qualification explicite d'ÉLÉMENT DE RÉMUNÉRATION, méthode d'évaluation de l'AEN retenue.\n\n" +
+      "SANCTION DU DÉFAUT : responsabilité personnelle du dirigeant sur les conséquences dommageables de la convention, et risque de requalification en distribution déguisée (taxation en revenus de capitaux mobiliers chez le dirigeant, perte des abattements salaires).",
+  },
+  {
+    id: "remuneration-globale-non-excessive",
+    category: "fiscalite_vehicule_societe",
+    label: "Limite : caractère non excessif de la rémunération globale (salaire + AEN véhicule)",
+    value: "Déductible si correspond à un travail effectif ET non excessive eu égard à l'importance du service rendu",
+    legalReference: "Art. 39-1-1° CGI",
+    sourceLabel: "Implid / Actu-Juridique",
+    sourceUrl: "https://www.implid.com/article/remuneration-excessive-des-dirigeants-quelles-consequences-fiscales",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "C'est le principal risque résiduel une fois le véhicule correctement qualifié et formalisé : ce n'est plus l'existence de l'avantage qui est attaquable, mais son MONTANT rapporté à l'ensemble de la rémunération.\n\n" +
+      "CRITÈRES RETENUS PAR L'ADMINISTRATION : niveau de rémunération de personnes occupant un emploi analogue (même secteur, même taille d'entreprise), importance de la rémunération rapportée aux bénéfices sociaux, comparaison avec les salaires des autres membres du personnel, qualification professionnelle et travail réellement fourni.\n\n" +
+      "DOUBLE PEINE EN CAS DE REDRESSEMENT : la fraction jugée excessive est (1) réintégrée au résultat imposable de la société — perte de la déduction — ET (2) taxée chez le dirigeant en revenus de capitaux mobiliers au lieu des traitements et salaires, ce qui lui fait perdre automatiquement l'abattement de 10% pour frais professionnels.\n\n" +
+      "EN PRATIQUE : additionner rémunération versée + AEN véhicule et vérifier que le total reste cohérent avec le marché et avec le résultat de la société. Un AEN véhicule important sur une société à faible bénéfice est le profil le plus exposé.",
   },
   {
     id: "aen-forfaitaire-assimile-salarie",
@@ -349,7 +420,10 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2020-01-01",
     validUntil: null,
     notes:
-      "Il n'existe aucun pourcentage légal d'usage privé « interdit » : l'infraction se caractérise par l'intention (usage contraire à l'intérêt social, sans contrepartie), quel que soit le montant. Un usage privé proche de 100% rend toutefois très difficile la justification de l'achat par la société (le simulateur affiche un avertissement croissant au-delà de 80/90/100%). Se prémunir : AEN correctement déclaré, carnet de bord précis, participation financière du dirigeant.",
+      "Il n'existe aucun pourcentage légal d'usage privé « interdit » : l'infraction suppose TROIS conditions CUMULATIVES — usage anormal, avantage personnel, et MAUVAISE FOI du dirigeant.\n\n" +
+      "CE QUI DÉCLENCHE RÉELLEMENT LES POURSUITES : un usage privé « exclusivement privé NON DÉCLARÉ ». C'est la dissimulation, pas l'usage privé en lui-même, qui caractérise l'infraction. À l'inverse, des faits commis sans dissimulation, conformément à une convention prévoyant expressément une contrepartie personnelle au dirigeant, excluent la mauvaise foi — donc l'infraction. La prescription de l'ABS court d'ailleurs à compter de la présentation des comptes annuels faisant apparaître la dépense, SAUF dissimulation : preuve a contrario que l'inscription transparente en comptabilité est la protection.\n\n" +
+      "AUTREMENT DIT : ce qui protège n'est pas la discrétion mais la TRANSPARENCE FORMALISÉE. Un usage 100% privé, intégralement déclaré en AEN et voté par les organes sociaux, relève de la rémunération et non de l'ABS (cf. règles « vehicule-fonction-vs-vehicule-service » et « vehicule-fonction-formalisme-organe-social »). Le risque bascule alors du terrain pénal vers le seul terrain fiscal du caractère excessif de la rémunération (cf. règle « remuneration-globale-non-excessive »).\n\n" +
+      "SE PRÉMUNIR (par ordre d'importance) : (1) décision d'organe social qualifiant le véhicule d'élément de rémunération ; (2) AEN déclaré à 100% de l'usage privé réel, sans minoration ; (3) cohérence de tous les documents entre eux ; (4) carnet de bord — utile même sans usage pro, car un registre montrant honnêtement ~100% privé prouve la bonne foi et la cohérence avec l'AEN déclaré, bien mieux qu'un registre absent ou gonflé.",
   },
   {
     id: "taux-usure-credit-personnel",
