@@ -86,6 +86,12 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`Taux de charges sociales sur l'AEN : ${formatPercent(sim.tnsContributionRate)} · Taux d'IS normal : ${formatPercent(sim.corporateTaxRate)}`);
   push(`Bénéfice imposable prévisionnel avant charges véhicule : ${formatEUR(sim.beneficeAvantChargePrevisionnel)}${sim.impositionSociete === "IS" ? ` (éligible taux réduit 15% : ${sim.eligibleTauxReduitPME ? "Oui" : "Non"})` : ""}`);
   push(`Participation financière mensuelle du dirigeant : ${formatEUR(sim.monthlyParticipation)} · Barème IK de base : ${sim.ikRatePerKm} €/km`);
+  push(
+    `Participation optimale (ramène l'AEN à 0, mode société sélectionné) : ${formatEUR(r.participationOptimaleMensuelle)}/mois` +
+      (sim.monthlyParticipation > 0
+        ? ` · impôt société généré par la participation encaissée : ${formatEUR(r.impotSurParticipation)}/an`
+        : ""),
+  );
   if (sim.tvaRecuperableVehicule) {
     push(
       `TVA récupérée sur le véhicule (participation au prix de marché, taux ${formatPercent(sim.tauxTVA)}) : gain net ${formatEUR(r.gainTvaNet)}/an ` +
@@ -730,11 +736,37 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   tone={results.participationAnnual > 0 ? "good" : "neutral"}
                 />
               </div>
-              {inputs.monthlyParticipation > 0 && results.aenNet <= 0 && (
-                <p className="hint-block">
-                  ℹ️ La participation dépasse l'AEN : celui-ci est ramené à 0 et l'excédent versé n'apporte plus aucune
-                  économie de cotisations. Au-delà de ce point, la participation ne se justifie plus que pour ouvrir ou
-                  sécuriser le droit à déduction de la TVA ci-dessous.
+
+              <div className="optimum-line">
+                <span>
+                  🎯 Participation optimale pour ce mode :{" "}
+                  <strong>{formatEUR(results.participationOptimaleMensuelle)}/mois</strong> — le montant qui ramène
+                  exactement l'AEN à 0.
+                </span>
+                {Math.abs(inputs.monthlyParticipation - results.participationOptimaleMensuelle) > 0.5 && (
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() =>
+                      update("monthlyParticipation", Math.round(results.participationOptimaleMensuelle * 100) / 100)
+                    }
+                  >
+                    Appliquer
+                  </button>
+                )}
+              </div>
+              <p className="field__hint">
+                En deçà, chaque euro versé économise cotisations + IR sur l'AEN (bien plus que l'impôt qu'il génère côté
+                société) : il reste des économies à prendre. Au-delà, l'AEN est déjà à 0 — l'euro supplémentaire
+                n'économise plus rien mais reste un <strong>produit imposable</strong> pour la société, et coûte en plus
+                la TVA collectée si l'option ci-dessous est activée. C'est donc un véritable optimum, pas un plafond.
+              </p>
+              {inputs.monthlyParticipation > 0 && results.aenNet <= 0 && results.participationAnnual > results.aenNetBeforeParticipation + 6 && (
+                <p className="warning-block">
+                  ⚠️ La participation dépasse l'optimum de{" "}
+                  {formatEUR(results.participationAnnual - results.aenNetBeforeParticipation)}/an. Cet excédent
+                  n'apporte plus aucune économie de cotisations et augmente le coût global. Il ne se justifie que s'il
+                  est nécessaire pour atteindre un prix de marché crédible et sécuriser la déduction de TVA ci-dessous.
                 </p>
               )}
 

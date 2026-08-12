@@ -642,3 +642,80 @@ describe("computeSimulation — TVA déductible sur participation financière (r
     expect(r.gainTvaNet).toBeLessThan(0);
   });
 });
+
+describe("computeSimulation — participation financière du dirigeant", () => {
+  function baseP(monthlyParticipation: number): SimulationInputs {
+    return { ...createDefaultInputs(), financingMode: "loa", monthlyParticipation };
+  }
+  const socOf = (inputs: SimulationInputs) =>
+    computeSimulation(inputs).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+
+  it("compte la participation versée dans le coût du dirigeant", () => {
+    const r0 = computeSimulation(baseP(0));
+    const r1 = computeSimulation(baseP(200));
+    // Le dirigeant décaisse réellement 2 400 €/an : son coût cash = cotisations + IR + participation.
+    expect(r0.coutTotalGerantSociete).toBeCloseTo(r0.cotisationsTNS + r0.irEstimee, 6);
+    expect(r1.coutTotalGerantSociete).toBeCloseTo(r1.cotisationsTNS + r1.irEstimee + 2400, 6);
+    expect(socOf(baseP(200)).partDirigeant).toBeGreaterThan(socOf(baseP(0)).partDirigeant);
+  });
+
+  it("compte la participation encaissée en recette de la société, nette de l'impôt qu'elle génère", () => {
+    const sans = socOf(baseP(0));
+    const avec = socOf(baseP(200));
+    const r = computeSimulation(baseP(200));
+    expect(avec.partSociete).toBeCloseTo(sans.partSociete - r.participationNetteSociete, 6);
+    expect(r.participationNetteSociete).toBeCloseTo(2400 - r.impotSurParticipation, 6);
+    expect(r.impotSurParticipation).toBeGreaterThan(0);
+  });
+
+  it("laisse le coût global inchangé hors effet fiscal (le transfert lui-même est neutre)", () => {
+    // Sur un cas où l'AEN est déjà nul, la participation n'apporte aucune économie : il ne reste
+    // que l'impôt sur le produit encaissé, qui augmente le coût global.
+    const aenNul = { ...baseP(0), privateUsePercent: 0 };
+    const r0 = computeSimulation(aenNul);
+    expect(r0.aenNetBeforeParticipation).toBe(0);
+    const s0 = computeSimulation(aenNul).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    const s1 = computeSimulation({ ...aenNul, monthlyParticipation: 200 }).allOptions.find(
+      (o) => o.owner === "societe" && o.mode === "loa",
+    )!;
+    const r1 = computeSimulation({ ...aenNul, monthlyParticipation: 200 });
+    expect(s1.globalCostAnnual - s0.globalCostAnnual).toBeCloseTo(r1.impotSurParticipation, 6);
+  });
+
+  it("expose une participation optimale qui ramène exactement l'AEN à 0", () => {
+    const r = computeSimulation(baseP(0));
+    expect(r.participationOptimaleMensuelle).toBeCloseTo(r.aenNetBeforeParticipation / 12, 6);
+    const applique = computeSimulation(baseP(r.participationOptimaleMensuelle));
+    expect(applique.aenNet).toBeCloseTo(0, 6);
+  });
+
+  it("la participation optimale minimise effectivement le coût global (vérifié par balayage)", () => {
+    const optimum = computeSimulation(baseP(0)).participationOptimaleMensuelle;
+    const coutOptimum = socOf(baseP(optimum)).globalCostAnnual;
+    for (let p = 0; p <= 150; p += 1) {
+      expect(socOf(baseP(p)).globalCostAnnual).toBeGreaterThanOrEqual(coutOptimum - 1e-6);
+    }
+  });
+
+  it("au-delà de l'optimum, chaque euro versé augmente le coût global", () => {
+    const optimum = computeSimulation(baseP(0)).participationOptimaleMensuelle;
+    const a = socOf(baseP(optimum)).globalCostAnnual;
+    const b = socOf(baseP(optimum + 50)).globalCostAnnual;
+    expect(b).toBeGreaterThan(a);
+  });
+
+  it("n'affecte pas les options « Personnel + IK » (pas d'AEN, donc pas de participation)", () => {
+    const sans = computeSimulation(baseP(0)).allOptions.filter((o) => o.owner === "personnel");
+    const avec = computeSimulation(baseP(200)).allOptions.filter((o) => o.owner === "personnel");
+    for (let i = 0; i < sans.length; i++) {
+      expect(avec[i].globalCostAnnual).toBeCloseTo(sans[i].globalCostAnnual, 6);
+    }
+  });
+
+  it("fait apparaître les lignes de détail de la participation côté société", () => {
+    const avec = socOf(baseP(200));
+    expect(avec.detail.some((d) => d.label.includes("Participation encaissée du dirigeant"))).toBe(true);
+    expect(avec.detail.some((d) => d.label.includes("Impôt société sur cette participation"))).toBe(true);
+    expect(socOf(baseP(0)).detail.some((d) => d.label.includes("Participation encaissée"))).toBe(false);
+  });
+});

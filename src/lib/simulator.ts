@@ -289,6 +289,9 @@ export interface SimulationResults {
   tvaDeductible: number; // TVA récupérée sur le véhicule (loyer ou amortissement) + l'entretien — 0 si l'option n'est pas activée
   tvaCollecteeSurParticipation: number; // TVA collectée sur la participation financière encaissée du dirigeant
   gainTvaNet: number; // tvaDeductible − tvaCollecteeSurParticipation, déduit du décaissement société
+  impotSurParticipation: number; // IS/IR généré par la participation encaissée (produit imposable)
+  participationNetteSociete: number; // participation encaissée nette de l'impôt qu'elle génère, déduite du coût net société
+  participationOptimaleMensuelle: number; // participation mensuelle ramenant exactement l'AEN à 0 — au-delà, plus aucun gain fiscal
   companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes − valeur résiduelle annualisée − gain net de TVA)
   quotePartProfessionnelleDeductible: number;
   quotePartPrivéeNonDeductible: number;
@@ -449,7 +452,13 @@ function computeSocieteForMode(
 
   const cotisationsTNS = aenNet * inputs.tnsContributionRate;
   const irEstimee = aenNet * tauxIRUtilise;
-  const coutTotalGerantSociete = cotisationsTNS + irEstimee;
+  // La participation est un décaissement réel du dirigeant vers la société : elle s'ajoute à son coût
+  // cash (ici) et vient en recette de la société (cf. companyCashBaseAnnual). Ce transfert est neutre
+  // au niveau du coût global consolidé — seule la baisse d'AEN qu'il procure constitue un gain réel —
+  // mais il doit apparaître de chaque côté pour que la répartition société/dirigeant soit exacte.
+  // Le montant versé n'est pas plafonné par l'AEN : au-delà du point où l'AEN est ramené à 0, le
+  // dirigeant continue de payer sans contrepartie fiscale (cf. participationOptimaleMensuelle).
+  const coutTotalGerantSociete = cotisationsTNS + irEstimee + participationAnnual;
 
   // Plafond de déduction fiscale de l'amortissement (ou du loyer LOA/LLD au prorata) selon les
   // émissions de CO2 — art. 39-4 CGI. La fraction excédentaire doit être réintégrée au résultat
@@ -486,6 +495,9 @@ function computeSocieteForMode(
   const gainTvaNet = tvaDeductible - tvaCollecteeSurParticipation;
 
   // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes − valeur résiduelle annualisée (si véhicule possédé) − gain net de TVA.
+  // La participation encaissée n'y figure pas : ce n'est pas une moindre charge mais un PRODUIT
+  // imposable, traité séparément ci-dessous pour être taxé sur la totalité de son montant (et non
+  // sur sa seule quote-part professionnelle, comme le serait une réduction de charge).
   const companyCashBaseAnnual =
     financingAnnual +
     inputs.annualInsurance +
@@ -497,7 +509,13 @@ function computeSocieteForMode(
   const quotePartProfessionnelleBrute = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
   const quotePartProfessionnelleDeductible = Math.max(0, quotePartProfessionnelleBrute - reintegrationFiscaleCO2);
   const economieImpotQuotePartPro = computeEconomieImpot(inputs, quotePartProfessionnelleDeductible, tauxIRUtilise);
-  const coutNetSociete = companyCashBaseAnnual - economieImpotQuotePartPro;
+
+  // Participation encaissée : produit imposable en totalité. L'impôt qu'elle génère se calcule avec
+  // la même mécanique (barème IS progressif ou IR selon le régime) que l'économie d'impôt sur une
+  // charge déductible de même montant — d'où la réutilisation de computeEconomieImpot.
+  const impotSurParticipation = computeEconomieImpot(inputs, participationAnnual, tauxIRUtilise);
+  const participationNetteSociete = participationAnnual - impotSurParticipation;
+  const coutNetSociete = companyCashBaseAnnual - economieImpotQuotePartPro - participationNetteSociete;
 
   const globalCostSociete = coutNetSociete + coutTotalGerantSociete;
 
@@ -523,6 +541,13 @@ function computeSocieteForMode(
     tvaDeductible,
     tvaCollecteeSurParticipation,
     gainTvaNet,
+    impotSurParticipation,
+    participationNetteSociete,
+    // Participation mensuelle qui ramène exactement l'AEN à 0. En deçà, chaque euro versé économise
+    // cotisations + IR sur l'AEN (soit bien plus que l'impôt qu'il génère côté société) ; au-delà, il
+    // n'économise plus rien mais reste taxable chez la société — et coûte en plus la TVA collectée si
+    // l'option TVA est activée. C'est donc un véritable optimum, pas un simple plafond.
+    participationOptimaleMensuelle: aenNetBeforeParticipation / 12,
     companyCashBaseAnnual,
     quotePartProfessionnelleDeductible,
     quotePartPrivéeNonDeductible,
@@ -798,8 +823,17 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },
           { label: "Quote-part professionnelle déductible", value: s.quotePartProfessionnelleDeductible },
           { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
+          ...(s.participationAnnual > 0
+            ? [
+                { label: "− Participation encaissée du dirigeant", value: s.participationAnnual },
+                { label: "+ Impôt société sur cette participation (produit imposable)", value: s.impotSurParticipation },
+              ]
+            : []),
           { label: "Coût net société", value: s.coutNetSociete },
           { label: "Coût cash dirigeant", value: s.coutTotalGerantSociete },
+          ...(s.participationAnnual > 0
+            ? [{ label: "dont participation versée par le dirigeant", value: s.participationAnnual }]
+            : []),
           ...valeurResiduelleDetailSociete,
         ],
       },
