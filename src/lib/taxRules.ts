@@ -171,27 +171,29 @@ export const TAX_RULES: TaxRule[] = [
   },
   {
     id: "coworking-deplacement-professionnel-vs-trajet-habituel",
-    category: "indemnites_kilometriques",
+    category: "fiscalite_vehicule_societe",
     label: "Trajet vers un espace de coworking : déplacement professionnel ou trajet domicile-travail ?",
     value:
-      "Occasionnel/ponctuel → déplacement professionnel (IK exonérées, sans plafond) | Régulier/stable → lieu de travail habituel (trajet domicile-travail, plafond fiscal 40 km)",
+      "Occasionnel/ponctuel → déplacement professionnel (usage PRO, IK exonérées sans plafond) | Régulier/stable → lieu de travail habituel (trajet domicile-travail, usage PRIVÉ pour l'AEN, plafond fiscal 40 km pour l'IK)",
     legalReference: "Notion jurisprudentielle de « lieu de travail habituel » ; BOI-RSA-BASE-30-50-30-20 ; BOI-BNC-BASE-40-60-40-10",
     sourceLabel: "Cass. soc. ; BOFiP-Impôts",
     sourceUrl: "https://bofip.impots.gouv.fr/bofip/2161-PGP.html/identifiant=BOI-RSA-BASE-30-50-30-20-20170224",
     validFrom: "2009-03-31",
     validUntil: null,
     notes:
-      "Aucun texte ne vise spécifiquement le coworking : le régime applicable dépend uniquement de la RÉGULARITÉ d'usage du lieu, pas de sa nature.\n\n" +
-      "CE QUI RENTRE (déplacement professionnel, IK société exonérées de cotisations, sans plafond de distance) :\n" +
+      "Aucun texte ne vise spécifiquement le coworking : le régime applicable dépend uniquement de la RÉGULARITÉ d'usage du lieu, pas de sa nature — et cette qualification joue sur DEUX volets du simulateur, pas seulement les IK : le remboursement IK (achat personnel) ET la part professionnelle/privée d'un véhicule acheté ou loué par la société (usage, AEN).\n\n" +
+      "CE QUI RENTRE (déplacement professionnel — usage PRO) :\n" +
       "— Usage ponctuel/occasionnel d'un espace de coworking : RDV client, journée isolée, alternance entre plusieurs lieux selon les besoins, événement professionnel, réunion d'équipe ponctuelle.\n" +
       "— Le critère retenu par la jurisprudence est l'absence de stabilité : le lieu ne devient pas le lieu de travail habituel tant que l'usage reste occasionnel et non récurrent selon un schéma fixe.\n" +
-      "— Par analogie avec la règle des « 3 mois » appliquée aux salariés en mission chez un client (portage salarial, intérim IT) : durant une période d'usage encore temporaire, le trajet reste qualifié de déplacement professionnel.\n\n" +
-      "CE QUI NE RENTRE PAS (trajet domicile-travail ordinaire, régime restrictif) :\n" +
+      "— Par analogie avec la règle des « 3 mois » appliquée aux salariés en mission chez un client (portage salarial, intérim IT) : durant une période d'usage encore temporaire, le trajet reste qualifié de déplacement professionnel.\n" +
+      "— Conséquence achat personnel + IK : la société peut rembourser au barème kilométrique, exonéré de cotisations, sans plafond de distance.\n" +
+      "— Conséquence voiture de société : ce trajet compte comme kilométrage PROFESSIONNEL dans le curseur « % d'usage privé » du simulateur — il n'alourdit donc pas l'AEN.\n\n" +
+      "CE QUI NE RENTRE PAS (trajet domicile-travail ordinaire — usage PRIVÉ) :\n" +
       "— Usage régulier et stable du même coworking (plusieurs fois par semaine, de façon durable) : il devient le « lieu de travail habituel » au sens de la jurisprudence Cass. soc., 31 mars 2009, n°08-40.367 (« en cas de changements de lieux de travail, doit être retenu comme lieu de travail habituel le dernier lieu où, dans l'intention commune des parties, le salarié était appelé à exercer son activité de façon stable et durable »).\n" +
       "— Par analogie, Cass. soc., 6 mai 1985, n°83-15.748 : un salarié affecté à un « poste fixe » chez une entreprise tierce est considéré exercer son activité à son « lieu de travail habituel » (régime social des repas sédentaires, pas du déplacement).\n" +
-      "— Conséquence fiscale (dirigeant, frais réels) : la déduction du trajet domicile-coworking est plafonnée à 40 km aller (80 km A/R) sauf justification du caractère normal d'une distance supérieure (contraintes familiales, professionnelles, absence de transports en commun...).\n" +
-      "— Conséquence sociale (remboursement société) : au-delà des dispositifs encadrés existants (prime transport carburant plafonnée, forfait mobilités durables ~800-900 €/an en 2026, prise en charge 50% d'un abonnement transport en commun), un remboursement IK régulier de ce trajet domicile-travail est en principe réintégré dans l'assiette des cotisations sociales et de l'IR — requalifiable en complément de rémunération déguisé.\n\n" +
-      "VIGILANCE DIRIGEANT TNS : le risque de requalification par l'URSSAF est particulièrement surveillé chez les dirigeants/associés, où les IK ne doivent jamais servir de complément de revenu mais uniquement compenser une dépense réelle engagée pour les besoins de l'activité. Le simulateur ne modélise pas cette distinction (il applique le même barème IK quel que soit le caractère occasionnel ou habituel du trajet) : à l'utilisateur d'apprécier, au cas par cas, si son usage du coworking relève de l'un ou l'autre régime avant d'inclure ces trajets dans son calcul.",
+      "— Conséquence fiscale, achat personnel + IK (dirigeant, frais réels) : la déduction du trajet domicile-coworking est plafonnée à 40 km aller (80 km A/R) sauf justification du caractère normal d'une distance supérieure (contraintes familiales, professionnelles, absence de transports en commun...). Au-delà des dispositifs encadrés existants (prime transport carburant plafonnée, forfait mobilités durables ~800-900 €/an en 2026, prise en charge 50% d'un abonnement transport en commun), un remboursement IK régulier de ce trajet est en principe réintégré dans l'assiette des cotisations sociales et de l'IR — requalifiable en complément de rémunération déguisé.\n" +
+      "— Conséquence voiture de société (AEN) : le trajet domicile-« lieu de travail habituel » est en principe un usage PRIVÉ du véhicule (comme n'importe quel trajet domicile-siège), à intégrer dans le kilométrage privé du curseur « % d'usage privé » — il augmente donc l'AEN et, en cas de proportion très majoritaire, le risque d'abus de biens sociaux (cf. règle « risque-abus-biens-sociaux-usage-prive »).\n\n" +
+      "VIGILANCE DIRIGEANT TNS : le risque de requalification par l'URSSAF est particulièrement surveillé chez les dirigeants/associés, où les IK ne doivent jamais servir de complément de revenu mais uniquement compenser une dépense réelle engagée pour les besoins de l'activité. Le simulateur ne modélise pas cette distinction automatiquement (barème IK et curseur d'usage identiques quel que soit le caractère occasionnel ou habituel du trajet) : à l'utilisateur d'apprécier, au cas par cas, si son usage du coworking relève de l'un ou l'autre régime avant d'en tenir compte dans son % d'usage privé ou ses IK.",
   },
   {
     id: "foncier-abattement-micro",

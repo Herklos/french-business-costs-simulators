@@ -498,6 +498,7 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               </p>
             )}
             <RuleNote ruleId="risque-abus-biens-sociaux-usage-prive" />
+            <RuleNote ruleId="coworking-deplacement-professionnel-vs-trajet-habituel" />
           </Section>
 
           <Section title="Charges annuelles réelles">
