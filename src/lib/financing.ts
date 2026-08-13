@@ -50,6 +50,10 @@ export interface LldParams {
   kmInclusAnnuel: number;
   kmReelAnnuel: number;
   coutKmSupplementaire: number; // €/km au-delà du forfait
+  // Si vrai, le loyer inclut déjà l'entretien et l'assurance : le simulateur les neutralise alors
+  // POUR CE SEUL MODE, pour éviter de les compter deux fois (les champs "Charges annuelles réelles"
+  // sont communs à tous les modes et restent nécessaires pour comptant/crédit/LOA).
+  toutComprisEntretienAssurance: boolean;
 }
 
 export interface FinancingInputs {
@@ -82,6 +86,7 @@ export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
       kmInclusAnnuel: 15000,
       kmReelAnnuel: 15000,
       coutKmSupplementaire: 0.08,
+      toutComprisEntretienAssurance: false,
     },
   };
 }

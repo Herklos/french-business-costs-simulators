@@ -857,6 +857,18 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                         onChange={(v) => update("tauxTVA", v)}
                       />
                     </Field>
+                    <Field
+                      label="Le prix d'achat contient-il de la TVA récupérable ?"
+                      hint="Non pour un véhicule acheté à un particulier ou sous le régime de la marge : le prix ne porte alors aucune TVA déductible. Sans effet en LOA/LLD, dont les loyers sont toujours facturés avec TVA par le loueur."
+                    >
+                      <select
+                        value={inputs.prixContientTvaRecuperable ? "oui" : "non"}
+                        onChange={(e) => update("prixContientTvaRecuperable", e.target.value === "oui")}
+                      >
+                        <option value="oui">Oui — véhicule neuf ou acheté à un professionnel assujetti</option>
+                        <option value="non">Non — achat à un particulier ou régime de la marge</option>
+                      </select>
+                    </Field>
                     <StatCard
                       label="Position nette de TVA (mode société sélectionné)"
                       value={`${formatEUR(results.gainTvaNet)}/an`}
@@ -1035,11 +1047,22 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
 
               <div className="financing-card">
                 <h4>LLD</h4>
-                {lldToutCompris && (
+                <Field
+                  label="Loyer « tout compris » (entretien et assurance inclus) ?"
+                  hint="Si oui, le simulateur neutralise assurance et entretien POUR CE SEUL MODE, afin de ne pas les compter deux fois. Les montants saisis dans « Charges annuelles réelles » restent utilisés par les modes comptant, crédit et LOA."
+                >
+                  <select
+                    value={inputs.financing.lld.toutComprisEntretienAssurance ? "oui" : "non"}
+                    onChange={(e) => updateFinancing("lld", { toutComprisEntretienAssurance: e.target.value === "oui" })}
+                  >
+                    <option value="non">Non — loyer nu, assurance et entretien en plus</option>
+                    <option value="oui">Oui — assurance et entretien inclus dans le loyer</option>
+                  </select>
+                </Field>
+                {lldToutCompris && !inputs.financing.lld.toutComprisEntretienAssurance && (
                   <p className="warning-block">
-                    ⚠️ Cette offre LLD est « tout compris » (assurance et entretien inclus dans le loyer). Pensez à
-                    réduire ou mettre à 0 les champs Assurance/Entretien annuels (section « Charges annuelles
-                    réelles ») pour ce mode, sinon ils seront comptés en double.
+                    ⚠️ L'offre constructeur de ce modèle est « tout compris ». En laissant « Non » ci-dessus, assurance
+                    et entretien seront comptés en plus du loyer, donc en double.
                   </p>
                 )}
                 <Field label="1er loyer (€)">

@@ -93,16 +93,61 @@ describe("computeSimulation — méthode réelle AEN selon le montage", () => {
   });
 
   it("véhicule loué (LLD) : base AEN = 30% × (loyer + assurance + entretien)", () => {
+    const base = createDefaultInputs();
     const inputs: SimulationInputs = {
-      ...createDefaultInputs(),
+      ...base,
+      financingMode: "lld",
+      isElectric: false,
+      privateUsePercent: 100,
+      annualFuelPrivateCost: 0,
+      // Offre LLD classique (loyer nu) : assurance et entretien sont supportés en plus du loyer.
+      financing: { ...base.financing, lld: { ...base.financing.lld, toutComprisEntretienAssurance: false } },
+    };
+    const r = computeSimulation(inputs);
+    const loyerAnnuel = inputs.financing.lld.loyerMensuel * 12;
+    expect(r.aenBaseAnnualCosts).toBeCloseTo((loyerAnnuel + inputs.annualInsurance + inputs.annualMaintenance) * 0.3, 6);
+  });
+
+  it("véhicule loué (LLD « tout compris ») : assurance et entretien sortent de la base AEN", () => {
+    const base = createDefaultInputs();
+    const commun: SimulationInputs = {
+      ...base,
       financingMode: "lld",
       isElectric: false,
       privateUsePercent: 100,
       annualFuelPrivateCost: 0,
     };
-    const r = computeSimulation(inputs);
-    const loyerAnnuel = inputs.financing.lld.loyerMensuel * 12;
-    expect(r.aenBaseAnnualCosts).toBeCloseTo((loyerAnnuel + inputs.annualInsurance + inputs.annualMaintenance) * 0.3, 6);
+    const nu = computeSimulation({
+      ...commun,
+      financing: { ...commun.financing, lld: { ...commun.financing.lld, toutComprisEntretienAssurance: false } },
+    });
+    const toutCompris = computeSimulation({
+      ...commun,
+      financing: { ...commun.financing, lld: { ...commun.financing.lld, toutComprisEntretienAssurance: true } },
+    });
+    const loyerAnnuel = commun.financing.lld.loyerMensuel * 12;
+    expect(toutCompris.aenBaseAnnualCosts).toBeCloseTo(loyerAnnuel * 0.3, 6);
+    // Écart = la part d'AEN qui provenait du double comptage des charges déjà incluses dans le loyer.
+    expect(nu.aenBaseAnnualCosts - toutCompris.aenBaseAnnualCosts).toBeCloseTo(
+      (commun.annualInsurance + commun.annualMaintenance) * 0.3,
+      6,
+    );
+  });
+
+  it("le mode « tout compris » de la LLD ne modifie pas les autres modes de financement", () => {
+    const base = createDefaultInputs();
+    const commun: SimulationInputs = { ...base, financingMode: "comptant", isElectric: false, annualFuelPrivateCost: 0 };
+    const nu = computeSimulation({
+      ...commun,
+      financing: { ...commun.financing, lld: { ...commun.financing.lld, toutComprisEntretienAssurance: false } },
+    });
+    const toutCompris = computeSimulation({
+      ...commun,
+      financing: { ...commun.financing, lld: { ...commun.financing.lld, toutComprisEntretienAssurance: true } },
+    });
+    // Le comptant supporte bien assurance et entretien dans les deux cas.
+    expect(toutCompris.aenBaseAnnualCosts).toBeCloseTo(nu.aenBaseAnnualCosts, 6);
+    expect(toutCompris.companyCashBaseAnnual).toBeCloseTo(nu.companyCashBaseAnnual, 6);
   });
 });
 
@@ -573,16 +618,57 @@ describe("computeSimulation — TVA déductible sur participation financière (r
     expect(r.gainTvaNet).toBe(0);
   });
 
-  it("récupère la TVA sur le loyer et l'entretien, nette de celle collectée sur la participation", () => {
+  it("récupère la TVA sur le loyer, l'entretien et l'option d'achat annualisée", () => {
     const inputs = baseTva({ tvaRecuperableVehicule: true });
     const r = computeSimulation(inputs);
     const coef = inputs.tauxTVA / (1 + inputs.tauxTVA); // 20% TTC -> 1/6
 
-    // La base est le loyer annuel moyen (LOA) + l'entretien ; l'assurance en est exclue.
+    // Base récurrente : loyer annuel moyen (LOA) + entretien ; l'assurance en est exclue.
+    // S'y ajoute la TVA du rachat en fin de contrat, étalée sur la durée de la LOA.
     const loyerAnnuel = r.financingAnnual;
-    expect(r.tvaDeductible).toBeCloseTo((loyerAnnuel + inputs.annualMaintenance) * coef, 6);
+    const dureeAnnees = inputs.financing.loa.dureeMois / 12;
+    const tvaOptionAchat = (inputs.financing.loa.valeurOptionAchat * coef) / dureeAnnees;
+    expect(r.tvaDeductible).toBeCloseTo((loyerAnnuel + inputs.annualMaintenance) * coef + tvaOptionAchat, 6);
     expect(r.tvaCollecteeSurParticipation).toBeCloseTo(inputs.monthlyParticipation * 12 * coef, 6);
     expect(r.gainTvaNet).toBeCloseTo(r.tvaDeductible - r.tvaCollecteeSurParticipation, 6);
+  });
+
+  it("n'ajoute la TVA de l'option d'achat que si celle-ci est effectivement levée", () => {
+    const levee = computeSimulation(baseTva({ tvaRecuperableVehicule: true }));
+    const inputsSansLevee = baseTva({ tvaRecuperableVehicule: true });
+    const sansLevee = computeSimulation({
+      ...inputsSansLevee,
+      financing: {
+        ...inputsSansLevee.financing,
+        loa: { ...inputsSansLevee.financing.loa, leveeOption: false },
+      },
+    });
+    const coef = 0.2 / 1.2;
+    const dureeAnnees = inputsSansLevee.financing.loa.dureeMois / 12;
+    expect(levee.tvaDeductible - sansLevee.tvaDeductible).toBeCloseTo(
+      (inputsSansLevee.financing.loa.valeurOptionAchat * coef) / dureeAnnees,
+      4,
+    );
+  });
+
+  it("exclut la composante véhicule si le prix ne contient pas de TVA récupérable (occasion, marge)", () => {
+    const avecTva = computeSimulation(
+      baseTva({ tvaRecuperableVehicule: true, financingMode: "comptant", prixContientTvaRecuperable: true }),
+    );
+    const sansTva = computeSimulation(
+      baseTva({ tvaRecuperableVehicule: true, financingMode: "comptant", prixContientTvaRecuperable: false }),
+    );
+    const coef = 0.2 / 1.2;
+    // Seul l'entretien reste dans la base : le garage facture de la TVA quelle que soit l'origine du véhicule.
+    expect(sansTva.tvaDeductible).toBeCloseTo(600 * coef, 6);
+    expect(avecTva.tvaDeductible - sansTva.tvaDeductible).toBeCloseTo(avecTva.amortAnnual * coef, 6);
+  });
+
+  it("ne touche pas à la TVA des loyers LOA/LLD quand le prix d'achat est sans TVA récupérable", () => {
+    // Les loyers sont facturés par un loueur assujetti : le régime du prix d'achat leur est étranger.
+    const a = computeSimulation(baseTva({ tvaRecuperableVehicule: true, prixContientTvaRecuperable: true }));
+    const b = computeSimulation(baseTva({ tvaRecuperableVehicule: true, prixContientTvaRecuperable: false }));
+    expect(b.tvaDeductible).toBeCloseTo(a.tvaDeductible, 6);
   });
 
   it("exclut l'assurance de la base de TVA déductible (exonérée, art. 261 C CGI)", () => {

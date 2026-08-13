@@ -94,6 +94,11 @@ export interface SimulationInputs {
   // déduction de l'art. 206, IV-2-6° annexe II CGI. Ne concerne QUE le scénario "véhicule société".
   tvaRecuperableVehicule: boolean;
   tauxTVA: number; // taux normal, 20% en France
+  // Le prix d'achat saisi contient-il de la TVA récupérable ? Faux pour un véhicule acquis auprès
+  // d'un particulier ou sous le régime de la marge : le prix ne porte alors aucune TVA déductible.
+  // Ne concerne que les modes comptant/crédit — les loyers LOA/LLD, facturés par un loueur
+  // assujetti, portent toujours de la TVA.
+  prixContientTvaRecuperable: boolean;
 
   // Aides à l'achat d'un véhicule électrique — réduisent le prix effectivement payé (cf.
   // applyPrixNetAchat dans computeSimulation). Ne s'appliquent qu'aux modes comptant/crédit : les
@@ -169,6 +174,7 @@ export function createDefaultInputs(): SimulationInputs {
     compenserMensualiteParAugmentationSalaire: false,
     tvaRecuperableVehicule: false,
     tauxTVA: DEFAULT_TVA_RATE,
+    prixContientTvaRecuperable: true,
     ceeSelectedAmount: 0,
     bonusRepriseActif: false,
     bonusRepriseMontant: 0,
@@ -226,6 +232,10 @@ export function applyVehicleModel(inputs: SimulationInputs, modelId: string): Si
         kmInclusAnnuel: model.defaultLldOffer.kmInclusAnnuel,
         kmReelAnnuel: next.totalKmAnnual,
         coutKmSupplementaire: financing.lld.coutKmSupplementaire,
+        // Reporté depuis l'offre constructeur : si le loyer est « tout compris », le simulateur
+        // neutralisera assurance et entretien POUR LE SEUL MODE LLD, sans toucher aux montants
+        // saisis, qui restent utilisés par les modes comptant/crédit/LOA.
+        toutComprisEntretienAssurance: model.defaultLldOffer.toutComprisEntretienAssurance ?? false,
       };
     }
     next = { ...next, vehiclePrice: model.defaultPrice, financing };
@@ -392,13 +402,16 @@ function getResidualValueAnnualized(inputs: SimulationInputs, mode: FinancingMod
  * En LOA, si l'option d'achat est levée, sa valeur n'est PAS un loyer (c'est un versement
  * d'acquisition de capital) : elle est exclue de cette base, cf. `loyerAnnuelMoyen`. */
 function computeAenBase(inputs: SimulationInputs, mode: FinancingMode, loyerAnnuelMoyen: number) {
+  // En LLD « tout compris », entretien et assurance sont déjà dans le loyer : les rajouter ici
+  // gonflerait la base de l'AEN d'un doublon.
+  const { annualInsurance, annualMaintenance } = chargesHorsFinancement(inputs, mode);
   const isOwned = mode === "comptant" || mode === "credit";
   if (isOwned) {
     const amortRate = inputs.vehicleOverFiveYears ? 0.1 : 0.2;
     const amortAnnual = inputs.vehiclePrice * amortRate;
-    return { amortRate, amortAnnual, aenBaseAnnualCosts: amortAnnual + inputs.annualInsurance + inputs.annualMaintenance };
+    return { amortRate, amortAnnual, aenBaseAnnualCosts: amortAnnual + annualInsurance + annualMaintenance };
   }
-  const aenBaseAnnualCosts = (loyerAnnuelMoyen + inputs.annualInsurance + inputs.annualMaintenance) * 0.3;
+  const aenBaseAnnualCosts = (loyerAnnuelMoyen + annualInsurance + annualMaintenance) * 0.3;
   return { amortRate: 0, amortAnnual: 0, aenBaseAnnualCosts };
 }
 
@@ -422,6 +435,21 @@ function computeEconomieImpot(inputs: SimulationInputs, chargeDeductible: number
   return chargeDeductible * tauxIRUtilise;
 }
 
+/**
+ * Assurance et entretien effectivement supportés EN PLUS du financement, pour un mode donné.
+ * En LLD « tout compris », ces deux postes sont déjà compris dans le loyer : les additionner au
+ * loyer les compterait deux fois, dans le coût comme dans la base de l'AEN et de la TVA.
+ */
+function chargesHorsFinancement(
+  inputs: SimulationInputs,
+  mode: FinancingMode,
+): { annualInsurance: number; annualMaintenance: number } {
+  if (mode === "lld" && inputs.financing.lld.toutComprisEntretienAssurance) {
+    return { annualInsurance: 0, annualMaintenance: 0 };
+  }
+  return { annualInsurance: inputs.annualInsurance, annualMaintenance: inputs.annualMaintenance };
+}
+
 /** Résultat complet côté société pour un mode de financement et un % d'usage privé donnés. */
 function computeSocieteForMode(
   inputs: SimulationInputs,
@@ -435,6 +463,10 @@ function computeSocieteForMode(
 
   const financingAnnual = getFinancingAnnual(financingResults, mode);
   const loyerAnnuelMoyen = getLoyerAnnuelMoyen(financingResults, mode);
+  // Offre LLD « tout compris » : entretien et assurance sont déjà dans le loyer. On les neutralise
+  // POUR CE SEUL MODE — les champs de saisie sont communs aux quatre modes et restent indispensables
+  // en comptant/crédit/LOA, où ces charges sont bien supportées en plus du financement.
+  const { annualInsurance, annualMaintenance } = chargesHorsFinancement(inputs, mode);
   const { amortRate, amortAnnual, aenBaseAnnualCosts } = computeAenBase(inputs, mode, loyerAnnuelMoyen);
 
   const ratio = Math.min(Math.max(privateUsePercent, 0), 100) / 100;
@@ -497,8 +529,26 @@ function computeSocieteForMode(
   // pour ne pas afficher un gain qui ne serait pas défendable.
   const coefTVA = inputs.tauxTVA / (1 + inputs.tauxTVA); // part de TVA contenue dans un montant TTC
   const tvaEffectivementDeductible = inputs.tvaRecuperableVehicule && participationAnnual > 0;
-  const baseTvaDeductibleTTC = tvaEffectivementDeductible ? composantPlafonnee + inputs.annualMaintenance : 0;
-  const tvaDeductible = baseTvaDeductibleTTC * coefTVA;
+  // Un véhicule acheté à un particulier ou sous le régime de la marge ne porte aucune TVA
+  // déductible : sa composante "véhicule" sort alors de la base. Sans objet en LOA/LLD, dont les
+  // loyers sont facturés par un loueur assujetti.
+  const vehiculePorteTva = mode === "comptant" || mode === "credit" ? inputs.prixContientTvaRecuperable : true;
+  const baseTvaDeductibleTTC = tvaEffectivementDeductible
+    ? (vehiculePorteTva ? composantPlafonnee : 0) + annualMaintenance
+    : 0;
+  // Levée de l'option d'achat en LOA : le rachat est facturé par le loueur, TVA comprise. Le coût
+  // du rachat n'entre pas dans le coût annuel (paiement unique de fin de contrat, compensé par la
+  // valeur résiduelle du véhicule alors acquis) : la TVA récupérée dessus en est donc l'effet
+  // incrémental net, annualisée sur la durée du contrat comme l'est la valeur résiduelle en
+  // comptant/crédit (cf. getResidualValueAnnualized).
+  const dureeAnneesMode = getDureeMoisForMode(inputs, mode) / 12;
+  const optionAchatPayeeTTC =
+    mode === "loa" ? (financingResults.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
+  const tvaOptionAchatAnnualisee =
+    tvaEffectivementDeductible && optionAchatPayeeTTC > 0 && dureeAnneesMode > 0
+      ? (optionAchatPayeeTTC * coefTVA) / dureeAnneesMode
+      : 0;
+  const tvaDeductible = baseTvaDeductibleTTC * coefTVA + tvaOptionAchatAnnualisee;
   const tvaCollecteeSurParticipation = tvaEffectivementDeductible ? participationAnnual * coefTVA : 0;
   // Position nette de TVA, exposée à titre d'indicateur. Attention : ce n'est PAS le terme utilisé
   // dans le calcul du coût ci-dessous — la TVA collectée y est prise en compte via la participation
@@ -512,8 +562,8 @@ function computeSocieteForMode(
   // sur sa seule quote-part professionnelle, comme le serait une réduction de charge).
   const companyCashBaseAnnual =
     financingAnnual +
-    inputs.annualInsurance +
-    inputs.annualMaintenance +
+    annualInsurance +
+    annualMaintenance +
     annualVehicleTax -
     valeurResiduelleAnnualisee -
     tvaDeductible;
@@ -593,9 +643,15 @@ function computePersonnelForMode(
   // Nommée différemment de son équivalent côté société (cf. computeSocieteForMode) pour éviter toute
   // collision lors de l'aplatissement final de `{ ...societe, ...personnel }` dans computeSimulation.
   const valeurResiduelleAnnualiseePersonnel = getResidualValueAnnualized(inputs, mode);
+  // Même neutralisation qu'en scénario société : en LLD « tout compris », assurance et entretien
+  // sont déjà payés dans le loyer, quel que soit celui qui souscrit le contrat.
+  const chargesPersonnel = chargesHorsFinancement(inputs, mode);
   const grossCost = Math.max(
     0,
-    personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance - valeurResiduelleAnnualiseePersonnel,
+    personalFinancingAnnual +
+      chargesPersonnel.annualInsurance +
+      chargesPersonnel.annualMaintenance -
+      valeurResiduelleAnnualiseePersonnel,
   );
   const coutScenarioPersonnel = Math.max(0, grossCost - ikReimbursement);
 
@@ -731,6 +787,10 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     // séparément pour rester visible sans gonfler artificiellement le coût mensuel/annuel affiché.
     // Le prix de la LOA n'étant pas affecté par les aides (cf. applyPrixNetAchat), société et
     // personnel partagent la même offre LOA — le détail est donc identique des deux côtés.
+    // LLD « tout compris » : assurance et entretien sont déjà dans le loyer, donc neutralisés dans
+    // le calcul (cf. chargesHorsFinancement) — le détail affiché doit le refléter plutôt que de
+    // montrer des montants qui ne sont pas comptés.
+    const chargesIncluses = mode === "lld" && inputs.financing.lld.toutComprisEntretienAssurance;
     const optionAchatUnique =
       mode === "loa" ? (financingResultsSociete.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
     const optionAchatDetail: { label: string; value: number }[] =
@@ -820,8 +880,14 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Cotisations sociales dirigeant", value: s.cotisationsTNS },
           { label: "IR dirigeant sur l'AEN", value: s.irEstimee },
           { label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement)`, value: s.financingAnnual },
-          { label: "Assurance annuelle", value: inputs.annualInsurance },
-          { label: "Entretien annuel", value: inputs.annualMaintenance },
+          {
+            label: chargesIncluses ? "Assurance annuelle (incluse dans le loyer LLD)" : "Assurance annuelle",
+            value: chargesIncluses ? 0 : inputs.annualInsurance,
+          },
+          {
+            label: chargesIncluses ? "Entretien annuel (inclus dans le loyer LLD)" : "Entretien annuel",
+            value: chargesIncluses ? 0 : inputs.annualMaintenance,
+          },
           { label: "Taxes annuelles CO2 + polluants (ex-TVS)", value: s.annualVehicleTax },
           ...(s.valeurResiduelleAnnualisee > 0
             ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: s.valeurResiduelleAnnualisee }]
@@ -870,8 +936,14 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
             label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement, dirigeant)`,
             value: p.personalFinancingAnnual,
           },
-          { label: "Assurance annuelle (dirigeant)", value: inputs.annualInsurance },
-          { label: "Entretien annuel (dirigeant)", value: inputs.annualMaintenance },
+          {
+            label: chargesIncluses ? "Assurance annuelle (incluse dans le loyer LLD)" : "Assurance annuelle (dirigeant)",
+            value: chargesIncluses ? 0 : inputs.annualInsurance,
+          },
+          {
+            label: chargesIncluses ? "Entretien annuel (inclus dans le loyer LLD)" : "Entretien annuel (dirigeant)",
+            value: chargesIncluses ? 0 : inputs.annualMaintenance,
+          },
           ...(p.valeurResiduelleAnnualiseePersonnel > 0
             ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: p.valeurResiduelleAnnualiseePersonnel }]
             : []),
@@ -881,7 +953,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
             label: "= Coût brut avant IK (dirigeant)",
             value: Math.max(
               0,
-              p.personalFinancingAnnual + inputs.annualInsurance + inputs.annualMaintenance - p.valeurResiduelleAnnualiseePersonnel,
+              p.personalFinancingAnnual +
+                (chargesIncluses ? 0 : inputs.annualInsurance + inputs.annualMaintenance) -
+                p.valeurResiduelleAnnualiseePersonnel,
             ),
           },
           { label: "Coût net dirigeant (après IK)", value: p.coutScenarioPersonnel },

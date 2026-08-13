@@ -105,6 +105,7 @@ describe("computeLld", () => {
       kmInclusAnnuel: 15000,
       kmReelAnnuel: 15000,
       coutKmSupplementaire: 0.08,
+      toutComprisEntretienAssurance: false,
     });
     expect(r.loyerAnnuelMoyen).toBeCloseTo(r.coutMensuelEquivalent * 12, 6);
     expect(r.devientProprietaire).toBe(false);
@@ -118,6 +119,7 @@ describe("computeLld", () => {
       kmInclusAnnuel: 15000,
       kmReelAnnuel: 15000,
       coutKmSupplementaire: 0.08,
+      toutComprisEntretienAssurance: false,
     });
     const avecDepassement = computeLld({
       premierLoyer: 0,
@@ -126,6 +128,7 @@ describe("computeLld", () => {
       kmInclusAnnuel: 15000,
       kmReelAnnuel: 20000,
       coutKmSupplementaire: 0.08,
+      toutComprisEntretienAssurance: false,
     });
     expect(avecDepassement.coutTotal).toBeCloseTo(sansDepassement.coutTotal + 5000 * 0.08, 6);
   });
@@ -138,6 +141,7 @@ describe("computeLld", () => {
       kmInclusAnnuel: 15000,
       kmReelAnnuel: 10000,
       coutKmSupplementaire: 0.08,
+      toutComprisEntretienAssurance: false,
     });
     expect(r.detail.kmDepassement).toBe(0);
     expect(r.detail.coutDepassement).toBe(0);
