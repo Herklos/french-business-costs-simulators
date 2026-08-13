@@ -102,6 +102,15 @@ function buildVehicleExportText(sim: SimulationInputs): string {
         `Participation compensée par une augmentation de rémunération : ${formatEUR(r.augmentationBruteParticipation)}/an de coût chargé pour la société ` +
           `(${formatEUR(r.coutNetAugmentationParticipation)}/an après économie d'impôt) — le coût du montage est reporté sur la société, il n'est pas supprimé`,
       );
+      push(
+        "  🚨 MONTAGE À HAUT RISQUE : opération circulaire (la rémunération majorée revient aussitôt en participation). Risques d'abus de droit",
+      );
+      push(
+        "     fiscal (art. L64 A LPF, but principalement fiscal ; art. L64 et majoration de 80% si but exclusivement fiscal), de requalification",
+      );
+      push(
+        "     URSSAF faute d'appauvrissement réel du bénéficiaire, et de perte de la déduction de TVA. Avis d'un avocat fiscaliste indispensable.",
+      );
     }
   }
   push(
@@ -1069,20 +1078,50 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                           checked={inputs.compenserParticipationParAugmentationSalaire}
                           onChange={(e) => update("compenserParticipationParAugmentationSalaire", e.target.checked)}
                         />
-                        <span>Compenser la participation par une augmentation de rémunération (scénario société)</span>
+                        <span>
+                          Compenser la participation par une augmentation de rémunération (scénario société) —{" "}
+                          <strong>montage à haut risque, voir l'avertissement</strong>
+                        </span>
                       </label>
                       {inputs.compenserParticipationParAugmentationSalaire && (
-                        <p className="hint-block">
-                          La société relève la rémunération du dirigeant à hauteur de ce qu'il lui reverse :{" "}
-                          <strong>{formatEUR(results.augmentationBruteParticipation)}/an</strong> de coût chargé, soit{" "}
-                          <strong>{formatEUR(results.coutNetAugmentationParticipation)}/an</strong> après économie
-                          d'impôt société. Le dirigeant ne supporte alors plus que l'impôt sur le revenu dû sur cette
-                          augmentation, soit {formatEUR(results.coutParticipationDirigeant)}/an. Le montage ne devient
-                          pas gratuit pour autant : <strong>il change de porteur</strong> — c'est le pendant, côté
-                          société, de l'option « compenser la mensualité » du scénario achat personnel, et il subit la
-                          même critique, celle de faire transiter par la paie une somme qui revient aussitôt à la
-                          société, en la chargeant au passage.
-                        </p>
+                        <>
+                          <p className="warning-block warning-block--danger">
+                            🚨 <strong>Montage à haut risque juridique — à ne pas mettre en place sans avis d'un
+                            avocat fiscaliste.</strong> Faire financer la participation par la société elle-même rend
+                            l'opération <strong>circulaire</strong> : la rémunération majorée revient aussitôt sous forme
+                            de participation, sans autre effet net que la disparition de l'avantage en nature. Trois
+                            risques en découlent :
+                          </p>
+                          <ol className="detail-list">
+                            <li>
+                              <strong>Abus de droit fiscal.</strong> Depuis 2021, l'art. L64 A LPF permet d'écarter un
+                              montage au but <em>principalement</em> fiscal — seuil abaissé qui vise exactement ce type
+                              d'opération. Sur le fondement de l'art. L64 (but exclusivement fiscal), la majoration
+                              atteint 80 %.
+                            </li>
+                            <li>
+                              <strong>Requalification URSSAF.</strong> La déduction de l'AEN suppose un appauvrissement
+                              réel du bénéficiaire. S'il est refinancé par la société, cet appauvrissement disparaît et
+                              l'avantage peut être réintégré pour sa valeur pleine.
+                            </li>
+                            <li>
+                              <strong>Perte de la déduction de TVA.</strong> Le rescrit exige la même réalité de la
+                              contrepartie : elle tomberait avec elle.
+                            </li>
+                          </ol>
+                          <p className="hint-block">
+                            Chiffres du montage : la société verse{" "}
+                            <strong>{formatEUR(results.augmentationBruteParticipation)}/an</strong> de coût chargé, soit{" "}
+                            {formatEUR(results.coutNetAugmentationParticipation)}/an après économie d'impôt, pour ramener
+                            le coût du dirigeant à {formatEUR(results.coutParticipationDirigeant)}/an.{" "}
+                            <strong>Il est de surcroît perdant</strong> : ce coût excède les cotisations et l'IR que la
+                            disparition de l'AEN permet d'éviter — le coût global consolidé augmente, comme le montre le
+                            comparatif. Ce qui reste régulier, c'est une augmentation décidée pour ses propres motifs et
+                            documentée comme telle : c'est sa <em>calibration</em> sur la participation, et leur
+                            simultanéité, qui caractérisent le montage artificiel.
+                          </p>
+                          <RuleNote ruleId="risque-abus-droit-participation-compensee" />
+                        </>
                       )}
                     </>
                   )}

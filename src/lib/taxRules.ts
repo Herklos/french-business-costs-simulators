@@ -330,6 +330,25 @@ export const TAX_RULES: TaxRule[] = [
       "À valider avec un expert-comptable avant de mettre en place le dispositif (facturation, mentions obligatoires, cohérence de la participation avec le prix de marché, régularisations éventuelles en cas de revente).",
   },
   {
+    id: "risque-abus-droit-participation-compensee",
+    category: "risques_juridiques",
+    label: "Risque d'abus de droit : participation compensée par une augmentation de rémunération",
+    value: "Montage circulaire — requalification possible sur le fondement de l'art. L64 A LPF (but principalement fiscal)",
+    legalReference: "Art. L64 et L64 A du Livre des procédures fiscales ; art. R242-1 CSS (contrepartie réelle)",
+    sourceLabel: "BOFiP-Impôts (BOI-CF-IOR-30-20)",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/12049-PGP.html/identifiant=BOI-CF-IOR-30-20-20200131",
+    validFrom: "2021-01-01",
+    validUntil: null,
+    notes:
+      "LA PARTICIPATION EN ELLE-MÊME EST PARFAITEMENT RÉGULIÈRE : l'URSSAF prévoit expressément que la participation financière versée par le bénéficiaire vient en déduction de la valeur de l'avantage en nature, jusqu'à l'annuler si elle l'égale.\n\n" +
+      "CE QUI POSE PROBLÈME, c'est de la faire financer par la société elle-même au moyen d'une augmentation de rémunération calibrée sur son montant. L'opération devient CIRCULAIRE : la société verse une rémunération majorée qui lui revient aussitôt sous forme de participation, sans autre effet net que la disparition de l'avantage en nature. Trois risques distincts en découlent :\n\n" +
+      "1. ABUS DE DROIT FISCAL. Depuis 2021, l'art. L64 A LPF permet d'écarter un montage poursuivant un but PRINCIPALEMENT fiscal — et non plus seulement exclusivement, comme l'exige l'art. L64. Ce seuil abaissé vise précisément les opérations dont le but réel ne correspond pas à l'apparence juridique. Une augmentation de rémunération dont le montant épouse celui de la participation, décidée au même moment, sans justification propre (revalorisation, évolution des fonctions, comparaison de marché), expose à cette requalification. Sur le fondement de l'art. L64 (but exclusivement fiscal), la majoration est en outre de 80 %.\n\n" +
+      "2. REQUALIFICATION SOCIALE. La déduction de l'avantage en nature suppose une participation RÉELLE du bénéficiaire, c'est-à-dire un appauvrissement effectif. Si la société lui fournit par ailleurs les fonds correspondants, cet appauvrissement est neutralisé et l'URSSAF peut refuser la déduction, réintégrant l'avantage en nature pour sa valeur pleine avec les cotisations afférentes.\n\n" +
+      "3. PERTE DU DROIT À DÉDUCTION DE TVA. Le rescrit BOI-RES-TVA-000161 exige que le bénéficiaire s'appauvrisse réellement. Une participation intégralement refinancée par l'employeur ne caractérise plus la contrepartie exigée : le droit à déduction ouvert par le dispositif tomberait avec elle.\n\n" +
+      "À NOTER, INDÉPENDAMMENT DU RISQUE JURIDIQUE : le montage est de toute façon perdant. Le coût chargé de l'augmentation excède largement les cotisations et l'IR que la disparition de l'avantage permet d'éviter — le simulateur le vérifie sur toutes les combinaisons testées. Il déplace la charge du dirigeant vers la société en l'alourdissant au passage.\n\n" +
+      "CE QUI RESTE RÉGULIER : une augmentation de rémunération décidée pour ses propres motifs, documentée comme telle, et une participation versée par ailleurs. C'est la CALIBRATION de l'une sur l'autre et leur simultanéité qui caractérisent le montage artificiel, non le fait d'augmenter une rémunération.",
+  },
+  {
     id: "vehicule-fonction-vs-vehicule-service",
     category: "fiscalite_vehicule_societe",
     label: "Véhicule de fonction (élément de rémunération) vs véhicule de service (outil de travail)",
