@@ -295,7 +295,8 @@ export interface SimulationResults {
   reintegrationFiscaleCO2: number; // fraction de l'amortissement/loyer au-delà du plafond, non déductible
   annualVehicleTax: number; // taxes annuelles CO2 + polluants (ex-TVS), 0 si électrique
   financingAnnual: number; // coût annuel du financement seul (mensualités crédit, loyers LOA/LLD, ou coût comptant/opportunité)
-  valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule (comptant/crédit) lissée sur la durée, déduite du décaissement — 0 sinon
+  valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule possédé en fin de période (comptant, crédit, LOA option levée) lissée sur la durée, déduite du décaissement — 0 sinon
+  optionAchatAnnualisee: number; // levée d'option d'achat LOA lissée sur la durée du contrat, ajoutée au décaissement — 0 hors LOA ou option non levée
   tvaDeductible: number; // TVA récupérée sur le véhicule (loyer ou amortissement) + l'entretien — 0 si l'option n'est pas activée
   tvaCollecteeSurParticipation: number; // TVA collectée sur la participation financière encaissée du dirigeant
   gainTvaNet: number; // indicateur : tvaDeductible − tvaCollecteeSurParticipation (le calcul du coût utilise les deux termes séparément)
@@ -371,11 +372,33 @@ function getDureeMoisForMode(inputs: SimulationInputs, mode: FinancingMode): num
  * si le véhicule est effectivement possédé à l'issue (comptant/crédit ; LOA avec option levée gérée
  * séparément dans allOptions, cf. plus bas), sinon 0 (LLD, LOA sans option : véhicule restitué).
  */
-function getResidualValue(inputs: SimulationInputs, mode: FinancingMode): number {
-  if (mode !== "comptant" && mode !== "credit") return 0;
+/** Le véhicule est-il possédé à l'issue de la période ? Comptant et crédit toujours ; LOA seulement
+ *  si l'option d'achat est levée ; jamais en LLD (restitution). */
+function vehiculePossedeEnFinDePeriode(inputs: SimulationInputs, mode: FinancingMode): boolean {
+  if (mode === "comptant" || mode === "credit") return true;
+  if (mode === "loa") return inputs.financing.loa.leveeOption;
+  return false;
+}
+
+/** Versement unique d'acquisition en fin de contrat (levée de l'option d'achat LOA), ANNUALISÉ sur
+ *  la durée du contrat. Comme la valeur résiduelle qui lui fait face, il est lissé pour que le coût
+ *  annuel/mensuel comparé n'omette aucun flux — cf. commentaire de getResidualValueAnnualized. */
+function getOptionAchatAnnualisee(inputs: SimulationInputs, mode: FinancingMode): number {
+  if (mode !== "loa" || !inputs.financing.loa.leveeOption) return 0;
   const dureeAnnees = getDureeMoisForMode(inputs, mode) / 12;
   if (dureeAnnees <= 0) return 0;
-  return estimateResidualValue(inputs.vehiclePrice, dureeAnnees, inputs.tauxDeprecationAnnuel);
+  return inputs.financing.loa.valeurOptionAchat / dureeAnnees;
+}
+
+function getResidualValue(inputs: SimulationInputs, mode: FinancingMode): number {
+  if (!vehiculePossedeEnFinDePeriode(inputs, mode)) return 0;
+  const dureeAnnees = getDureeMoisForMode(inputs, mode) / 12;
+  if (dureeAnnees <= 0) return 0;
+  // En LOA, la valeur du véhicule se déduit du prix de référence du CONTRAT, et non du prix net
+  // d'aides : les aides à l'achat ne s'appliquent qu'aux modes comptant/crédit (cf.
+  // applyPrixNetAchat), et une offre LOA reste insensible à leur présence.
+  const prixReference = mode === "loa" ? inputs.financing.loa.prixTTC : inputs.vehiclePrice;
+  return estimateResidualValue(prixReference, dureeAnnees, inputs.tauxDeprecationAnnuel);
 }
 
 /**
@@ -507,10 +530,14 @@ function computeSocieteForMode(
   const annualVehicleTax =
     inputs.annualVehicleTaxOverride ?? estimateAnnualVehicleTax(inputs.co2EmissionsGkm, inputs.isElectric);
 
-  // Valeur résiduelle annualisée (comptant/crédit uniquement) : cf. getResidualValueAnnualized —
+  // Valeur résiduelle annualisée (véhicule possédé en fin de période) : cf. getResidualValueAnnualized —
   // déduite du décaissement pour ne pas surestimer le coût réel d'un achat dont le véhicule garde
   // de la valeur à l'issue de la période, contrairement à un loyer (LOA/LLD) définitivement perdu.
   const valeurResiduelleAnnualisee = getResidualValueAnnualized(inputs, mode);
+  // Levée de l'option d'achat en LOA : versement unique de fin de contrat, lissé sur la durée pour
+  // qu'aucun flux ne reste hors du coût annuel/mensuel comparé. Sa contrepartie — la valeur
+  // résiduelle du véhicule alors acquis — est lissée de la même façon juste au-dessus.
+  const optionAchatAnnualisee = getOptionAchatAnnualisee(inputs, mode);
 
   // TVA déductible sur le véhicule (option "participation financière au prix de marché") — cf.
   // règle "tva-vehicule-fonction-participation-financiere". Périmètre retenu, volontairement
@@ -536,11 +563,11 @@ function computeSocieteForMode(
   const baseTvaDeductibleTTC = tvaEffectivementDeductible
     ? (vehiculePorteTva ? composantPlafonnee : 0) + annualMaintenance
     : 0;
-  // Levée de l'option d'achat en LOA : le rachat est facturé par le loueur, TVA comprise. Le coût
-  // du rachat n'entre pas dans le coût annuel (paiement unique de fin de contrat, compensé par la
-  // valeur résiduelle du véhicule alors acquis) : la TVA récupérée dessus en est donc l'effet
-  // incrémental net, annualisée sur la durée du contrat comme l'est la valeur résiduelle en
-  // comptant/crédit (cf. getResidualValueAnnualized).
+  // Levée de l'option d'achat en LOA : le rachat est facturé par le loueur, TVA comprise. Sa TVA
+  // est récupérée et lissée sur la durée du contrat, exactement comme le sont le versement de
+  // rachat lui-même (optionAchatAnnualisee) et la valeur résiduelle du véhicule alors acquis —
+  // de sorte qu'aucune des trois composantes de cette opération de fin de contrat ne reste hors
+  // du coût annuel comparé.
   const dureeAnneesMode = getDureeMoisForMode(inputs, mode) / 12;
   const optionAchatPayeeTTC =
     mode === "loa" ? (financingResults.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
@@ -562,6 +589,7 @@ function computeSocieteForMode(
   // sur sa seule quote-part professionnelle, comme le serait une réduction de charge).
   const companyCashBaseAnnual =
     financingAnnual +
+    optionAchatAnnualisee +
     annualInsurance +
     annualMaintenance +
     annualVehicleTax -
@@ -602,6 +630,7 @@ function computeSocieteForMode(
     annualVehicleTax,
     financingAnnual,
     valeurResiduelleAnnualisee,
+    optionAchatAnnualisee,
     tvaDeductible,
     tvaCollecteeSurParticipation,
     gainTvaNet,
@@ -638,7 +667,7 @@ function computePersonnelForMode(
   const ikReimbursement = proKmAnnual * effectiveIkRatePerKm;
 
   const personalFinancingAnnual = getFinancingAnnual(financingResults, mode);
-  // Valeur résiduelle annualisée (comptant/crédit uniquement) — cf. getResidualValueAnnualized :
+  // Valeur résiduelle annualisée (véhicule possédé en fin de période) — cf. getResidualValueAnnualized :
   // le dirigeant reste propriétaire du véhicule, sa revente future doit venir en déduction du coût.
   // Nommée différemment de son équivalent côté société (cf. computeSocieteForMode) pour éviter toute
   // collision lors de l'aplatissement final de `{ ...societe, ...personnel }` dans computeSimulation.
@@ -646,9 +675,13 @@ function computePersonnelForMode(
   // Même neutralisation qu'en scénario société : en LLD « tout compris », assurance et entretien
   // sont déjà payés dans le loyer, quel que soit celui qui souscrit le contrat.
   const chargesPersonnel = chargesHorsFinancement(inputs, mode);
+  // Même lissage que côté société : la levée d'option en LOA est un versement unique, réparti sur la
+  // durée du contrat pour qu'il apparaisse dans le coût annuel/mensuel comparé.
+  const optionAchatAnnualiseePersonnel = getOptionAchatAnnualisee(inputs, mode);
   const grossCost = Math.max(
     0,
     personalFinancingAnnual +
+      optionAchatAnnualiseePersonnel +
       chargesPersonnel.annualInsurance +
       chargesPersonnel.annualMaintenance -
       valeurResiduelleAnnualiseePersonnel,
@@ -793,9 +826,15 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     const chargesIncluses = mode === "lld" && inputs.financing.lld.toutComprisEntretienAssurance;
     const optionAchatUnique =
       mode === "loa" ? (financingResultsSociete.find((f) => f.mode === "loa")?.detail.optionAchatPayee ?? 0) : 0;
+    const dureeAnneesLoa = getDureeMoisForMode(inputs, "loa") / 12;
     const optionAchatDetail: { label: string; value: number }[] =
       optionAchatUnique > 0
-        ? [{ label: "Option d'achat LOA en fin de contrat (paiement unique, hors coût annuel ci-dessus)", value: optionAchatUnique }]
+        ? [
+            {
+              label: `Levée de l'option d'achat LOA, lissée sur ${dureeAnneesLoa.toFixed(1)} ans (versement unique de ${Math.round(optionAchatUnique)} € en fin de contrat)`,
+              value: dureeAnneesLoa > 0 ? optionAchatUnique / dureeAnneesLoa : 0,
+            },
+          ]
         : [];
 
     // Valeur résiduelle : uniquement si le véhicule est effectivement possédé en fin de période
@@ -814,10 +853,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     // les aides à l'achat (cf. applyPrixNetAchat) peuvent réduire le prix différemment des deux
     // côtés pour comptant/crédit (jamais pour la LOA, dont le prix n'est pas affecté).
     function estimerValeurResiduelle(inputsCote: SimulationInputs): number {
-      if (!devientProprietaire) return 0;
-      return mode === "comptant" || mode === "credit"
-        ? getResidualValue(inputsCote, mode)
-        : estimateResidualValue(inputsCote.vehiclePrice, dureeAnneesPourMode, inputsCote.tauxDeprecationAnnuel);
+      // getResidualValue couvre désormais les trois cas de possession (comptant, crédit, LOA option
+      // levée) et retient pour la LOA le prix de référence du contrat plutôt que le prix net d'aides.
+      return getResidualValue(inputsCote, mode);
     }
     function buildValeurResiduelleDetail(valeur: number): { label: string; value: number }[] {
       return devientProprietaire
@@ -880,6 +918,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Cotisations sociales dirigeant", value: s.cotisationsTNS },
           { label: "IR dirigeant sur l'AEN", value: s.irEstimee },
           { label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement)`, value: s.financingAnnual },
+          ...optionAchatDetail,
           {
             label: chargesIncluses ? "Assurance annuelle (incluse dans le loyer LLD)" : "Assurance annuelle",
             value: chargesIncluses ? 0 : inputs.annualInsurance,
@@ -890,13 +929,12 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           },
           { label: "Taxes annuelles CO2 + polluants (ex-TVS)", value: s.annualVehicleTax },
           ...(s.valeurResiduelleAnnualisee > 0
-            ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: s.valeurResiduelleAnnualisee }]
+            ? [{ label: "− Valeur résiduelle annualisée du véhicule (revente lissée sur la durée de détention)", value: s.valeurResiduelleAnnualisee }]
             : []),
           ...(s.tvaEffectivementDeductible
             ? [{ label: "− TVA déductible récupérée (véhicule + entretien)", value: s.tvaDeductible }]
             : []),
           { label: "= Décaissement réel société (total annuel)", value: s.companyCashBaseAnnual },
-          ...optionAchatDetail,
           { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },
           { label: "Quote-part professionnelle déductible", value: s.quotePartProfessionnelleDeductible },
           { label: "Économie d'impôt société", value: s.economieImpotQuotePartPro },
@@ -936,6 +974,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
             label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement, dirigeant)`,
             value: p.personalFinancingAnnual,
           },
+          ...optionAchatDetail,
           {
             label: chargesIncluses ? "Assurance annuelle (incluse dans le loyer LLD)" : "Assurance annuelle (dirigeant)",
             value: chargesIncluses ? 0 : inputs.annualInsurance,
@@ -945,9 +984,8 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
             value: chargesIncluses ? 0 : inputs.annualMaintenance,
           },
           ...(p.valeurResiduelleAnnualiseePersonnel > 0
-            ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: p.valeurResiduelleAnnualiseePersonnel }]
+            ? [{ label: "− Valeur résiduelle annualisée du véhicule (revente lissée sur la durée de détention)", value: p.valeurResiduelleAnnualiseePersonnel }]
             : []),
-          ...optionAchatDetail,
           ...valeurResiduelleDetailPersonnel,
           {
             label: "= Coût brut avant IK (dirigeant)",

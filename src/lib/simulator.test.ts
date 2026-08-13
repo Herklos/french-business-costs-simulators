@@ -61,20 +61,43 @@ describe("computeSimulation — régression LOA : l'option d'achat ne doit pas g
     expect(avecOption.cotisationsTNS).toBeCloseTo(sansOption.cotisationsTNS, 6);
   });
 
-  it("le décaissement récurrent (annuel) reste identique, que l'option soit levée ou non — l'option d'achat est un versement unique, non lissé sur le coût annuel", () => {
+  it("le loyer servant de base à l'AEN exclut l'option d'achat, qui n'est pas un loyer", () => {
     const base: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa" };
     const sansOption = computeSimulation(withFinancingLoa(base, { leveeOption: false }));
     const avecOption = computeSimulation(withFinancingLoa(base, { leveeOption: true }));
+    // La base AEN "véhicule loué" (30% du coût de location) ne bouge pas : c'est bien le point de
+    // régression historique. Le coût, lui, intègre désormais l'option d'achat lissée (cf. ci-dessous).
+    expect(avecOption.aenBaseAnnualCosts).toBeCloseTo(sansOption.aenBaseAnnualCosts, 6);
+  });
 
-    expect(avecOption.companyCashBaseAnnual).toBeCloseTo(sansOption.companyCashBaseAnnual, 6);
-    expect(avecOption.globalCostSociete).toBeCloseTo(sansOption.globalCostSociete, 6);
+  it("lève l'option d'achat : le versement unique et la valeur résiduelle sont tous deux lissés sur la durée", () => {
+    const base: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa" };
+    const sansOption = computeSimulation(withFinancingLoa(base, { leveeOption: false }));
+    const avecOption = computeSimulation(withFinancingLoa(base, { leveeOption: true }));
+    const dureeAnnees = base.financing.loa.dureeMois / 12;
 
-    // L'option d'achat apparaît en revanche, une fois, dans le détail de l'option correspondante
-    // (paiement unique de fin de contrat), sans être comptée dans le coût annuel récurrent.
-    const optionLine = avecOption.allOptions
+    // Sans levée : rien à lisser, le véhicule est restitué.
+    expect(sansOption.optionAchatAnnualisee).toBe(0);
+    expect(sansOption.valeurResiduelleAnnualisee).toBe(0);
+
+    // Avec levée : le rachat entre dans le coût annuel, la valeur du véhicule acquis en sort.
+    expect(avecOption.optionAchatAnnualisee).toBeCloseTo(base.financing.loa.valeurOptionAchat / dureeAnnees, 6);
+    expect(avecOption.valeurResiduelleAnnualisee).toBeGreaterThan(0);
+    expect(avecOption.companyCashBaseAnnual - sansOption.companyCashBaseAnnual).toBeCloseTo(
+      avecOption.optionAchatAnnualisee - avecOption.valeurResiduelleAnnualisee,
+      6,
+    );
+  });
+
+  it("affiche l'option d'achat lissée dans le détail, avec son montant unique en rappel", () => {
+    const base: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa" };
+    const avecOption = computeSimulation(withFinancingLoa(base, { leveeOption: true }));
+    const dureeAnnees = base.financing.loa.dureeMois / 12;
+    const ligne = avecOption.allOptions
       .find((o) => o.owner === "societe" && o.mode === "loa")
-      ?.detail.find((d) => d.label.includes("Option d'achat"));
-    expect(optionLine?.value).toBeCloseTo(base.financing.loa.valeurOptionAchat, 6);
+      ?.detail.find((d) => d.label.includes("option d'achat LOA"));
+    expect(ligne?.value).toBeCloseTo(base.financing.loa.valeurOptionAchat / dureeAnnees, 6);
+    expect(ligne?.label).toContain("lissée");
   });
 });
 
@@ -362,12 +385,24 @@ describe("computeSimulation — valeur résiduelle en fin de période", () => {
 });
 
 describe("computeSimulation — la valeur résiduelle annualisée (comptant/crédit) est déduite du décaissement", () => {
-  it("LOA/LLD : aucune déduction de valeur résiduelle annualisée (hors périmètre comptant/crédit)", () => {
+  it("LLD : aucune déduction de valeur résiduelle (véhicule restitué en fin de contrat)", () => {
     const r = computeSimulation(createDefaultInputs());
-    const societeLoa = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa");
     const societeLld = r.allOptions.find((o) => o.owner === "societe" && o.mode === "lld");
-    expect(societeLoa?.detail.some((d) => d.label.includes("Valeur résiduelle annualisée"))).toBe(false);
     expect(societeLld?.detail.some((d) => d.label.includes("Valeur résiduelle annualisée"))).toBe(false);
+  });
+
+  it("LOA sans levée d'option : aucune déduction non plus (véhicule restitué)", () => {
+    const base = createDefaultInputs();
+    const r = computeSimulation(withFinancingLoa(base, { leveeOption: false }));
+    const societeLoa = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa");
+    expect(societeLoa?.detail.some((d) => d.label.includes("Valeur résiduelle annualisée"))).toBe(false);
+  });
+
+  it("LOA avec levée d'option : la valeur résiduelle est déduite, comme en comptant/crédit", () => {
+    const base = createDefaultInputs();
+    const r = computeSimulation(withFinancingLoa(base, { leveeOption: true }));
+    const societeLoa = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa");
+    expect(societeLoa?.detail.some((d) => d.label.includes("Valeur résiduelle annualisée"))).toBe(true);
   });
 
   it("Comptant/Crédit société : le décaissement net est inférieur à ce qu'il serait sans déduction de la valeur résiduelle", () => {
@@ -850,5 +885,49 @@ describe("computeSimulation — participation financière du dirigeant", () => {
     expect(avec.detail.some((d) => d.label.includes("Participation encaissée du dirigeant"))).toBe(true);
     expect(avec.detail.some((d) => d.label.includes("Impôt société sur cette participation"))).toBe(true);
     expect(socOf(baseP(0)).detail.some((d) => d.label.includes("Participation encaissée"))).toBe(false);
+  });
+});
+
+describe("computeSimulation — exhaustivité du comparatif annuel/mensuel", () => {
+  it("aucun libellé de détail ne signale un montant exclu du coût annuel", () => {
+    // Garde-fou : tous les flux, y compris les versements uniques (levée d'option d'achat), doivent
+    // être lissés et comptés dans le coût annuel comparé. Un libellé du type « hors coût annuel »
+    // signalerait un flux resté en dehors de la comparaison.
+    const inputs: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa" };
+    const r = computeSimulation(withFinancingLoa(inputs, { leveeOption: true }));
+    for (const option of r.allOptions) {
+      for (const ligne of option.detail) {
+        expect(ligne.label.toLowerCase()).not.toContain("hors coût annuel");
+      }
+    }
+  });
+
+  it("le coût annuel de chaque option se reconstitue à partir de ses propres lignes de détail", () => {
+    const inputs: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa", monthlyParticipation: 150 };
+    const r = computeSimulation(withFinancingLoa(inputs, { leveeOption: true }));
+    const soc = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    const val = (fragment: string) => soc.detail.find((d) => d.label.includes(fragment))?.value ?? 0;
+
+    // Le décaissement affiché doit être exactement la somme algébrique des postes qui le composent.
+    const reconstitue =
+      val("Financement du véhicule") +
+      val("option d'achat LOA") +
+      val("Assurance annuelle") +
+      val("Entretien annuel") +
+      val("Taxes annuelles CO2") -
+      val("Valeur résiduelle annualisée") -
+      val("TVA déductible récupérée");
+    expect(reconstitue).toBeCloseTo(val("= Décaissement réel société"), 6);
+  });
+
+  it("la levée de l'option d'achat déplace bien le coût vers le comparatif (et pas seulement l'affichage)", () => {
+    const base: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa" };
+    const socDe = (leveeOption: boolean) =>
+      computeSimulation(withFinancingLoa(base, { leveeOption })).allOptions.find(
+        (o) => o.owner === "societe" && o.mode === "loa",
+      )!;
+    // Le coût global comparé doit changer selon que l'option est levée ou non : s'il était identique,
+    // c'est que le versement de rachat resterait hors comparatif.
+    expect(socDe(true).globalCostAnnual).not.toBeCloseTo(socDe(false).globalCostAnnual, 2);
   });
 });
