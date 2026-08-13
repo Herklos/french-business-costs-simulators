@@ -97,6 +97,12 @@ function buildVehicleExportText(sim: SimulationInputs): string {
           ? ` · modalité la moins coûteuse : ${PARTICIPATION_VERSEMENT_LABELS[r.modeVersementOptimal]} (−${formatEUR(r.economieModeVersementOptimal)}/an)`
           : ""),
     );
+    if (sim.compenserParticipationParAugmentationSalaire) {
+      push(
+        `Participation compensée par une augmentation de rémunération : ${formatEUR(r.augmentationBruteParticipation)}/an de coût chargé pour la société ` +
+          `(${formatEUR(r.coutNetAugmentationParticipation)}/an après économie d'impôt) — le coût du montage est reporté sur la société, il n'est pas supprimé`,
+      );
+    }
   }
   push(
     `Participation optimale (ramène l'AEN à 0, mode société sélectionné) : ${formatEUR(r.participationOptimaleMensuelle)}/mois` +
@@ -272,6 +278,17 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
       : prixMarcheParticipation > 0 && inputs.monthlyParticipation < prixMarcheParticipation * 0.7
         ? "low"
         : "ok";
+
+  // Indicateurs du caractère non excessif de la rémunération globale (art. 39-1-1° CGI). Il n'existe
+  // aucun seuil légal chiffré : l'administration compare à des emplois analogues et à la capacité
+  // bénéficiaire de la société. Ces ratios ne sont donc que des signaux d'alerte, pas des verdicts.
+  const salaireDirigeantAnnuel = inputs.personalTaxProfile.salaireNetImposableAnnuel;
+  const remunerationGlobaleAnnuelle = salaireDirigeantAnnuel + results.aenBrut;
+  const partAenDansRemuneration =
+    remunerationGlobaleAnnuelle > 0 ? results.aenBrut / remunerationGlobaleAnnuelle : 0;
+  const beneficeAvantRemuneration = inputs.beneficeAvantChargePrevisionnel + remunerationGlobaleAnnuelle;
+  const partRemunerationDansBenefice =
+    beneficeAvantRemuneration > 0 ? remunerationGlobaleAnnuelle / beneficeAvantRemuneration : 0;
 
   const best = results.bestOption;
   const currentIsBest = best.owner === "societe" ? inputs.financingMode === best.mode : inputs.personalFinancingMode === best.mode;
@@ -561,28 +578,228 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   (rémunérations déductibles, <em>y compris les avantages en nature</em>), et non sur un usage
                   professionnel. Un usage privé, même exclusif, est alors parfaitement admis.
                 </p>
-                <ol className="detail-list">
+                <ol className="detail-list checklist">
                   <li>
                     <strong>Formaliser par une décision d'organe social</strong> — le point le plus important, avant même
                     le carnet de bord. SASU/EURL : mention au registre des décisions de l'associé unique. SAS/SARL :
                     convention réglementée (art. L227-10 / L223-19 c. com.) votée par les associés. Y qualifier
                     explicitement le véhicule d'élément de rémunération, avec usage privé autorisé sans restriction.
+                    <details className="checklist__more">
+                      <summary>Voir la procédure applicable à votre structure</summary>
+                      <div className="checklist__more-body">
+                        <p>
+                          Structure saisie : <strong>{companyTypeConfig?.label ?? inputs.companyType}</strong> —{" "}
+                          {inputs.companyType === "SASU" || inputs.companyType === "EURL" ? (
+                            <>
+                              la procédure des conventions réglementées ne s'applique pas lorsque l'associé unique est
+                              aussi le dirigeant, mais la convention doit être{" "}
+                              <strong>mentionnée au registre des décisions de l'associé unique</strong>. C'est cette
+                              mention qui matérialise la volonté de l'organe social, exigée par la jurisprudence
+                              Collectivision.
+                            </>
+                          ) : (
+                            <>
+                              convention réglementée au sens des art. L227-10 (SAS) / L223-19 (SARL) c. com. : la
+                              convention doit être <strong>déclarée puis soumise au vote des associés</strong>, le
+                              dirigeant intéressé ne prenant pas part au vote en SARL.
+                            </>
+                          )}
+                        </p>
+                        <p>Mentions à faire figurer, au minimum :</p>
+                        <ul className="detail-list">
+                          <li>mise à disposition permanente, sans obligation de restitution ;</li>
+                          <li>usage privé expressément autorisé et sans restriction ;</li>
+                          <li>
+                            qualification explicite d'<strong>élément de rémunération</strong> — c'est cette mention qui
+                            fonde la déductibilité sur l'art. 39-1-1° CGI plutôt que sur un besoin professionnel ;
+                          </li>
+                          <li>
+                            méthode d'évaluation de l'AEN retenue (ici : méthode réelle
+                            {dirigeantStatus === "TNS" ? ", obligatoire pour un gérant majoritaire TNS" : ""}) ;
+                          </li>
+                          <li>
+                            le cas échéant, la participation financière du dirigeant et sa modalité de versement (
+                            {PARTICIPATION_VERSEMENT_LABELS[inputs.modeVersementParticipation].toLowerCase()}), qui
+                            conditionne la récupération de TVA.
+                          </li>
+                        </ul>
+                        <p>
+                          À défaut : responsabilité personnelle du dirigeant sur les conséquences dommageables de la
+                          convention, et risque de requalification en distribution déguisée — la somme est alors taxée
+                          en revenus de capitaux mobiliers, sans l'abattement de 10 % des salaires.
+                        </p>
+                      </div>
+                    </details>
                   </li>
                   <li>
                     <strong>Déclarer l'AEN à 100% de l'usage privé réel</strong>, sans minoration. Payer les cotisations
                     sur cet AEN n'est pas un coût subi : c'est ce qui transforme une dépense suspecte en rémunération
                     régulière. Déclarer un AEN partiel sans km pro documenté est la principale incohérence relevée en
                     contrôle.
+                    <details className="checklist__more">
+                      <summary>Voir l'AEN calculé sur vos valeurs</summary>
+                      <div className="checklist__more-body">
+                        <ul className="detail-list">
+                          <li>
+                            Base réelle annuelle du véhicule : <strong>{formatEUR(results.aenBaseAnnualCosts)}</strong>{" "}
+                            (
+                            {inputs.financingMode === "comptant" || inputs.financingMode === "credit"
+                              ? "amortissement + assurance + entretien"
+                              : "30 % du coût de location + assurance + entretien"}
+                            )
+                          </li>
+                          <li>
+                            × {inputs.privateUsePercent} % d'usage privé → AEN brut :{" "}
+                            <strong>{formatEUR(results.aenBrut)}</strong>
+                          </li>
+                          {results.abattement > 0 && (
+                            <li>
+                              − abattement véhicule électrique : {formatEUR(results.abattement)} (plafonné à 2 026,30 €)
+                            </li>
+                          )}
+                          {results.participationAnnual > 0 && (
+                            <li>− participation financière versée : {formatEUR(results.participationAnnual)}</li>
+                          )}
+                          <li>
+                            = <strong>AEN net déclaré : {formatEUR(results.aenNet)}</strong> → cotisations{" "}
+                            {formatEUR(results.cotisationsTNS)} + IR {formatEUR(results.irEstimee)} ={" "}
+                            <strong>{formatEUR(results.cotisationsTNS + results.irEstimee)}/an</strong> à la charge du
+                            dirigeant
+                          </li>
+                        </ul>
+                        <p>
+                          C'est ce montant qui « achète » la régularité du montage. Le sous-déclarer pour l'économiser
+                          est exactement ce qui fait basculer l'usage privé non déclaré vers l'abus de biens sociaux —
+                          l'infraction supposant une dissimulation, et non l'usage privé en lui-même.
+                        </p>
+                        {inputs.privateUsePercent < 100 && (
+                          <p className="warning-inline">
+                            Vous déclarez {inputs.privateUsePercent} % d'usage privé, donc{" "}
+                            {Math.round(results.proKmAnnual).toLocaleString("fr-FR")} km professionnels par an : ils
+                            doivent être justifiables
+                            individuellement (destination, date, motif). À défaut, retenez 100 %.
+                          </p>
+                        )}
+                      </div>
+                    </details>
                   </li>
                   <li>
                     <strong>Vérifier que la rémunération globale (salaire + AEN) n'est pas excessive</strong> au regard
                     du service rendu, du secteur et du bénéfice de la société — c'est le risque résiduel principal, avec
                     une double peine à la clé (réintégration au résultat + taxation en revenus de capitaux mobiliers).
+                    <details className="checklist__more" open>
+                      <summary>Voir les indicateurs calculés sur vos valeurs</summary>
+                      <div className="checklist__more-body">
+                        {salaireDirigeantAnnuel <= 0 ? (
+                          <p className="warning-inline">
+                            Aucun salaire de dirigeant n'est saisi (section « Situation personnelle du dirigeant »).
+                            Renseignez-le pour que ces indicateurs soient calculables : un AEN véhicule de{" "}
+                            {formatEUR(results.aenBrut)}/an constituerait sinon la totalité de la rémunération, ce qui
+                            est le profil le plus exposé en contrôle.
+                          </p>
+                        ) : (
+                          <>
+                            <div className="stat-grid">
+                              <StatCard
+                                label="Rémunération globale annuelle"
+                                value={formatEUR(remunerationGlobaleAnnuelle)}
+                                sub={`${formatEUR(salaireDirigeantAnnuel)} de salaire + ${formatEUR(results.aenBrut)} d'AEN véhicule`}
+                              />
+                              <StatCard
+                                label="Part de l'AEN véhicule"
+                                value={formatPercent(partAenDansRemuneration)}
+                                sub={
+                                  partAenDansRemuneration > 0.3
+                                    ? "Élevée — un avantage en nature qui pèse plus de 30 % de la rémunération attire l'attention"
+                                    : "Proportion usuelle"
+                                }
+                                tone={partAenDansRemuneration > 0.3 ? "bad" : "good"}
+                              />
+                              <StatCard
+                                label="Part du résultat avant rémunération absorbée"
+                                value={formatPercent(partRemunerationDansBenefice)}
+                                sub={`${formatEUR(remunerationGlobaleAnnuelle)} sur ${formatEUR(beneficeAvantRemuneration)} de résultat avant rémunération`}
+                                tone={partRemunerationDansBenefice > 0.8 ? "bad" : "good"}
+                              />
+                            </div>
+                            <p>
+                              <strong>Comment lire ces chiffres.</strong> Il n'existe{" "}
+                              <strong>aucun seuil légal chiffré</strong> : l'administration compare au cas par cas à la
+                              rémunération de personnes occupant un emploi analogue (même secteur, même taille), au
+                              rapport avec les bénéfices sociaux, aux salaires des autres membres du personnel et à la
+                              qualification professionnelle. Ces ratios sont des signaux, pas des verdicts.
+                            </p>
+                            <ul className="detail-list">
+                              <li>
+                                <strong>Part de l'AEN</strong> — au-delà d'environ 30 %, la rémunération repose
+                                majoritairement sur un avantage en nature plutôt que sur du numéraire, configuration
+                                inhabituelle qui invite le vérificateur à regarder de près la réalité du travail fourni.
+                              </li>
+                              <li>
+                                <strong>Part du résultat absorbée</strong> — au-delà d'environ 80 %, la société ne
+                                dégage plus de bénéfice significatif après rémunération du dirigeant. C'est le profil le
+                                plus fréquemment redressé : un AEN véhicule important sur une société à faible bénéfice.
+                                {partRemunerationDansBenefice > 0.8 && (
+                                  <>
+                                    {" "}
+                                    <span className="warning-inline">
+                                      C'est votre cas ici — documentez soigneusement le travail effectif et comparez à
+                                      des rémunérations de dirigeants de sociétés similaires.
+                                    </span>
+                                  </>
+                                )}
+                              </li>
+                            </ul>
+                            <p>
+                              <strong>Si la fraction est jugée excessive</strong>, la double peine s'applique : elle est
+                              réintégrée au résultat imposable de la société — au taux d'IS retenu ici, soit un surcoût
+                              d'environ {formatPercent(inputs.corporateTaxRate)} du montant réintégré — <em>et</em>{" "}
+                              taxée chez le dirigeant en revenus de capitaux mobiliers au lieu des traitements et
+                              salaires, ce qui lui fait perdre l'abattement de 10 % pour frais professionnels.
+                            </p>
+                          </>
+                        )}
+                      </div>
+                    </details>
                   </li>
                   <li>
                     <strong>Tenir un carnet de bord même sans usage pro</strong> : un registre montrant honnêtement
                     ~100% privé prouve la bonne foi et la cohérence avec l'AEN déclaré — bien mieux qu'un registre absent
                     ou gonflé.
+                    <details className="checklist__more">
+                      <summary>Voir ce que le registre doit montrer sur vos valeurs</summary>
+                      <div className="checklist__more-body">
+                        <ul className="detail-list">
+                          <li>
+                            Kilométrage total déclaré : <strong>{inputs.totalKmAnnual.toLocaleString("fr-FR")} km/an</strong>
+                          </li>
+                          <li>
+                            dont privé : <strong>{Math.round(results.privateKmAnnual).toLocaleString("fr-FR")} km</strong>{" "}
+                            · dont professionnel :{" "}
+                            <strong>{Math.round(results.proKmAnnual).toLocaleString("fr-FR")} km</strong>
+                          </li>
+                        </ul>
+                        <p>
+                          Le registre doit reconstituer cette répartition, et elle seule : sa fonction n'est pas de
+                          prouver un usage professionnel, mais d'établir que la répartition déclarée correspond à la
+                          réalité. Un registre cohérent avec un AEN de {formatEUR(results.aenBrut)} vaut mieux qu'un
+                          registre absent, qui laisse le vérificateur reconstituer lui-même la clé de répartition.
+                        </p>
+                        <p>
+                          À consigner pour chaque trajet professionnel revendiqué : date, destination, motif, kilomètres.
+                          Les relevés télématiques du véhicule, l'agenda et les notes de frais doivent raconter la même
+                          histoire — c'est la cohérence entre pièces, plus que le registre pris isolément, qui emporte
+                          la conviction.
+                        </p>
+                        {inputs.privateUsePercent >= 100 && (
+                          <p>
+                            Avec 100 % d'usage privé déclaré, aucun trajet professionnel n'est à justifier : le registre
+                            se borne à confirmer l'absence d'usage professionnel, ce qui est parfaitement cohérent avec
+                            la qualification de véhicule de fonction retenue ci-dessus.
+                          </p>
+                        )}
+                      </div>
+                    </details>
                   </li>
                 </ol>
                 <p>
@@ -807,12 +1024,59 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                     </div>
                   )}
                   {inputs.modeVersementParticipation === "retenue_brute" && (
-                    <p className="warning-block">
-                      ⚠️ Réduire la rémunération brute diminue aussi les droits sociaux qui en dépendent (retraite,
-                      indemnités journalières, prévoyance) et doit être formalisé par une décision d'organe social, au
-                      même titre que la mise à disposition du véhicule. À arbitrer avec votre expert-comptable : le gain
-                      affiché ici est purement fiscal et social immédiat, il n'intègre pas la perte de droits futurs.
-                    </p>
+                    <>
+                      <p className="warning-block">
+                        ⚠️ Réduire la rémunération brute diminue aussi les droits sociaux qui en dépendent (retraite,
+                        indemnités journalières, prévoyance) et doit être formalisé par une décision d'organe social, au
+                        même titre que la mise à disposition du véhicule. À arbitrer avec votre expert-comptable : le
+                        gain affiché ici est purement fiscal et social immédiat, il n'intègre pas la perte de droits
+                        futurs.
+                      </p>
+                      <details className="checklist__more">
+                        <summary>La réduction doit être décidée pour l'avenir — pourquoi c'est déterminant</summary>
+                        <div className="checklist__more-body">
+                          <p>
+                            Le gain calculé ci-dessus suppose une <strong>réduction décidée pour l'avenir</strong> : la
+                            rémunération future est abaissée par décision de l'organe social avant d'être due. Rien
+                            n'étant dû, rien n'est cotisé ni imposé — c'est ce qui produit l'économie.
+                          </p>
+                          <p>
+                            <strong>À ne pas confondre avec une renonciation après coup.</strong> Renoncer à encaisser
+                            une rémunération déjà due ne produit pas le même effet : la Cour de cassation juge que{" "}
+                            <strong>cette renonciation est inopposable à l'URSSAF</strong>, les cotisations restant dues
+                            sur la somme à laquelle le dirigeant a renoncé. L'économie sociale disparaît alors, et
+                            l'administration fiscale peut y voir une minoration artificielle de l'IS et de l'IR. Le
+                            simulateur ne chiffre que la première voie ; si votre montage relève de la seconde, retenez
+                            plutôt une modalité « sur ressources nettes », dont le coût est identique au montant versé.
+                          </p>
+                        </div>
+                      </details>
+                    </>
+                  )}
+                  {inputs.modeVersementParticipation !== "retenue_brute" && (
+                    <>
+                      <label className="charge-line__toggle" style={{ marginTop: "0.6rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={inputs.compenserParticipationParAugmentationSalaire}
+                          onChange={(e) => update("compenserParticipationParAugmentationSalaire", e.target.checked)}
+                        />
+                        <span>Compenser la participation par une augmentation de rémunération (scénario société)</span>
+                      </label>
+                      {inputs.compenserParticipationParAugmentationSalaire && (
+                        <p className="hint-block">
+                          La société relève la rémunération du dirigeant à hauteur de ce qu'il lui reverse :{" "}
+                          <strong>{formatEUR(results.augmentationBruteParticipation)}/an</strong> de coût chargé, soit{" "}
+                          <strong>{formatEUR(results.coutNetAugmentationParticipation)}/an</strong> après économie
+                          d'impôt société. Le dirigeant ne supporte alors plus que l'impôt sur le revenu dû sur cette
+                          augmentation, soit {formatEUR(results.coutParticipationDirigeant)}/an. Le montage ne devient
+                          pas gratuit pour autant : <strong>il change de porteur</strong> — c'est le pendant, côté
+                          société, de l'option « compenser la mensualité » du scénario achat personnel, et il subit la
+                          même critique, celle de faire transiter par la paie une somme qui revient aussitôt à la
+                          société, en la chargeant au passage.
+                        </p>
+                      )}
+                    </>
                   )}
                 </>
               )}

@@ -269,6 +269,64 @@ select:focus {
   border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
+/* Repli « en savoir plus » sous chaque étape d'une check-list. */
+.checklist__more {
+  margin: 0.4rem 0 0.2rem;
+}
+
+.checklist__more > summary {
+  cursor: pointer;
+  display: inline-block;
+  font-size: 0.78rem;
+  color: var(--accent);
+  padding: 0.15rem 0;
+  list-style: none;
+}
+
+.checklist__more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.checklist__more > summary::before {
+  content: "▸ ";
+  display: inline-block;
+  transition: transform 0.15s ease;
+}
+
+.checklist__more[open] > summary::before {
+  content: "▾ ";
+}
+
+.checklist__more > summary:hover {
+  text-decoration: underline;
+}
+
+.checklist__more-body {
+  margin-top: 0.45rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 2px solid var(--border);
+  background: rgba(148, 163, 184, 0.06);
+  border-radius: 0 5px 5px 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.checklist__more-body p {
+  margin: 0 0 0.5rem;
+}
+
+.checklist__more-body p:last-child {
+  margin-bottom: 0;
+}
+
+.checklist__more-body .stat-grid {
+  margin: 0.35rem 0 0.6rem;
+}
+
+.checklist__more-body .detail-list {
+  margin: 0.35rem 0 0.6rem;
+}
+
 /* Encart d'auto-diagnostic d'éligibilité (conditions à remplir avant d'activer une option). */
 .eligibility-box {
   margin-top: 0.85rem;

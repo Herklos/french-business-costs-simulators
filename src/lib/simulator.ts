@@ -114,6 +114,10 @@ export interface SimulationInputs {
   // Optimisations
   monthlyParticipation: number; // participation financière mensuelle du gérant
   modeVersementParticipation: ParticipationVersementMode; // comment le dirigeant s'acquitte de cette participation
+  // Pendant, côté société, de `compenserMensualiteParAugmentationSalaire` : la société augmente la
+  // rémunération du dirigeant à hauteur de ce qu'il lui reverse en participation, de sorte que ce
+  // versement ne l'appauvrisse pas. Sans objet (et sans effet) si aucune participation n'est versée.
+  compenserParticipationParAugmentationSalaire: boolean;
   ikRatePerKm: number; // barème IK €/km utilisé si achat perso + IK
 
   // Alternative "achat perso, mensualité compensée par une augmentation de salaire" : quand activée,
@@ -205,6 +209,7 @@ export function createDefaultInputs(): SimulationInputs {
 
     monthlyParticipation: 0,
     modeVersementParticipation: "retenue_nette",
+    compenserParticipationParAugmentationSalaire: false,
     ikRatePerKm: DEFAULT_IK_RATE,
     compenserMensualiteParAugmentationSalaire: false,
     tvaRecuperableVehicule: false,
@@ -342,6 +347,8 @@ export interface SimulationResults {
   modeVersementOptimal: ParticipationVersementMode; // modalité la moins coûteuse pour un même montant de participation
   economieModeVersementOptimal: number; // économie annuelle obtenue en basculant sur cette modalité (0 si déjà retenue)
   impotSurParticipation: number; // IS/IR généré par la participation encaissée (produit imposable)
+  augmentationBruteParticipation: number; // coût chargé de l'augmentation compensant la participation — 0 si l'option est inactive
+  coutNetAugmentationParticipation: number; // cette augmentation après économie d'impôt société, ajoutée au coût net société
   participationNetteSociete: number; // participation encaissée nette de l'impôt qu'elle génère, déduite du coût net société
   participationOptimaleMensuelle: number; // participation mensuelle ramenant exactement l'AEN à 0 — au-delà, plus aucun gain fiscal
   companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes − valeur résiduelle annualisée − gain net de TVA)
@@ -537,6 +544,13 @@ function coutParticipationPourDirigeant(
   mode: ParticipationVersementMode = inputs.modeVersementParticipation,
 ): number {
   if (participationAnnual <= 0) return 0;
+  // Participation compensée par une augmentation de rémunération : la société relève la rémunération
+  // du dirigeant de ce qu'il lui reverse, si bien qu'il ne supporte plus que l'impôt sur le revenu
+  // dû sur cette augmentation — le reste lui est restitué avant d'être reversé. Le coût du montage
+  // bascule alors sur la société (cf. coutNetAugmentationParticipation).
+  if (inputs.compenserParticipationParAugmentationSalaire) {
+    return participationAnnual * tauxIRUtilise;
+  }
   if (mode === "retenue_brute") {
     const netAbandonne = participationAnnual / (1 + inputs.tnsContributionRate);
     return netAbandonne * (1 - tauxIRUtilise);
@@ -680,7 +694,25 @@ function computeSocieteForMode(
   const participationHT = participationAnnual - tvaCollecteeSurParticipation;
   const impotSurParticipation = computeEconomieImpot(inputs, participationHT, tauxIRUtilise);
   const participationNetteSociete = participationHT - impotSurParticipation;
-  const coutNetSociete = companyCashBaseAnnual - economieImpotQuotePartPro - participationNetteSociete;
+
+  // Augmentation de rémunération compensant la participation : la société verse au dirigeant, en
+  // plus, de quoi financer son versement. Chargée comme toute rémunération (mêmes conventions que
+  // compenserMensualiteParAugmentationSalaire : le taux de cotisations s'applique au net versé), et
+  // déductible du résultat. Elle annule l'essentiel de l'effort du dirigeant en le reportant sur la
+  // société — le montage n'est donc jamais gratuit, il change seulement de porteur.
+  const augmentationBruteParticipation =
+    inputs.compenserParticipationParAugmentationSalaire && participationAnnual > 0
+      ? participationAnnual * (1 + inputs.tnsContributionRate)
+      : 0;
+  const economieImpotAugmentationParticipation = computeEconomieImpot(
+    inputs,
+    augmentationBruteParticipation,
+    tauxIRUtilise,
+  );
+  const coutNetAugmentationParticipation = augmentationBruteParticipation - economieImpotAugmentationParticipation;
+
+  const coutNetSociete =
+    companyCashBaseAnnual - economieImpotQuotePartPro - participationNetteSociete + coutNetAugmentationParticipation;
 
   const globalCostSociete = coutNetSociete + coutTotalGerantSociete;
 
@@ -728,6 +760,8 @@ function computeSocieteForMode(
     })(),
     impotSurParticipation,
     participationNetteSociete,
+    augmentationBruteParticipation,
+    coutNetAugmentationParticipation,
     // Participation mensuelle qui ramène exactement l'AEN à 0. En deçà, chaque euro versé économise
     // cotisations + IR sur l'AEN (soit bien plus que l'impôt qu'il génère côté société) ; au-delà, il
     // n'économise plus rien mais reste taxable chez la société — et coûte en plus la TVA collectée si
@@ -1052,6 +1086,18 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
                   ? [{ label: "+ TVA collectée sur cette participation (reversée au Trésor)", value: s.tvaCollecteeSurParticipation }]
                   : []),
                 { label: "+ Impôt société sur cette participation (produit imposable, base HT)", value: s.impotSurParticipation },
+                ...(s.augmentationBruteParticipation > 0
+                  ? [
+                      {
+                        label: "+ Augmentation de rémunération compensant la participation (coût chargé)",
+                        value: s.augmentationBruteParticipation,
+                      },
+                      {
+                        label: "  ↳ après économie d'impôt société",
+                        value: s.coutNetAugmentationParticipation,
+                      },
+                    ]
+                  : []),
               ]
             : []),
           { label: "Coût net société", value: s.coutNetSociete },

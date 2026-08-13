@@ -1039,3 +1039,58 @@ describe("computeSimulation — modalités de versement de la participation", ()
     expect(r.economieModeVersementOptimal).toBe(0);
   });
 });
+
+describe("computeSimulation — participation compensée par une augmentation de rémunération", () => {
+  function base(patch: Partial<SimulationInputs> = {}): SimulationInputs {
+    return { ...createDefaultInputs(), financingMode: "loa", monthlyParticipation: 200, ...patch };
+  }
+  const socOf = (i: SimulationInputs) =>
+    computeSimulation(i).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+
+  it("ne produit aucun effet en l'absence de participation versée", () => {
+    const sans = computeSimulation(base({ monthlyParticipation: 0, compenserParticipationParAugmentationSalaire: false }));
+    const avec = computeSimulation(base({ monthlyParticipation: 0, compenserParticipationParAugmentationSalaire: true }));
+    expect(avec.augmentationBruteParticipation).toBe(0);
+    expect(avec.coutNetAugmentationParticipation).toBe(0);
+    expect(avec.coutParticipationDirigeant).toBe(0);
+    expect(avec.globalCostSociete).toBeCloseTo(sans.globalCostSociete, 9);
+  });
+
+  it("charge l'augmentation comme une rémunération, sur le net reversé", () => {
+    const inputs = base({ compenserParticipationParAugmentationSalaire: true });
+    const r = computeSimulation(inputs);
+    // Coût chargé = net reversé × (1 + taux de cotisations), même convention que l'option
+    // équivalente du scénario achat personnel.
+    expect(r.augmentationBruteParticipation).toBeCloseTo(2400 * (1 + inputs.tnsContributionRate), 6);
+    // Puis déductible : le coût net supporté est amputé de l'économie d'impôt société correspondante,
+    // au taux réduit d'IS de 15 % sur le cas par défaut.
+    expect(r.coutNetAugmentationParticipation).toBeCloseTo(r.augmentationBruteParticipation * (1 - 0.15), 6);
+  });
+
+  it("ramène le coût du dirigeant au seul impôt sur le revenu de l'augmentation", () => {
+    const r = computeSimulation(base({ compenserParticipationParAugmentationSalaire: true }));
+    expect(r.coutParticipationDirigeant).toBeCloseTo(2400 * r.tauxIRUtilise, 6);
+    expect(r.coutParticipationDirigeant).toBeLessThan(2400);
+  });
+
+  it("reporte le coût sur la société : sa part augmente, celle du dirigeant baisse", () => {
+    const sans = socOf(base({ compenserParticipationParAugmentationSalaire: false }));
+    const avec = socOf(base({ compenserParticipationParAugmentationSalaire: true }));
+    expect(avec.partSociete).toBeGreaterThan(sans.partSociete);
+    expect(avec.partDirigeant).toBeLessThan(sans.partDirigeant);
+  });
+
+  it("n'est pas gratuit : le coût global consolidé augmente", () => {
+    // Faire transiter par la paie une somme qui revient aussitôt à la société la charge au passage.
+    const sans = socOf(base({ compenserParticipationParAugmentationSalaire: false }));
+    const avec = socOf(base({ compenserParticipationParAugmentationSalaire: true }));
+    expect(avec.globalCostAnnual).toBeGreaterThan(sans.globalCostAnnual);
+  });
+
+  it("fait apparaître l'augmentation dans le détail de l'option société", () => {
+    const avec = socOf(base({ compenserParticipationParAugmentationSalaire: true }));
+    expect(avec.detail.some((d) => d.label.includes("Augmentation de rémunération compensant"))).toBe(true);
+    const sans = socOf(base({ compenserParticipationParAugmentationSalaire: false }));
+    expect(sans.detail.some((d) => d.label.includes("Augmentation de rémunération compensant"))).toBe(false);
+  });
+});
