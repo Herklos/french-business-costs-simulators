@@ -4,7 +4,7 @@
 // (double déduction de la participation, TVA accordée sans contrepartie, flux ponctuel hors
 // comparatif) violaient tous un invariant simple, mais aucun test ne le formulait explicitement.
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { type FinancingMode } from "./financing";
 import {
   type ParticipationVersementMode,
@@ -80,6 +80,11 @@ function toutesLesCombinaisons(): Combinaison[] {
                   });
   return out;
 }
+
+// Ces invariants balaient volontairement des milliers de simulations : le délai par défaut de
+// 5 secondes ne suffit pas, et son dépassement rendrait la suite intermittente selon la charge
+// machine plutôt que selon l'état du code.
+vi.setConfig({ testTimeout: 60_000 });
 
 const COMBINAISONS = toutesLesCombinaisons();
 const nom = (c: Combinaison) =>

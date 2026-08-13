@@ -706,8 +706,227 @@ td {
   align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
-  gap: 1rem;
+  gap: 0.75rem 1rem;
   margin-bottom: 0.5rem;
+}
+
+.compare-toolbar .field {
+  margin-bottom: 0;
+  min-width: 12rem;
+  flex: 1 1 12rem;
+}
+
+.compare-toolbar__switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+/* Chaque groupe de bascules porte son intitulé : sans lui, trois rangées de boutons voisines
+   n'indiquent pas ce qu'elles commandent. */
+.switch-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.switch-group__label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.switch-group .btn {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.82rem;
+}
+
+/* Repli d'explication du point de vue : présent en permanence, déployé seulement si les deux
+   points de vue divergent. */
+.perspective-details {
+  margin: 0.4rem 0 0.6rem;
+}
+
+.perspective-details > summary {
+  cursor: pointer;
+  font-size: 0.78rem;
+  color: var(--accent);
+  list-style: none;
+  padding: 0.15rem 0;
+}
+
+.perspective-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.perspective-details > summary::before {
+  content: "▸ ";
+}
+
+.perspective-details[open] > summary::before {
+  content: "▾ ";
+}
+
+.perspective-details__body {
+  margin-top: 0.4rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--accent);
+  background: rgba(96, 165, 250, 0.08);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.perspective-details__body p {
+  margin: 0 0 0.6rem;
+}
+
+.perspective-details__body .field {
+  max-width: 18rem;
+}
+
+/* Tableau de comparaison */
+.compare-table__num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.compare-table__cost {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.compare-table tbody td {
+  vertical-align: top;
+}
+
+/* La colonne de résultats est étroite : l'en-tête de ligne reste sur une seule ligne, le libellé
+   se tronquant plutôt que de rejeter le trophée et la pastille au-dessous. */
+.option-row__head {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.option-row__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.option-row__trophy {
+  flex: 0 0 auto;
+  font-size: 0.9rem;
+}
+
+/* Marqueur du mode alimentant les panneaux de détail : réduit à une pastille, le texte complet
+   restant disponible en infobulle. */
+.option-row__pin {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.owner-badge {
+  flex: 0 0 auto;
+  font-size: 0.65rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+}
+
+.owner-badge--societe {
+  background: rgba(96, 165, 250, 0.16);
+  color: var(--accent-strong);
+}
+
+.owner-badge--personnel {
+  background: rgba(52, 211, 153, 0.16);
+  color: var(--good);
+}
+
+/* Barre proportionnelle : la longueur dit le coût relatif, la découpe dit qui paie. */
+.cost-bar {
+  display: flex;
+  height: 7px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 0.35rem 0 0.25rem;
+  min-width: 12px;
+  background: var(--border);
+}
+
+.cost-bar__societe {
+  background: var(--accent);
+}
+
+.cost-bar__dirigeant {
+  background: var(--good);
+}
+
+.row--best .cost-bar__societe {
+  background: var(--accent-strong);
+}
+
+.row--best {
+  background: rgba(52, 211, 153, 0.09);
+}
+
+.row--detaillee td:first-child {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.ecart {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.ecart--best {
+  color: var(--good);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Détail du calcul : deux colonnes libellé/valeur plutôt qu'une puce, pour aligner les montants. */
+.detail-list--calcul {
+  list-style: none;
+  padding-left: 0;
+  columns: 2;
+  column-gap: 1.25rem;
+  font-size: 0.75rem;
+}
+
+@media (max-width: 1200px) {
+  .detail-list--calcul {
+    columns: 1;
+  }
+}
+
+.detail-list--calcul li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  break-inside: avoid;
+  padding: 0.1rem 0;
+}
+
+.detail-list--calcul .detail-list__value {
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.detail-list--calcul .detail-list__total {
+  border-top: 1px solid var(--border);
+  margin-top: 0.2rem;
+  padding-top: 0.25rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .period-switch {
@@ -758,10 +977,31 @@ td {
 }
 
 .option-breakdown {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   font-size: 0.72rem;
   color: var(--text-muted);
   font-weight: 400;
   margin-top: 0.15rem;
+}
+
+.option-breakdown span::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  margin-right: 0.3rem;
+}
+
+.option-breakdown__societe::before {
+  background: var(--accent);
+}
+
+.option-breakdown__dirigeant::before {
+  background: var(--good);
 }
 
 .detail-list {

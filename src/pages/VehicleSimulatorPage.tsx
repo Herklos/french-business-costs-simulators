@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type ParticipationVersementMode,
   type SimulationInputs,
@@ -26,6 +26,11 @@ import {
 } from "../lib/borneRecharge";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { RuleNote } from "../components/RuleNote";
+import {
+  type CostPeriod,
+  type Perspective,
+  OptionsComparison,
+} from "../components/OptionsComparison";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { CopyButton } from "../components/CopyButton";
@@ -44,21 +49,6 @@ const FINANCING_LABELS: Record<FinancingMode, string> = {
   lld: "LLD",
 };
 
-type SortCriterion = "global" | "societe" | "personnel";
-type CostPeriod = "annuel" | "mensuel";
-/**
- * Point de vue retenu pour lire le comparatif.
- * — « consolide » : société et dirigeant à parité, un euro valant un euro de chaque côté ;
- * — « poche » : les euros dépensés par la société sont valorisés au net de leur coût de sortie
- *   (PFU), puisqu'ils n'auraient rejoint le patrimoine du dirigeant qu'amputés de ce prélèvement.
- */
-type Perspective = "consolide" | "poche";
-
-const SORT_LABELS: Record<SortCriterion, string> = {
-  global: "Coût global (recommandé)",
-  societe: "Coût le plus bas côté société",
-  personnel: "Coût le plus bas côté dirigeant",
-};
 
 /** Résumé texte complet d'une simulation véhicule, destiné à être copié dans le presse-papier. */
 function buildVehicleExportText(sim: SimulationInputs): string {
@@ -203,11 +193,8 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
     () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultInputs()), initialShareData),
   );
   const [saveVersion, setSaveVersion] = useState(0);
-  const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
-  const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
   const [perspective, setPerspective] = useState<Perspective>("consolide");
-  const [showResidualValue, setShowResidualValue] = useState(false);
   const [borneInputs, setBorneInputs] = useState<BorneRechargeInputs>(() => createDefaultBorneRechargeInputs());
 
   function updateBorne<K extends keyof BorneRechargeInputs>(key: K, value: BorneRechargeInputs[K]) {
@@ -280,15 +267,6 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
     // Réapplique motorisation/éco-score et, quand le modèle a une offre LOA constructeur réelle
     // connue (ex. Tesla Model Y), le prix TTC de référence et le mode d'acquisition du véhicule.
     setInputs((prev) => applyVehicleModel(prev, modelId));
-  }
-
-  function toggleExpandedOption(label: string) {
-    setExpandedOptions((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else next.add(label);
-      return next;
-    });
   }
 
   function handleCreditTauxChange(raw: number) {
@@ -1581,178 +1559,18 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
           </div>
 
           <Section title="Comparaison de toutes les options">
-            <div className="compare-toolbar">
-              <Field label="Trier par">
-                <select value={sortCriterion} onChange={(e) => setSortCriterion(e.target.value as SortCriterion)}>
-                  {(Object.keys(SORT_LABELS) as SortCriterion[]).map((c) => (
-                    <option key={c} value={c}>
-                      {SORT_LABELS[c]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <div className="period-switch" role="group" aria-label="Point de vue retenu pour le coût">
-                <button
-                  type="button"
-                  className={perspective === "consolide" ? "active" : ""}
-                  onClick={() => setPerspective("consolide")}
-                  title="Société et dirigeant à parité : un euro vaut un euro de chaque côté."
-                >
-                  Consolidé
-                </button>
-                <button
-                  type="button"
-                  className={perspective === "poche" ? "active" : ""}
-                  onClick={() => setPerspective("poche")}
-                  title="Les euros dépensés par la société sont valorisés au net de leur coût de sortie (PFU) : ils n'auraient rejoint votre poche qu'amputés de ce prélèvement."
-                >
-                  Poche du dirigeant
-                </button>
-              </div>
-              <div className="period-switch" role="group" aria-label="Affichage annuel ou mensuel">
-                <button
-                  type="button"
-                  className={costPeriod === "annuel" ? "active" : ""}
-                  onClick={() => setCostPeriod("annuel")}
-                >
-                  Annuel
-                </button>
-                <button
-                  type="button"
-                  className={costPeriod === "mensuel" ? "active" : ""}
-                  onClick={() => setCostPeriod("mensuel")}
-                >
-                  Mensuel
-                </button>
-              </div>
-              <button
-                type="button"
-                className={`btn btn--ghost ${showResidualValue ? "btn--active" : ""}`}
-                onClick={() => setShowResidualValue((v) => !v)}
-                title="LLD : rien ne reste en fin de contrat. LOA (option levée), crédit, comptant : le dirigeant/la société devient propriétaire d'un véhicule dont la valeur a baissé avec le temps."
-              >
-                🚗💰 {showResidualValue ? "Masquer" : "Afficher"} la valeur résiduelle
-              </button>
-            </div>
-            {perspective === "poche" ? (
-              <div className="perspective-note">
-                <p>
-                  <strong>Un euro dépensé par la société ne vous coûte pas un euro.</strong> Cette richesse, pour
-                  rejoindre votre patrimoine, aurait d'abord supporté son coût de sortie — {formatPercent(inputs.tauxExtractionResultat)}{" "}
-                  de PFU sur des dividendes. Les charges logées dans la société sont donc valorisées ici à{" "}
-                  {formatPercent(1 - inputs.tauxExtractionResultat)} de leur montant, tandis que ce que vous payez
-                  vous-même compte pour sa valeur pleine. Ce point de vue est le bon si vous êtes seul associé et
-                  destinez le résultat à votre patrimoine ; le point de vue consolidé l'est si le résultat reste
-                  investi dans l'entreprise.
-                </p>
-                <Field label="Coût de sortie du résultat vers votre patrimoine">
-                  <ResetableNumberInput
-                    step="0.01"
-                    value={inputs.tauxExtractionResultat}
-                    defaultValue={DEFAULT_PFU_RATE}
-                    formatDefault={(v) => formatPercent(v)}
-                    onChange={(v) => update("tauxExtractionResultat", v)}
-                  />
-                </Field>
-                <RuleNote ruleId="cout-sortie-resultat-pfu" />
-                {results.bestOptionPocheDirigeant.label !== results.allOptions[0].label && (
-                  <p className="warning-block">
-                    ⚠️ Ce point de vue <strong>renverse le classement</strong> : « {results.allOptions[0].label} » reste
-                    la meilleure option au coût consolidé, mais « {results.bestOptionPocheDirigeant.label} » l'emporte
-                    du point de vue de votre poche. L'écart tient entièrement à la répartition entre société et
-                    dirigeant, pas au coût réel du véhicule — arbitrez selon la destination que vous donnez au résultat.
-                  </p>
-                )}
-              </div>
-            ) : (
-              <p className="field__hint">
-                Point de vue consolidé : société et dirigeant à parité, un euro valant un euro de chaque côté. C'est
-                l'hypothèse implicite de tout comparatif de ce type — elle suppose que le résultat de la société vous
-                importe autant que votre trésorerie personnelle. Basculez sur « Poche du dirigeant » si vous destinez
-                ce résultat à votre patrimoine : les charges portées par la société y sont alors valorisées nettes de
-                leur coût de sortie, ce qui peut renverser le classement.
-              </p>
-            )}
-            <table className="projection-table">
-              <thead>
-                <tr>
-                  <th>Option</th>
-                  <th>
-                    {perspective === "poche" ? "Coût pour votre poche" : "Coût global"}{" "}
-                    {costPeriod === "annuel" ? "annuel" : "mensuel"}
-                  </th>
-                  <th></th>
-                  {showResidualValue && <th>Valeur résiduelle en fin de période</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {[...results.allOptions]
-                  .sort((a, b) => {
-                    if (sortCriterion === "societe") return a.partSociete - b.partSociete;
-                    if (sortCriterion === "personnel") return a.partDirigeant - b.partDirigeant;
-                    return coutSelonPerspective(a) - coutSelonPerspective(b);
-                  })
-                  .map((opt, idx) => {
-                    const meilleure =
-                      perspective === "poche" ? results.bestOptionPocheDirigeant : results.allOptions[0];
-                    const isGlobalBest = opt.label === meilleure.label;
-                    const isExpanded = expandedOptions.has(opt.label);
-                    return (
-                      <Fragment key={opt.label}>
-                        <tr
-                          className={`option-row ${idx === 0 ? "row--selected" : ""}`}
-                          onClick={() => toggleExpandedOption(opt.label)}
-                        >
-                          <td>
-                            <span className="option-row__caret">{isExpanded ? "▾" : "▸"}</span>
-                            {isGlobalBest && "🏆 "}
-                            {opt.label}
-                            <div className="option-breakdown">
-                              dont société {formatEUR(toPeriod(opt.partSociete))} · dont dirigeant{" "}
-                              {formatEUR(toPeriod(opt.partDirigeant))}
-                            </div>
-                          </td>
-                          <td>{formatEUR(toPeriod(coutSelonPerspective(opt)))}</td>
-                          <td>
-                            {!isGlobalBest &&
-                              `+${formatEUR(toPeriod(coutSelonPerspective(opt) - coutSelonPerspective(meilleure)))}`}
-                          </td>
-                          {showResidualValue && (
-                            <td>
-                              {opt.devientProprietaire ? (
-                                <span className="residual-value residual-value--owned">
-                                  🚗 {formatEUR(opt.valeurResiduelleEstimee)}
-                                </span>
-                              ) : (
-                                <span className="residual-value residual-value--none">— rien (restitué)</span>
-                              )}
-                            </td>
-                          )}
-                        </tr>
-                        {isExpanded && (
-                          <tr className="option-detail-row">
-                            <td colSpan={showResidualValue ? 4 : 3}>
-                              <p className="field__hint">Détail du calcul (valeurs annuelles) :</p>
-                              <ul className="detail-list">
-                                {opt.detail.map((line) => (
-                                  <li key={line.label}>
-                                    {line.label} :{" "}
-                                    {line.label.includes("(€/km)")
-                                      ? `${line.value.toFixed(3)} €/km`
-                                      : line.label.includes("Km ")
-                                        ? `${line.value.toFixed(0)} km`
-                                        : formatEUR(line.value)}
-                                  </li>
-                                ))}
-                              </ul>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-              </tbody>
-            </table>
+            <OptionsComparison
+              results={results}
+              tauxExtractionResultat={inputs.tauxExtractionResultat}
+              tauxExtractionDefaut={DEFAULT_PFU_RATE}
+              onTauxExtractionChange={(v) => update("tauxExtractionResultat", v)}
+              financingMode={inputs.financingMode}
+              personalFinancingMode={inputs.personalFinancingMode}
+              perspective={perspective}
+              onPerspectiveChange={setPerspective}
+              costPeriod={costPeriod}
+              onCostPeriodChange={setCostPeriod}
+            />
             {results.seuilPrivateUsePercent !== null && (
               <p className="hint-block">
                 Pour les modes actuellement sélectionnés ci-dessous, le seuil de bascule société ⇄ personnel se situe
