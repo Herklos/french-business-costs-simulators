@@ -976,9 +976,17 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                 </Field>
                 <StatCard
                   label="Effet sur l'AEN net (mode société sélectionné)"
-                  value={`− ${formatEUR(Math.min(results.participationAnnual, results.aenNetBeforeParticipation))}/an`}
-                  sub={`AEN ${formatEUR(results.aenNetBeforeParticipation)} → ${formatEUR(results.aenNet)} · soit ${formatEUR(results.participationAnnual)}/an versés`}
-                  tone={results.participationAnnual > 0 ? "good" : "neutral"}
+                  value={
+                    results.participationReduitAen
+                      ? `− ${formatEUR(Math.min(results.participationAnnual, results.aenNetBeforeParticipation))}/an`
+                      : "aucun"
+                  }
+                  sub={
+                    results.participationReduitAen
+                      ? `AEN ${formatEUR(results.aenNetBeforeParticipation)} → ${formatEUR(results.aenNet)} · soit ${formatEUR(results.participationAnnual)}/an versés`
+                      : `AEN maintenu à ${formatEUR(results.aenNet)} : une réduction de rémunération brute ne s'impute pas sur l'avantage en nature`
+                  }
+                  tone={results.participationAnnual > 0 && results.participationReduitAen ? "good" : "neutral"}
                 />
               </div>
 
@@ -1004,8 +1012,8 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                     <strong>{formatEUR(results.coutParticipationDirigeant)}/an</strong> pour{" "}
                     {formatEUR(results.participationAnnual)}/an de contrepartie fournie à la société.
                     {inputs.modeVersementParticipation === "retenue_brute"
-                      ? " En abandonnant de la rémunération brute, le dirigeant renonce à une somme avant cotisations et avant impôt : son sacrifice réel est donc inférieur au montant de la contrepartie."
-                      : " Cette modalité mobilise de l'argent ayant déjà supporté cotisations et impôt sur le revenu : le coût réel est égal au montant versé."}
+                      ? " En abandonnant de la rémunération brute, le dirigeant renonce à une somme avant cotisations et avant impôt : le versement lui coûte donc moins que sa valeur faciale. En contrepartie, ce sacrifice étant déjà porté par la rémunération amputée, il ne vient PAS en déduction de l'AEN, qui reste imposé pour sa valeur pleine — c'est souvent ce second effet qui l'emporte."
+                      : " Cette modalité mobilise de l'argent ayant déjà supporté cotisations et impôt sur le revenu : le versement coûte sa valeur faciale, mais il vient en déduction de l'AEN, donc des cotisations et de l'IR dus dessus."}
                   </p>
                   {results.economieModeVersementOptimal > 1 && (
                     <div className="optimum-line">
@@ -1081,11 +1089,20 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                 </>
               )}
 
+              {!results.participationReduitAen ? (
+                <p className="hint-block">
+                  🎯 Aucune participation « optimale » à viser avec cette modalité : la réduction de rémunération brute
+                  ne s'impute pas sur l'AEN, il n'existe donc pas de montant qui l'annulerait. L'optimum ci-dessous
+                  réapparaît si vous choisissez une modalité prélevée sur des ressources nettes.
+                </p>
+              ) : (
               <div className="optimum-line">
                 <span>
-                  🎯 Participation optimale pour ce mode :{" "}
+                  🎯 Participation optimale pour le mode{" "}
+                  <strong>{FINANCING_LABELS[inputs.financingMode]}</strong> (celui retenu dans « Détail — société ») :{" "}
                   <strong>{formatEUR(results.participationOptimaleMensuelle)}/mois</strong> — le montant qui ramène
-                  exactement l'AEN à 0.
+                  exactement l'AEN à 0. Chaque mode de financement ayant sa propre base d'AEN, cet optimum lui est
+                  propre et ne vaut pas pour les autres lignes du comparatif.
                 </span>
                 {Math.abs(inputs.monthlyParticipation - results.participationOptimaleMensuelle) > 0.5 && (
                   <button
@@ -1099,13 +1116,17 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   </button>
                 )}
               </div>
-              <p className="field__hint">
-                En deçà, chaque euro versé économise cotisations + IR sur l'AEN (bien plus que l'impôt qu'il génère côté
-                société) : il reste des économies à prendre. Au-delà, l'AEN est déjà à 0 — l'euro supplémentaire
-                n'économise plus rien mais reste un <strong>produit imposable</strong> pour la société, et coûte en plus
-                la TVA collectée si l'option ci-dessous est activée. C'est donc un véritable optimum, pas un plafond.
-              </p>
-              {inputs.monthlyParticipation > 0 && results.aenNet <= 0 && results.participationAnnual > results.aenNetBeforeParticipation + 6 && (
+              )}
+              {results.participationReduitAen && (
+                <p className="field__hint">
+                  En deçà, chaque euro versé économise cotisations + IR sur l'AEN (bien plus que l'impôt qu'il génère
+                  côté société) : il reste des économies à prendre. Au-delà, l'AEN est déjà à 0 — l'euro supplémentaire
+                  n'économise plus rien mais reste un <strong>produit imposable</strong> pour la société, et coûte en
+                  plus la TVA collectée si l'option ci-dessous est activée. C'est donc un véritable optimum, pas un
+                  plafond.
+                </p>
+              )}
+              {results.participationReduitAen && inputs.monthlyParticipation > 0 && results.aenNet <= 0 && results.participationAnnual > results.aenNetBeforeParticipation + 6 && (
                 <p className="warning-block">
                   ⚠️ La participation dépasse l'optimum de{" "}
                   {formatEUR(results.participationAnnual - results.aenNetBeforeParticipation)}/an. Cet excédent

@@ -38,13 +38,19 @@ import { DEFAULT_DEPRECIATION_RATE_ANNUAL, estimateResidualValue } from "./vehic
  * admises comme contrepartie réelle par le rescrit BOI-RES-TVA-000161 (ce qui ne l'est PAS, c'est le
  * simple constat d'un avantage en nature sur le bulletin, sans appauvrissement du bénéficiaire).
  *
- * Elles se répartissent en deux familles économiques :
- *  - sur RESSOURCES DÉJÀ NETTES (paiement personnel, retenue sur le net à payer, imputation sur le
+ * Elles se répartissent en deux familles, qui ne diffèrent pas seulement par le coût du versement
+ * mais aussi, et surtout, par leur effet sur l'assiette de l'avantage en nature :
+ *  - sur RESSOURCES DÉJÀ NETTES (retenue sur le net à payer, paiement personnel, imputation sur le
  *    compte courant d'associé) : le dirigeant y consacre de l'argent ayant déjà supporté cotisations
- *    et impôt sur le revenu. Son coût réel est le montant versé ;
- *  - sur RÉMUNÉRATION BRUTE (réduction de la rémunération elle-même) : le dirigeant renonce à une
- *    fraction de rémunération avant cotisations et avant IR. Le même montant de contrepartie lui
- *    coûte donc nettement moins cher en argent réellement disponible.
+ *    et impôt. Le versement lui coûte sa valeur faciale, mais il VIENT EN DÉDUCTION DE L'AEN, donc
+ *    des cotisations et de l'IR dus dessus ;
+ *  - sur RÉMUNÉRATION BRUTE : le dirigeant renonce à une fraction de rémunération avant cotisations
+ *    et avant IR, ce qui rend le versement lui-même moins coûteux — mais l'AEN reste alors imposé
+ *    pour sa valeur pleine, le sacrifice étant déjà porté par la rémunération amputée. Déduire en
+ *    plus le même montant de l'AEN retrancherait deux fois un sacrifice unique.
+ *
+ * Aucune des deux ne domine par construction : c'est la CHARGE TOTALE (prélèvements sur l'AEN +
+ * coût du versement) qui départage, et le simulateur la compare modalité par modalité.
  */
 export type ParticipationVersementMode =
   | "retenue_nette" // retenue sur le net à payer — pratique la plus courante
@@ -350,7 +356,8 @@ export interface SimulationResults {
   augmentationBruteParticipation: number; // coût chargé de l'augmentation compensant la participation — 0 si l'option est inactive
   coutNetAugmentationParticipation: number; // cette augmentation après économie d'impôt société, ajoutée au coût net société
   participationNetteSociete: number; // participation encaissée nette de l'impôt qu'elle génère, déduite du coût net société
-  participationOptimaleMensuelle: number; // participation mensuelle ramenant exactement l'AEN à 0 — au-delà, plus aucun gain fiscal
+  participationOptimaleMensuelle: number; // participation mensuelle ramenant exactement l'AEN à 0 — 0 si la modalité retenue n'impute rien sur l'AEN
+  participationReduitAen: boolean; // la modalité de versement retenue vient-elle en déduction de l'AEN ?
   companyCashBaseAnnual: number; // décaissement réel annuel de la société pour le véhicule (financement + assurance + entretien + taxes − valeur résiduelle annualisée − gain net de TVA)
   quotePartProfessionnelleDeductible: number;
   quotePartPrivéeNonDeductible: number;
@@ -589,7 +596,15 @@ function computeSocieteForMode(
   const aenNetBeforeParticipation = Math.max(0, aenBrut - abattement);
 
   const participationAnnual = inputs.monthlyParticipation * 12;
-  const aenNet = Math.max(0, aenNetBeforeParticipation - participationAnnual);
+  // La participation ne vient en déduction de l'AEN que lorsqu'elle est prélevée sur des ressources
+  // NETTES : c'est précisément pourquoi la pratique de paie retient sur le net à payer « sans
+  // modifier le brut soumis à charges ». Réduire la rémunération BRUTE et déduire en plus le même
+  // montant de l'AEN reviendrait à retrancher deux fois un sacrifice unique de l'assiette du
+  // dirigeant (une fois sur son salaire, une fois sur l'avantage) : dans ce cas, la rémunération
+  // déjà amputée porte le sacrifice, et l'avantage en nature reste imposé pour sa valeur pleine.
+  const participationReduitAen = inputs.modeVersementParticipation !== "retenue_brute";
+  const participationImputeeSurAen = participationReduitAen ? participationAnnual : 0;
+  const aenNet = Math.max(0, aenNetBeforeParticipation - participationImputeeSurAen);
 
   const cotisationsTNS = aenNet * inputs.tnsContributionRate;
   const irEstimee = aenNet * tauxIRUtilise;
@@ -748,14 +763,25 @@ function computeSocieteForMode(
     // donc bien le coût global consolidé. On l'évalue en comparant les modalités entre elles plutôt
     // qu'en la postulant, pour que le cas dégénéré (aucune cotisation ni IR) donne bien une égalité.
     ...(() => {
-      const couts = PARTICIPATION_VERSEMENT_MODES.map((m) => ({
-        mode: m,
-        cout: coutParticipationPourDirigeant(inputs, participationAnnual, tauxIRUtilise, m),
-      }));
-      const meilleur = couts.reduce((a, b) => (b.cout < a.cout - 1e-9 ? b : a));
+      // Une modalité se juge sur la CHARGE TOTALE qu'elle laisse au dirigeant, et non sur le seul
+      // coût du versement : celles qui s'imputent sur des ressources nettes réduisent en outre l'AEN,
+      // donc les cotisations et l'IR dus dessus. Comparer les deux termes ensemble est indispensable,
+      // le second pouvant l'emporter sur le premier.
+      const chargeTotale = (m: ParticipationVersementMode): number => {
+        const aenNetPourMode = Math.max(
+          0,
+          aenNetBeforeParticipation - (m !== "retenue_brute" ? participationAnnual : 0),
+        );
+        const prelevementsAen = aenNetPourMode * (inputs.tnsContributionRate + tauxIRUtilise);
+        return prelevementsAen + coutParticipationPourDirigeant(inputs, participationAnnual, tauxIRUtilise, m);
+      };
+      const chargeActuelle = chargeTotale(inputs.modeVersementParticipation);
+      const meilleur = PARTICIPATION_VERSEMENT_MODES.map((m) => ({ mode: m, charge: chargeTotale(m) })).reduce(
+        (a, b) => (b.charge < a.charge - 1e-9 ? b : a),
+      );
       return {
         modeVersementOptimal: meilleur.mode,
-        economieModeVersementOptimal: Math.max(0, coutParticipationDirigeant - meilleur.cout),
+        economieModeVersementOptimal: Math.max(0, chargeActuelle - meilleur.charge),
       };
     })(),
     impotSurParticipation,
@@ -766,7 +792,10 @@ function computeSocieteForMode(
     // cotisations + IR sur l'AEN (soit bien plus que l'impôt qu'il génère côté société) ; au-delà, il
     // n'économise plus rien mais reste taxable chez la société — et coûte en plus la TVA collectée si
     // l'option TVA est activée. C'est donc un véritable optimum, pas un simple plafond.
-    participationOptimaleMensuelle: aenNetBeforeParticipation / 12,
+    // Sans objet lorsque la modalité retenue n'impute rien sur l'AEN : il n'y a alors aucun montant
+    // qui « annule » l'avantage, et donc aucun optimum à viser de ce côté.
+    participationOptimaleMensuelle: participationReduitAen ? aenNetBeforeParticipation / 12 : 0,
+    participationReduitAen,
     companyCashBaseAnnual,
     quotePartProfessionnelleDeductible,
     quotePartPrivéeNonDeductible,
@@ -811,11 +840,17 @@ function computePersonnelForMode(
       chargesPersonnel.annualMaintenance -
       valeurResiduelleAnnualiseePersonnel,
   );
-  const coutScenarioPersonnel = Math.max(0, grossCost - ikReimbursement);
+  // Volontairement NON borné à zéro : lorsque le remboursement kilométrique excède le coût réel du
+  // véhicule (usage très majoritairement professionnel, fort kilométrage), le dirigeant y gagne, et
+  // ce gain doit apparaître. Le borner masquerait la situation et, surtout, romprait l'identité
+  // « part société + part dirigeant = coût global », la part société continuant, elle, d'intégrer
+  // l'IK versée en totalité.
+  const coutScenarioPersonnel = grossCost - ikReimbursement;
 
   // L'IK versée par la société est une charge déductible : elle génère une économie d'impôt côté société.
   const economieImpotIK = computeEconomieImpot(inputs, ikReimbursement, tauxIRUtilise);
-  const globalCostPersonnel = Math.max(0, grossCost - economieImpotIK);
+  // Non borné pour la même raison : le coût global doit rester égal à la somme des deux parts.
+  const globalCostPersonnel = grossCost - economieImpotIK;
 
   return {
     privateKmAnnual,

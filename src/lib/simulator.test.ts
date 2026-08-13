@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { type SimulationInputs, applyVehicleModel, computeSimulation, createDefaultInputs } from "./simulator";
+import {
+  type SimulationInputs,
+  PARTICIPATION_VERSEMENT_MODES,
+  applyVehicleModel,
+  computeSimulation,
+  createDefaultInputs,
+} from "./simulator";
 
 function withFinancingLoa(inputs: SimulationInputs, patch: Partial<SimulationInputs["financing"]["loa"]>): SimulationInputs {
   return { ...inputs, financing: { ...inputs.financing, loa: { ...inputs.financing.loa, ...patch } } };
@@ -1008,16 +1014,49 @@ describe("computeSimulation — modalités de versement de la participation", ()
     );
   });
 
-  it("désigne la réduction de rémunération brute comme modalité optimale, avec l'économie chiffrée", () => {
-    const r = computeSimulation(avecMode("retenue_nette"));
-    expect(r.modeVersementOptimal).toBe("retenue_brute");
-    const brute = computeSimulation(avecMode("retenue_brute"));
-    expect(r.economieModeVersementOptimal).toBeCloseTo(2400 - brute.coutParticipationDirigeant, 6);
+  it("aucune modalité ne domine par construction : l'arbitrage dépend du rapport participation / AEN", () => {
+    // Participation nettement inférieure à l'AEN : la déduction d'AEN joue à plein sur chaque euro
+    // versé, les ressources nettes l'emportent.
+    const petite = { ...avecMode("retenue_nette"), monthlyParticipation: 20 };
+    expect(computeSimulation(petite).modeVersementOptimal).toBe("retenue_nette");
+
+    // Participation très supérieure à l'AEN : la déduction est plafonnée par l'AEN alors que
+    // l'allègement du brut porte sur la totalité du versement — la réduction de brut l'emporte.
+    const grande = { ...avecMode("retenue_nette"), monthlyParticipation: 400 };
+    expect(computeSimulation(grande).modeVersementOptimal).toBe("retenue_brute");
+  });
+
+  it("la modalité désignée est bien celle qui minimise la charge du dirigeant (vérifié par force brute)", () => {
+    for (const participation of [0, 20, 60, 200, 400, 800]) {
+      for (const mode of PARTICIPATION_VERSEMENT_MODES) {
+        const inputs = { ...avecMode(mode), monthlyParticipation: participation };
+        const annonce = computeSimulation(inputs).modeVersementOptimal;
+        const charges = PARTICIPATION_VERSEMENT_MODES.map((m) => ({
+          m,
+          charge: socOf({ ...inputs, modeVersementParticipation: m }).partDirigeant,
+        }));
+        const minimum = Math.min(...charges.map((c) => c.charge));
+        const chargeAnnoncee = charges.find((c) => c.m === annonce)!.charge;
+        expect(chargeAnnoncee).toBeCloseTo(minimum, 6);
+      }
+    }
+  });
+
+  it("chiffre l'économie annoncée comme l'écart réel de charge entre modalité courante et optimale", () => {
+    for (const mode of PARTICIPATION_VERSEMENT_MODES) {
+      const inputs = avecMode(mode);
+      const r = computeSimulation(inputs);
+      const actuelle = socOf(inputs).partDirigeant;
+      const optimale = socOf({ ...inputs, modeVersementParticipation: r.modeVersementOptimal }).partDirigeant;
+      expect(r.economieModeVersementOptimal).toBeCloseTo(actuelle - optimale, 6);
+    }
   });
 
   it("n'annonce aucune économie quand la modalité optimale est déjà retenue", () => {
-    const r = computeSimulation(avecMode("retenue_brute"));
-    expect(r.modeVersementOptimal).toBe("retenue_brute");
+    const inputs = avecMode("retenue_nette");
+    const optimal = computeSimulation(inputs).modeVersementOptimal;
+    const r = computeSimulation({ ...inputs, modeVersementParticipation: optimal });
+    expect(r.modeVersementOptimal).toBe(optimal);
     expect(r.economieModeVersementOptimal).toBeCloseTo(0, 6);
   });
 
@@ -1092,5 +1131,44 @@ describe("computeSimulation — participation compensée par une augmentation de
     expect(avec.detail.some((d) => d.label.includes("Augmentation de rémunération compensant"))).toBe(true);
     const sans = socOf(base({ compenserParticipationParAugmentationSalaire: false }));
     expect(sans.detail.some((d) => d.label.includes("Augmentation de rémunération compensant"))).toBe(false);
+  });
+});
+
+describe("computeSimulation — régression : IK supérieures au coût réel du véhicule", () => {
+  /** Usage 100% professionnel et fort kilométrage : le barème IK peut dépasser le coût du véhicule. */
+  function surRemboursement(): SimulationInputs {
+    return {
+      ...createDefaultInputs(),
+      financingMode: "lld",
+      personalFinancingMode: "lld",
+      privateUsePercent: 0,
+      isElectric: false,
+      co2EmissionsGkm: 120,
+      annualFuelPrivateCost: 0,
+    };
+  }
+
+  it("laisse apparaître le gain du dirigeant plutôt que de le borner à zéro", () => {
+    const r = computeSimulation(surRemboursement());
+    // Le remboursement excède le coût supporté : le « coût » du dirigeant est négatif, c'est un gain.
+    expect(r.ikReimbursement).toBeGreaterThan(0);
+    expect(r.coutScenarioPersonnel).toBeLessThan(0);
+  });
+
+  it("conserve l'identité part société + part dirigeant = coût global malgré ce gain", () => {
+    // C'est l'invariant qu'un bornage à zéro rompait : la part société continuait d'intégrer l'IK
+    // versée en totalité tandis que la part dirigeant était écrêtée, si bien que les deux parts
+    // affichées ne totalisaient plus le coût global de la ligne.
+    for (const opt of computeSimulation(surRemboursement()).allOptions) {
+      expect(opt.partSociete + opt.partDirigeant, opt.label).toBeCloseTo(opt.globalCostAnnual, 6);
+    }
+  });
+
+  it("reste cohérent quel que soit le mode de financement personnel retenu", () => {
+    for (const mode of ["comptant", "credit", "loa", "lld"] as const) {
+      const r = computeSimulation({ ...surRemboursement(), personalFinancingMode: mode });
+      const opt = r.allOptions.find((o) => o.owner === "personnel" && o.mode === mode)!;
+      expect(opt.partSociete + opt.partDirigeant, mode).toBeCloseTo(opt.globalCostAnnual, 6);
+    }
   });
 });
