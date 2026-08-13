@@ -158,6 +158,12 @@ export interface SimulationInputs {
   personalFinancingMode: FinancingMode; // mode retenu côté personnel pour l'affichage détaillé
   financing: FinancingInputs;
 
+  // Coût de sortie du résultat de la société vers le patrimoine personnel du dirigeant (PFU 30% par
+  // défaut). Sert au point de vue « poche du dirigeant » : une charge supportée par la société est
+  // payée avec des euros qui, pour arriver dans sa poche, auraient subi ce prélèvement. Elle lui
+  // coûte donc moins qu'un euro déjà net. À 0, ce point de vue redevient le coût consolidé.
+  tauxExtractionResultat: number;
+
   // Projection
   projectionYears: number; // défaut 5
 }
@@ -167,6 +173,7 @@ export const DEFAULT_TNS_RATE = 0.43;
 export const DEFAULT_CORPORATE_TAX_RATE = 0.25;
 export const DEFAULT_IK_RATE = 0.5;
 export const DEFAULT_TVA_RATE = 0.2;
+export const DEFAULT_PFU_RATE = 0.3; // prélèvement forfaitaire unique sur les dividendes (12,8% IR + 17,2% prélèvements sociaux)
 export const IK_MAJORATION_ELECTRIQUE = 0.2; // majoration légale de 20% du barème IK pour les véhicules électriques
 export const ALL_FINANCING_MODES: FinancingMode[] = ["comptant", "credit", "loa", "lld"];
 
@@ -230,6 +237,7 @@ export function createDefaultInputs(): SimulationInputs {
     personalFinancingMode: "credit",
     financing: createDefaultFinancingInputs(vehiclePrice),
 
+    tauxExtractionResultat: DEFAULT_PFU_RATE,
     projectionYears: 5,
   };
 
@@ -304,6 +312,11 @@ export interface GlobalOption {
   globalCostAnnual: number;
   partSociete: number; // coût net réellement supporté par la société (après économies d'impôt)
   partDirigeant: number; // coût net réellement supporté par le dirigeant (cash, après IK le cas échéant)
+  // Coût vu depuis le patrimoine personnel du dirigeant : ce qu'il paie lui-même, plus ce que paie
+  // la société valorisé au net de son coût de sortie (cf. tauxExtractionResultat). Une charge
+  // supportée par la société ampute une richesse qui, pour rejoindre sa poche, aurait subi le PFU :
+  // elle lui coûte donc moins qu'un euro déjà net. Ce point de vue peut inverser le classement.
+  coutPocheDirigeant: number;
   devientProprietaire: boolean; // le véhicule est-il possédé à l'issue de la période (comptant/crédit, ou LOA option levée) ?
   valeurResiduelleEstimee: number; // valeur de marché estimée du véhicule en fin de période — 0 si jamais possédé (LLD, LOA sans option)
   detail: GlobalOptionDetailLine[]; // détail du calcul, affiché au dépliage de l'option dans l'UI
@@ -378,6 +391,7 @@ export interface SimulationResults {
 
   // Toutes les combinaisons possibles {société|personnel} × {comptant|crédit|LOA|LLD}, triées par coût global croissant
   allOptions: GlobalOption[];
+  bestOptionPocheDirigeant: GlobalOption; // meilleure option vue depuis la poche du dirigeant (euros société valorisés nets de leur coût de sortie)
   bestOption: GlobalOption;
 
   // Comparaison des deux scénarios actuellement sélectionnés (financingMode / personalFinancingMode)
@@ -1212,9 +1226,22 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         ],
       },
     ];
-  }).sort((a, b) => a.globalCostAnnual - b.globalCostAnnual);
+  })
+    // Second point de vue, calculé une fois les deux parts connues : ce que l'option coûte au
+    // patrimoine personnel du dirigeant. Les euros dépensés par la société sont valorisés au net de
+    // leur coût de sortie — ils n'auraient rejoint sa poche qu'amputés du PFU. Ce point de vue peut
+    // renverser le classement, une charge logée dans la société pesant moins qu'une charge payée
+    // avec de l'argent déjà net.
+    .map((option) => ({
+      ...option,
+      coutPocheDirigeant:
+        option.partDirigeant + option.partSociete * (1 - Math.min(Math.max(inputs.tauxExtractionResultat, 0), 1)),
+    }))
+    .sort((a, b) => a.globalCostAnnual - b.globalCostAnnual);
 
   const bestOption = allOptions[0];
+  /** Meilleure option vue depuis la poche du dirigeant — pas nécessairement la même que bestOption. */
+  const bestOptionPocheDirigeant = [...allOptions].sort((a, b) => a.coutPocheDirigeant - b.coutPocheDirigeant)[0];
 
   const difference = societe.globalCostSociete - personnel.globalCostPersonnel;
   const recommandation: SimulationResults["recommandation"] =
@@ -1266,6 +1293,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     tauxMarginalEffectif: resolvedTax.tauxMarginalEffectif,
     ...personnel,
     allOptions,
+    bestOptionPocheDirigeant,
     bestOption,
     difference,
     recommandation,

@@ -6,6 +6,7 @@ import {
   PARTICIPATION_VERSEMENT_MODES,
   DEFAULT_CORPORATE_TAX_RATE,
   DEFAULT_IK_RATE,
+  DEFAULT_PFU_RATE,
   DEFAULT_TNS_RATE,
   DEFAULT_TVA_RATE,
   applyVehicleModel,
@@ -45,6 +46,13 @@ const FINANCING_LABELS: Record<FinancingMode, string> = {
 
 type SortCriterion = "global" | "societe" | "personnel";
 type CostPeriod = "annuel" | "mensuel";
+/**
+ * Point de vue retenu pour lire le comparatif.
+ * — « consolide » : société et dirigeant à parité, un euro valant un euro de chaque côté ;
+ * — « poche » : les euros dépensés par la société sont valorisés au net de leur coût de sortie
+ *   (PFU), puisqu'ils n'auraient rejoint le patrimoine du dirigeant qu'amputés de ce prélèvement.
+ */
+type Perspective = "consolide" | "poche";
 
 const SORT_LABELS: Record<SortCriterion, string> = {
   global: "Coût global (recommandé)",
@@ -164,6 +172,16 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`🏆 Meilleure option : ${r.bestOption.label} — ${formatEUR(r.bestOption.globalCostAnnual)}/an`);
   push("");
   push("— Comparaison de toutes les options (coût global annuel) —");
+  push(
+    "Note de lecture : le coût global additionne les euros de la société et ceux du dirigeant à parité. Si le résultat de la société",
+  );
+  push(
+    `est destiné au patrimoine personnel, une charge qu'elle supporte ne coûte en réalité que ${formatPercent(1 - sim.tauxExtractionResultat)} de son montant`,
+  );
+  push(
+    `(net de son coût de sortie, ${formatPercent(sim.tauxExtractionResultat)}). De ce point de vue, la meilleure option devient : ${r.bestOptionPocheDirigeant.label} — ` +
+      `${formatEUR(r.bestOptionPocheDirigeant.coutPocheDirigeant)}/an.`,
+  );
   for (const opt of r.allOptions) {
     const residuel = opt.devientProprietaire ? `, valeur résiduelle fin de période ${formatEUR(opt.valeurResiduelleEstimee)}` : ", véhicule restitué (rien)";
     push(`  ${opt.label} : ${formatEUR(opt.globalCostAnnual)}/an (dont société ${formatEUR(opt.partSociete)} · dont dirigeant ${formatEUR(opt.partDirigeant)}${residuel})`);
@@ -188,6 +206,7 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
   const [sortCriterion, setSortCriterion] = useState<SortCriterion>("global");
   const [expandedOptions, setExpandedOptions] = useState<Set<string>>(new Set());
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
+  const [perspective, setPerspective] = useState<Perspective>("consolide");
   const [showResidualValue, setShowResidualValue] = useState(false);
   const [borneInputs, setBorneInputs] = useState<BorneRechargeInputs>(() => createDefaultBorneRechargeInputs());
 
@@ -204,6 +223,11 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
 
   function toPeriod(annualValue: number): number {
     return costPeriod === "mensuel" ? annualValue / 12 : annualValue;
+  }
+
+  /** Coût d'une option selon le point de vue retenu (consolidé, ou ramené à la poche du dirigeant). */
+  function coutSelonPerspective(option: { globalCostAnnual: number; coutPocheDirigeant: number }): number {
+    return perspective === "poche" ? option.coutPocheDirigeant : option.globalCostAnnual;
   }
 
   const results = useMemo(() => computeSimulation(inputs), [inputs]);
@@ -307,7 +331,10 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
   const partRemunerationDansBenefice =
     beneficeAvantRemuneration > 0 ? remunerationGlobaleAnnuelle / beneficeAvantRemuneration : 0;
 
-  const best = results.bestOption;
+  // La bannière suit le point de vue retenu dans le comparatif : afficher l'optimum consolidé alors
+  // que le tableau classe selon la poche du dirigeant désignerait deux gagnants différents au même
+  // écran.
+  const best = perspective === "poche" ? results.bestOptionPocheDirigeant : results.bestOption;
   const currentIsBest = best.owner === "societe" ? inputs.financingMode === best.mode : inputs.personalFinancingMode === best.mode;
 
   return (
@@ -1528,11 +1555,14 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
         <div className="layout__results">
           <div className="banner banner--societe">
             <strong>
-              Option la moins coûteuse au global : {best.label} — {formatEUR(toPeriod(best.globalCostAnnual))}
+              {perspective === "poche" ? "Option la moins coûteuse pour votre poche" : "Option la moins coûteuse au global"}{" "}
+              : {best.label} — {formatEUR(toPeriod(coutSelonPerspective(best)))}
               {PERIOD_SUFFIX[costPeriod]}
             </strong>
             <span>
-              Coût consolidé (société + dirigeant), toutes charges, cotisations et économies d'impôt comprises.
+              {perspective === "poche"
+                ? `Ce que vous payez vous-même, plus ce que paie la société valorisé à ${formatPercent(1 - inputs.tauxExtractionResultat)} de son montant — net de son coût de sortie vers votre patrimoine.`
+                : "Coût consolidé (société + dirigeant), toutes charges, cotisations et économies d'impôt comprises."}
             </span>
             {!currentIsBest && (
               <button
@@ -1561,6 +1591,24 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   ))}
                 </select>
               </Field>
+              <div className="period-switch" role="group" aria-label="Point de vue retenu pour le coût">
+                <button
+                  type="button"
+                  className={perspective === "consolide" ? "active" : ""}
+                  onClick={() => setPerspective("consolide")}
+                  title="Société et dirigeant à parité : un euro vaut un euro de chaque côté."
+                >
+                  Consolidé
+                </button>
+                <button
+                  type="button"
+                  className={perspective === "poche" ? "active" : ""}
+                  onClick={() => setPerspective("poche")}
+                  title="Les euros dépensés par la société sont valorisés au net de leur coût de sortie (PFU) : ils n'auraient rejoint votre poche qu'amputés de ce prélèvement."
+                >
+                  Poche du dirigeant
+                </button>
+              </div>
               <div className="period-switch" role="group" aria-label="Affichage annuel ou mensuel">
                 <button
                   type="button"
@@ -1586,11 +1634,53 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                 🚗💰 {showResidualValue ? "Masquer" : "Afficher"} la valeur résiduelle
               </button>
             </div>
+            {perspective === "poche" ? (
+              <div className="perspective-note">
+                <p>
+                  <strong>Un euro dépensé par la société ne vous coûte pas un euro.</strong> Cette richesse, pour
+                  rejoindre votre patrimoine, aurait d'abord supporté son coût de sortie — {formatPercent(inputs.tauxExtractionResultat)}{" "}
+                  de PFU sur des dividendes. Les charges logées dans la société sont donc valorisées ici à{" "}
+                  {formatPercent(1 - inputs.tauxExtractionResultat)} de leur montant, tandis que ce que vous payez
+                  vous-même compte pour sa valeur pleine. Ce point de vue est le bon si vous êtes seul associé et
+                  destinez le résultat à votre patrimoine ; le point de vue consolidé l'est si le résultat reste
+                  investi dans l'entreprise.
+                </p>
+                <Field label="Coût de sortie du résultat vers votre patrimoine">
+                  <ResetableNumberInput
+                    step="0.01"
+                    value={inputs.tauxExtractionResultat}
+                    defaultValue={DEFAULT_PFU_RATE}
+                    formatDefault={(v) => formatPercent(v)}
+                    onChange={(v) => update("tauxExtractionResultat", v)}
+                  />
+                </Field>
+                <RuleNote ruleId="cout-sortie-resultat-pfu" />
+                {results.bestOptionPocheDirigeant.label !== results.allOptions[0].label && (
+                  <p className="warning-block">
+                    ⚠️ Ce point de vue <strong>renverse le classement</strong> : « {results.allOptions[0].label} » reste
+                    la meilleure option au coût consolidé, mais « {results.bestOptionPocheDirigeant.label} » l'emporte
+                    du point de vue de votre poche. L'écart tient entièrement à la répartition entre société et
+                    dirigeant, pas au coût réel du véhicule — arbitrez selon la destination que vous donnez au résultat.
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="field__hint">
+                Point de vue consolidé : société et dirigeant à parité, un euro valant un euro de chaque côté. C'est
+                l'hypothèse implicite de tout comparatif de ce type — elle suppose que le résultat de la société vous
+                importe autant que votre trésorerie personnelle. Basculez sur « Poche du dirigeant » si vous destinez
+                ce résultat à votre patrimoine : les charges portées par la société y sont alors valorisées nettes de
+                leur coût de sortie, ce qui peut renverser le classement.
+              </p>
+            )}
             <table className="projection-table">
               <thead>
                 <tr>
                   <th>Option</th>
-                  <th>Coût global {costPeriod === "annuel" ? "annuel" : "mensuel"}</th>
+                  <th>
+                    {perspective === "poche" ? "Coût pour votre poche" : "Coût global"}{" "}
+                    {costPeriod === "annuel" ? "annuel" : "mensuel"}
+                  </th>
                   <th></th>
                   {showResidualValue && <th>Valeur résiduelle en fin de période</th>}
                 </tr>
@@ -1600,10 +1690,12 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   .sort((a, b) => {
                     if (sortCriterion === "societe") return a.partSociete - b.partSociete;
                     if (sortCriterion === "personnel") return a.partDirigeant - b.partDirigeant;
-                    return a.globalCostAnnual - b.globalCostAnnual;
+                    return coutSelonPerspective(a) - coutSelonPerspective(b);
                   })
                   .map((opt, idx) => {
-                    const isGlobalBest = opt.label === results.allOptions[0].label;
+                    const meilleure =
+                      perspective === "poche" ? results.bestOptionPocheDirigeant : results.allOptions[0];
+                    const isGlobalBest = opt.label === meilleure.label;
                     const isExpanded = expandedOptions.has(opt.label);
                     return (
                       <Fragment key={opt.label}>
@@ -1620,10 +1712,10 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                               {formatEUR(toPeriod(opt.partDirigeant))}
                             </div>
                           </td>
-                          <td>{formatEUR(toPeriod(opt.globalCostAnnual))}</td>
+                          <td>{formatEUR(toPeriod(coutSelonPerspective(opt)))}</td>
                           <td>
                             {!isGlobalBest &&
-                              `+${formatEUR(toPeriod(opt.globalCostAnnual - results.allOptions[0].globalCostAnnual))}`}
+                              `+${formatEUR(toPeriod(coutSelonPerspective(opt) - coutSelonPerspective(meilleure)))}`}
                           </td>
                           {showResidualValue && (
                             <td>

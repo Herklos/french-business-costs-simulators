@@ -153,6 +153,40 @@ describe("balayage combinatoire — invariants du moteur", () => {
   });
 });
 
+describe("balayage combinatoire — point de vue « poche du dirigeant »", () => {
+  it("se déduit toujours des deux parts et du coût de sortie retenu", () => {
+    for (const c of COMBINAISONS) {
+      const inputs = construire(c);
+      for (const o of computeSimulation(inputs).allOptions) {
+        expect(o.coutPocheDirigeant, `${o.label} sur ${nom(c)}`).toBeCloseTo(
+          o.partDirigeant + o.partSociete * (1 - inputs.tauxExtractionResultat),
+          6,
+        );
+      }
+    }
+  });
+
+  it("coïncide avec le coût consolidé quand la sortie du résultat est gratuite", () => {
+    for (const c of COMBINAISONS) {
+      const r = computeSimulation({ ...construire(c), tauxExtractionResultat: 0 });
+      for (const o of r.allOptions) {
+        expect(o.coutPocheDirigeant, `${o.label} sur ${nom(c)}`).toBeCloseTo(o.globalCostAnnual, 6);
+      }
+      expect(r.bestOptionPocheDirigeant.coutPocheDirigeant, nom(c)).toBeCloseTo(r.bestOption.globalCostAnnual, 6);
+    }
+  });
+
+  it("retient bien l'option minimisant ce coût", () => {
+    for (const c of COMBINAISONS) {
+      const r = computeSimulation(construire(c));
+      expect(r.bestOptionPocheDirigeant.coutPocheDirigeant, nom(c)).toBeCloseTo(
+        Math.min(...r.allOptions.map((o) => o.coutPocheDirigeant)),
+        6,
+      );
+    }
+  });
+});
+
 describe("balayage combinatoire — participation et modalités", () => {
   // C'EST L'INVARIANT QUI MANQUAIT. Un sacrifice unique ne peut être retranché qu'une fois de
   // l'assiette du dirigeant : soit sur l'AEN (versement prélevé sur des ressources nettes), soit sur

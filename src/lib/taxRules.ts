@@ -330,6 +330,22 @@ export const TAX_RULES: TaxRule[] = [
       "À valider avec un expert-comptable avant de mettre en place le dispositif (facturation, mentions obligatoires, cohérence de la participation avec le prix de marché, régularisations éventuelles en cas de revente).",
   },
   {
+    id: "cout-sortie-resultat-pfu",
+    category: "remuneration_dirigeant",
+    label: "Coût de sortie du résultat vers le patrimoine du dirigeant (PFU)",
+    value: "30 % sur les dividendes (12,8 % d'IR forfaitaire + 17,2 % de prélèvements sociaux)",
+    legalReference: "Art. 200 A CGI (prélèvement forfaitaire unique) ; art. L136-6 CSS",
+    sourceLabel: "Service-Public Entreprendre",
+    sourceUrl: "https://entreprendre.service-public.gouv.fr/vosdroits/F32963",
+    validFrom: "2018-01-01",
+    validUntil: null,
+    notes:
+      "POURQUOI CETTE RÈGLE FIGURE DANS UN SIMULATEUR DE VÉHICULE : tout comparatif « coût global consolidé » additionne les euros de la société et ceux du dirigeant à parité. C'est une hypothèse implicite, et elle n'est vraie que si le résultat de la société reste investi dans l'entreprise.\n\n" +
+      "Si le dirigeant destine ce résultat à son patrimoine, une charge supportée par la société ne l'ampute pas d'un euro de patrimoine personnel mais de la fraction qui lui serait effectivement parvenue, soit 70 % après PFU. Une charge logée dans la société pèse donc MOINS qu'une charge payée avec de l'argent déjà net — ce que le point de vue « poche du dirigeant » du comparatif restitue.\n\n" +
+      "CONSÉQUENCE PRATIQUE : ce changement de point de vue peut RENVERSER le classement des options, en particulier à usage privé élevé, où le scénario « achat personnel » l'emporte au coût consolidé tandis que le scénario « société » l'emporte une fois le coût de sortie pris en compte. Aucun des deux classements n'est faux : ils répondent à des questions différentes. Le taux est paramétrable — le mettre à 0 revient au coût consolidé.\n\n" +
+      "LIMITE : le PFU de 30 % est le régime de droit commun des dividendes. L'option pour le barème progressif, la fiscalité propre aux dirigeants majoritaires de SARL (fraction de dividendes soumise à cotisations au-delà de 10 % du capital), ou une sortie par rémunération plutôt que par dividendes, conduiraient à un coût de sortie différent — d'où le caractère éditable du taux.",
+  },
+  {
     id: "participation-financiere-deduction-aen",
     category: "aen_vehicule",
     label: "Participation financière du bénéficiaire : déduction de l'avantage en nature",

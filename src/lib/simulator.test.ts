@@ -1172,3 +1172,58 @@ describe("computeSimulation — régression : IK supérieures au coût réel du 
     }
   });
 });
+
+describe("computeSimulation — point de vue « poche du dirigeant »", () => {
+  function base(patch: Partial<SimulationInputs> = {}): SimulationInputs {
+    return { ...createDefaultInputs(), privateUsePercent: 90, financingMode: "credit", ...patch };
+  }
+
+  it("valorise les euros supportés par la société nets de leur coût de sortie", () => {
+    const inputs = base();
+    const r = computeSimulation(inputs);
+    for (const o of r.allOptions) {
+      expect(o.coutPocheDirigeant, o.label).toBeCloseTo(
+        o.partDirigeant + o.partSociete * (1 - inputs.tauxExtractionResultat),
+        6,
+      );
+    }
+  });
+
+  it("redevient identique au coût consolidé lorsque la sortie est gratuite", () => {
+    for (const o of computeSimulation(base({ tauxExtractionResultat: 0 })).allOptions) {
+      expect(o.coutPocheDirigeant, o.label).toBeCloseTo(o.globalCostAnnual, 6);
+    }
+  });
+
+  it("ne dépasse jamais le coût consolidé dès lors que la sortie a un coût", () => {
+    for (const taux of [0, 0.15, 0.3, 0.45]) {
+      for (const o of computeSimulation(base({ tauxExtractionResultat: taux })).allOptions) {
+        expect(o.coutPocheDirigeant, `${o.label} @ ${taux}`).toBeLessThanOrEqual(o.globalCostAnnual + 1e-9);
+      }
+    }
+  });
+
+  it("avantage d'autant plus les options portées par la société que le coût de sortie est élevé", () => {
+    const societe = (taux: number) =>
+      computeSimulation(base({ tauxExtractionResultat: taux })).allOptions.find(
+        (o) => o.owner === "societe" && o.mode === "credit",
+      )!;
+    // Plus la sortie coûte cher, moins un euro dépensé par la société pèse sur le patrimoine.
+    expect(societe(0.45).coutPocheDirigeant).toBeLessThan(societe(0.3).coutPocheDirigeant);
+    expect(societe(0.3).coutPocheDirigeant).toBeLessThan(societe(0).coutPocheDirigeant);
+  });
+
+  it("désigne la meilleure option de ce point de vue, qui peut différer de l'optimum consolidé", () => {
+    const r = computeSimulation(base());
+    const minimum = Math.min(...r.allOptions.map((o) => o.coutPocheDirigeant));
+    expect(r.bestOptionPocheDirigeant.coutPocheDirigeant).toBeCloseTo(minimum, 6);
+  });
+
+  it("renverse effectivement le classement sur un usage privé élevé", () => {
+    // Cas documenté dans l'interface : à 90 % d'usage privé, l'achat personnel gagne au coût
+    // consolidé, mais l'option société l'emporte une fois le coût de sortie pris en compte.
+    const r = computeSimulation(base());
+    expect(r.allOptions[0].owner).toBe("personnel");
+    expect(r.bestOptionPocheDirigeant.owner).toBe("societe");
+  });
+});
