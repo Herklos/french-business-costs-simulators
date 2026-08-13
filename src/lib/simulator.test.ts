@@ -963,3 +963,79 @@ describe("computeSimulation — exhaustivité du comparatif annuel/mensuel", () 
     expect(socDe(true).globalCostAnnual).not.toBeCloseTo(socDe(false).globalCostAnnual, 2);
   });
 });
+
+describe("computeSimulation — modalités de versement de la participation", () => {
+  function avecMode(mode: SimulationInputs["modeVersementParticipation"]): SimulationInputs {
+    return {
+      ...createDefaultInputs(),
+      financingMode: "loa",
+      monthlyParticipation: 200,
+      modeVersementParticipation: mode,
+    };
+  }
+  const socOf = (i: SimulationInputs) =>
+    computeSimulation(i).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+
+  it("les modalités sur ressources nettes coûtent au dirigeant le montant versé", () => {
+    for (const mode of ["retenue_nette", "paiement_personnel", "compte_courant"] as const) {
+      const r = computeSimulation(avecMode(mode));
+      expect(r.coutParticipationDirigeant).toBeCloseTo(2400, 6);
+    }
+  });
+
+  it("la réduction de rémunération brute coûte le net abandonné, net d'IR", () => {
+    const inputs = avecMode("retenue_brute");
+    const r = computeSimulation(inputs);
+    const netAbandonne = 2400 / (1 + inputs.tnsContributionRate);
+    expect(r.coutParticipationDirigeant).toBeCloseTo(netAbandonne * (1 - r.tauxIRUtilise), 6);
+    expect(r.coutParticipationDirigeant).toBeLessThan(2400);
+  });
+
+  it("la contrepartie encaissée par la société est identique quelle que soit la modalité", () => {
+    const nette = computeSimulation(avecMode("retenue_nette"));
+    const brute = computeSimulation(avecMode("retenue_brute"));
+    expect(brute.participationNetteSociete).toBeCloseTo(nette.participationNetteSociete, 6);
+    expect(socOf(avecMode("retenue_brute")).partSociete).toBeCloseTo(socOf(avecMode("retenue_nette")).partSociete, 6);
+  });
+
+  it("seul le coût du dirigeant change, et donc le coût global", () => {
+    const nette = socOf(avecMode("retenue_nette"));
+    const brute = socOf(avecMode("retenue_brute"));
+    expect(brute.partDirigeant).toBeLessThan(nette.partDirigeant);
+    expect(nette.globalCostAnnual - brute.globalCostAnnual).toBeCloseTo(
+      nette.partDirigeant - brute.partDirigeant,
+      6,
+    );
+  });
+
+  it("désigne la réduction de rémunération brute comme modalité optimale, avec l'économie chiffrée", () => {
+    const r = computeSimulation(avecMode("retenue_nette"));
+    expect(r.modeVersementOptimal).toBe("retenue_brute");
+    const brute = computeSimulation(avecMode("retenue_brute"));
+    expect(r.economieModeVersementOptimal).toBeCloseTo(2400 - brute.coutParticipationDirigeant, 6);
+  });
+
+  it("n'annonce aucune économie quand la modalité optimale est déjà retenue", () => {
+    const r = computeSimulation(avecMode("retenue_brute"));
+    expect(r.modeVersementOptimal).toBe("retenue_brute");
+    expect(r.economieModeVersementOptimal).toBeCloseTo(0, 6);
+  });
+
+  it("rend les modalités équivalentes en l'absence de cotisations et d'impôt sur le revenu", () => {
+    // Cas dégénéré : sans prélèvement à éviter, renoncer à du brut ne procure plus aucun avantage.
+    const inputs: SimulationInputs = {
+      ...avecMode("retenue_nette"),
+      tnsContributionRate: 0,
+      personalTaxProfile: { ...createDefaultInputs().personalTaxProfile, mode: "manuel", tauxManuel: 0 },
+    };
+    const r = computeSimulation(inputs);
+    expect(r.tauxIRUtilise).toBe(0);
+    expect(r.economieModeVersementOptimal).toBeCloseTo(0, 6);
+  });
+
+  it("ne coûte rien au dirigeant si aucune participation n'est versée", () => {
+    const r = computeSimulation({ ...avecMode("retenue_brute"), monthlyParticipation: 0 });
+    expect(r.coutParticipationDirigeant).toBe(0);
+    expect(r.economieModeVersementOptimal).toBe(0);
+  });
+});

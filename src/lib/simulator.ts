@@ -33,6 +33,39 @@ import { computeEconomieImpotIS } from "./corporateTax";
 import { getVehicleModel } from "./vehicleModels";
 import { DEFAULT_DEPRECIATION_RATE_ANNUAL, estimateResidualValue } from "./vehicleDepreciation";
 
+/**
+ * Modalités par lesquelles le dirigeant peut s'acquitter de sa participation financière. Toutes sont
+ * admises comme contrepartie réelle par le rescrit BOI-RES-TVA-000161 (ce qui ne l'est PAS, c'est le
+ * simple constat d'un avantage en nature sur le bulletin, sans appauvrissement du bénéficiaire).
+ *
+ * Elles se répartissent en deux familles économiques :
+ *  - sur RESSOURCES DÉJÀ NETTES (paiement personnel, retenue sur le net à payer, imputation sur le
+ *    compte courant d'associé) : le dirigeant y consacre de l'argent ayant déjà supporté cotisations
+ *    et impôt sur le revenu. Son coût réel est le montant versé ;
+ *  - sur RÉMUNÉRATION BRUTE (réduction de la rémunération elle-même) : le dirigeant renonce à une
+ *    fraction de rémunération avant cotisations et avant IR. Le même montant de contrepartie lui
+ *    coûte donc nettement moins cher en argent réellement disponible.
+ */
+export type ParticipationVersementMode =
+  | "retenue_nette" // retenue sur le net à payer — pratique la plus courante
+  | "paiement_personnel" // virement ou prélèvement depuis le compte personnel
+  | "compte_courant" // imputation sur le compte courant d'associé
+  | "retenue_brute"; // réduction de la rémunération brute elle-même
+
+export const PARTICIPATION_VERSEMENT_MODES: ParticipationVersementMode[] = [
+  "retenue_nette",
+  "paiement_personnel",
+  "compte_courant",
+  "retenue_brute",
+];
+
+export const PARTICIPATION_VERSEMENT_LABELS: Record<ParticipationVersementMode, string> = {
+  retenue_nette: "Retenue sur le net à payer",
+  paiement_personnel: "Paiement personnel (virement / prélèvement)",
+  compte_courant: "Imputation sur le compte courant d'associé",
+  retenue_brute: "Réduction de la rémunération brute",
+};
+
 export interface SimulationInputs {
   id: string;
   name: string;
@@ -80,6 +113,7 @@ export interface SimulationInputs {
 
   // Optimisations
   monthlyParticipation: number; // participation financière mensuelle du gérant
+  modeVersementParticipation: ParticipationVersementMode; // comment le dirigeant s'acquitte de cette participation
   ikRatePerKm: number; // barème IK €/km utilisé si achat perso + IK
 
   // Alternative "achat perso, mensualité compensée par une augmentation de salaire" : quand activée,
@@ -170,6 +204,7 @@ export function createDefaultInputs(): SimulationInputs {
     personalTaxProfile: createDefaultPersonalTaxProfile(),
 
     monthlyParticipation: 0,
+    modeVersementParticipation: "retenue_nette",
     ikRatePerKm: DEFAULT_IK_RATE,
     compenserMensualiteParAugmentationSalaire: false,
     tvaRecuperableVehicule: false,
@@ -303,6 +338,9 @@ export interface SimulationResults {
   tvaCollecteeSurParticipation: number; // TVA collectée sur la participation financière encaissée du dirigeant
   gainTvaNet: number; // indicateur : tvaDeductible − tvaCollecteeSurParticipation (le calcul du coût utilise les deux termes séparément)
   tvaEffectivementDeductible: boolean; // false si l'option est cochée sans contrepartie versée (mise à disposition gratuite = hors champ)
+  coutParticipationDirigeant: number; // coût réel de la participation pour le dirigeant, selon la modalité de versement retenue
+  modeVersementOptimal: ParticipationVersementMode; // modalité la moins coûteuse pour un même montant de participation
+  economieModeVersementOptimal: number; // économie annuelle obtenue en basculant sur cette modalité (0 si déjà retenue)
   impotSurParticipation: number; // IS/IR généré par la participation encaissée (produit imposable)
   participationNetteSociete: number; // participation encaissée nette de l'impôt qu'elle génère, déduite du coût net société
   participationOptimaleMensuelle: number; // participation mensuelle ramenant exactement l'AEN à 0 — au-delà, plus aucun gain fiscal
@@ -475,6 +513,37 @@ function chargesHorsFinancement(
   return { annualInsurance: inputs.annualInsurance, annualMaintenance: inputs.annualMaintenance };
 }
 
+/**
+ * Coût RÉEL, pour le dirigeant, d'une participation d'un montant donné, selon la modalité retenue.
+ *
+ * La contrepartie reçue par la société est la même dans tous les cas (elle encaisse le montant, ou
+ * économise d'autant sa charge de rémunération — les deux se valent puisqu'un produit imposable et
+ * une charge déductible en moins produisent le même résultat fiscal). Ce qui diffère, c'est ce que
+ * le dirigeant doit sacrifier pour la fournir :
+ *
+ *  - sur ressources déjà nettes : il y consacre de l'argent ayant déjà supporté cotisations et IR.
+ *    Une participation de 100 € lui coûte 100 € ;
+ *  - sur rémunération brute : il renonce à 100 € de rémunération AVANT cotisations et AVANT IR. Il
+ *    ne perd donc que le net correspondant (100 / (1 + taux de cotisations)), lui-même amputé de
+ *    l'IR qu'il aurait supporté dessus. Le sacrifice réel est bien plus faible.
+ *
+ * D'où un écart de coût global qui n'est pas un artefact : verser avec de l'argent déjà taxé, dans
+ * une société où la somme est imposée une seconde fois, revient à subir deux fois le prélèvement.
+ */
+function coutParticipationPourDirigeant(
+  inputs: SimulationInputs,
+  participationAnnual: number,
+  tauxIRUtilise: number,
+  mode: ParticipationVersementMode = inputs.modeVersementParticipation,
+): number {
+  if (participationAnnual <= 0) return 0;
+  if (mode === "retenue_brute") {
+    const netAbandonne = participationAnnual / (1 + inputs.tnsContributionRate);
+    return netAbandonne * (1 - tauxIRUtilise);
+  }
+  return participationAnnual;
+}
+
 /** Résultat complet côté société pour un mode de financement et un % d'usage privé donnés. */
 function computeSocieteForMode(
   inputs: SimulationInputs,
@@ -516,7 +585,9 @@ function computeSocieteForMode(
   // mais il doit apparaître de chaque côté pour que la répartition société/dirigeant soit exacte.
   // Le montant versé n'est pas plafonné par l'AEN : au-delà du point où l'AEN est ramené à 0, le
   // dirigeant continue de payer sans contrepartie fiscale (cf. participationOptimaleMensuelle).
-  const coutTotalGerantSociete = cotisationsTNS + irEstimee + participationAnnual;
+  // Le coût retenu dépend de la modalité de versement — cf. coutParticipationPourDirigeant.
+  const coutParticipationDirigeant = coutParticipationPourDirigeant(inputs, participationAnnual, tauxIRUtilise);
+  const coutTotalGerantSociete = cotisationsTNS + irEstimee + coutParticipationDirigeant;
 
   // Plafond de déduction fiscale de l'amortissement (ou du loyer LOA/LLD au prorata) selon les
   // émissions de CO2 — art. 39-4 CGI. La fraction excédentaire doit être réintégrée au résultat
@@ -639,6 +710,22 @@ function computeSocieteForMode(
     tvaCollecteeSurParticipation,
     gainTvaNet,
     tvaEffectivementDeductible,
+    coutParticipationDirigeant,
+    // Modalité de versement la moins coûteuse. La contrepartie encaissée par la société est
+    // identique quelle que soit la modalité : minimiser le coût supporté par le dirigeant minimise
+    // donc bien le coût global consolidé. On l'évalue en comparant les modalités entre elles plutôt
+    // qu'en la postulant, pour que le cas dégénéré (aucune cotisation ni IR) donne bien une égalité.
+    ...(() => {
+      const couts = PARTICIPATION_VERSEMENT_MODES.map((m) => ({
+        mode: m,
+        cout: coutParticipationPourDirigeant(inputs, participationAnnual, tauxIRUtilise, m),
+      }));
+      const meilleur = couts.reduce((a, b) => (b.cout < a.cout - 1e-9 ? b : a));
+      return {
+        modeVersementOptimal: meilleur.mode,
+        economieModeVersementOptimal: Math.max(0, coutParticipationDirigeant - meilleur.cout),
+      };
+    })(),
     impotSurParticipation,
     participationNetteSociete,
     // Participation mensuelle qui ramène exactement l'AEN à 0. En deçà, chaque euro versé économise
@@ -970,7 +1057,20 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Coût net société", value: s.coutNetSociete },
           { label: "Coût cash dirigeant", value: s.coutTotalGerantSociete },
           ...(s.participationAnnual > 0
-            ? [{ label: "dont participation versée par le dirigeant", value: s.participationAnnual }]
+            ? [
+                {
+                  label: `dont participation (${PARTICIPATION_VERSEMENT_LABELS[inputs.modeVersementParticipation]}), coût réel pour le dirigeant`,
+                  value: s.coutParticipationDirigeant,
+                },
+                ...(inputs.modeVersementParticipation === "retenue_brute"
+                  ? [
+                      {
+                        label: "  ↳ rémunération brute abandonnée (avant cotisations et IR)",
+                        value: s.participationAnnual,
+                      },
+                    ]
+                  : []),
+              ]
             : []),
           ...valeurResiduelleDetailSociete,
         ],

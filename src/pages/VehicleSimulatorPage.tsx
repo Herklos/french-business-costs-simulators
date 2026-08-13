@@ -1,6 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
 import {
+  type ParticipationVersementMode,
   type SimulationInputs,
+  PARTICIPATION_VERSEMENT_LABELS,
+  PARTICIPATION_VERSEMENT_MODES,
   DEFAULT_CORPORATE_TAX_RATE,
   DEFAULT_IK_RATE,
   DEFAULT_TNS_RATE,
@@ -86,6 +89,15 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`Taux de charges sociales sur l'AEN : ${formatPercent(sim.tnsContributionRate)} · Taux d'IS normal : ${formatPercent(sim.corporateTaxRate)}`);
   push(`Bénéfice imposable prévisionnel avant charges véhicule : ${formatEUR(sim.beneficeAvantChargePrevisionnel)}${sim.impositionSociete === "IS" ? ` (éligible taux réduit 15% : ${sim.eligibleTauxReduitPME ? "Oui" : "Non"})` : ""}`);
   push(`Participation financière mensuelle du dirigeant : ${formatEUR(sim.monthlyParticipation)} · Barème IK de base : ${sim.ikRatePerKm} €/km`);
+  if (sim.monthlyParticipation > 0) {
+    push(
+      `Modalité de versement : ${PARTICIPATION_VERSEMENT_LABELS[sim.modeVersementParticipation]} — coût réel pour le dirigeant ${formatEUR(r.coutParticipationDirigeant)}/an ` +
+        `pour ${formatEUR(r.participationAnnual)}/an de contrepartie` +
+        (r.economieModeVersementOptimal > 1
+          ? ` · modalité la moins coûteuse : ${PARTICIPATION_VERSEMENT_LABELS[r.modeVersementOptimal]} (−${formatEUR(r.economieModeVersementOptimal)}/an)`
+          : ""),
+    );
+  }
   push(
     `Participation optimale (ramène l'AEN à 0, mode société sélectionné) : ${formatEUR(r.participationOptimaleMensuelle)}/mois` +
       (sim.monthlyParticipation > 0
@@ -752,6 +764,58 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   tone={results.participationAnnual > 0 ? "good" : "neutral"}
                 />
               </div>
+
+              <Field
+                label="Comment le dirigeant s'acquitte-t-il de cette participation ?"
+                hint="Toutes ces modalités sont admises comme contrepartie réelle par le rescrit BOI-RES-TVA-000161. Elles n'ont pas le même coût : voir la comparaison ci-dessous."
+              >
+                <select
+                  value={inputs.modeVersementParticipation}
+                  onChange={(e) => update("modeVersementParticipation", e.target.value as ParticipationVersementMode)}
+                >
+                  {PARTICIPATION_VERSEMENT_MODES.map((m) => (
+                    <option key={m} value={m}>
+                      {PARTICIPATION_VERSEMENT_LABELS[m]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              {inputs.monthlyParticipation > 0 && (
+                <>
+                  <p className="field__hint">
+                    Coût réel de cette participation pour le dirigeant :{" "}
+                    <strong>{formatEUR(results.coutParticipationDirigeant)}/an</strong> pour{" "}
+                    {formatEUR(results.participationAnnual)}/an de contrepartie fournie à la société.
+                    {inputs.modeVersementParticipation === "retenue_brute"
+                      ? " En abandonnant de la rémunération brute, le dirigeant renonce à une somme avant cotisations et avant impôt : son sacrifice réel est donc inférieur au montant de la contrepartie."
+                      : " Cette modalité mobilise de l'argent ayant déjà supporté cotisations et impôt sur le revenu : le coût réel est égal au montant versé."}
+                  </p>
+                  {results.economieModeVersementOptimal > 1 && (
+                    <div className="optimum-line">
+                      <span>
+                        💡 Modalité la moins coûteuse :{" "}
+                        <strong>{PARTICIPATION_VERSEMENT_LABELS[results.modeVersementOptimal]}</strong> — elle
+                        économiserait {formatEUR(results.economieModeVersementOptimal)}/an à contrepartie identique.
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn--ghost"
+                        onClick={() => update("modeVersementParticipation", results.modeVersementOptimal)}
+                      >
+                        Appliquer
+                      </button>
+                    </div>
+                  )}
+                  {inputs.modeVersementParticipation === "retenue_brute" && (
+                    <p className="warning-block">
+                      ⚠️ Réduire la rémunération brute diminue aussi les droits sociaux qui en dépendent (retraite,
+                      indemnités journalières, prévoyance) et doit être formalisé par une décision d'organe social, au
+                      même titre que la mise à disposition du véhicule. À arbitrer avec votre expert-comptable : le gain
+                      affiché ici est purement fiscal et social immédiat, il n'intègre pas la perte de droits futurs.
+                    </p>
+                  )}
+                </>
+              )}
 
               <div className="optimum-line">
                 <span>
