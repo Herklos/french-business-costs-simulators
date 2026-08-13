@@ -207,6 +207,14 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
   }
 
   const results = useMemo(() => computeSimulation(inputs), [inputs]);
+  // Contrefactuel du montage « participation compensée » : ce que coûterait la même situation sans
+  // l'augmentation compensatrice. Sert à chiffrer explicitement le surcoût du montage plutôt que de
+  // laisser l'utilisateur le déduire d'un écart entre deux lectures du comparatif.
+  const surcoutCompensation = useMemo(() => {
+    if (!inputs.compenserParticipationParAugmentationSalaire || inputs.monthlyParticipation <= 0) return 0;
+    const sans = computeSimulation({ ...inputs, compenserParticipationParAugmentationSalaire: false });
+    return results.globalCostSociete - sans.globalCostSociete;
+  }, [inputs, results.globalCostSociete]);
   const companyTypeConfig = getCompanyType(inputs.country, inputs.companyType);
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
   const defaultCotisationRate = companyTypeConfig?.defaultCotisationRate ?? DEFAULT_TNS_RATE;
@@ -1024,6 +1032,7 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                       ? " En abandonnant de la rémunération brute, le dirigeant renonce à une somme avant cotisations et avant impôt : le versement lui coûte donc moins que sa valeur faciale. En contrepartie, ce sacrifice étant déjà porté par la rémunération amputée, il ne vient PAS en déduction de l'AEN, qui reste imposé pour sa valeur pleine — c'est souvent ce second effet qui l'emporte."
                       : " Cette modalité mobilise de l'argent ayant déjà supporté cotisations et impôt sur le revenu : le versement coûte sa valeur faciale, mais il vient en déduction de l'AEN, donc des cotisations et de l'IR dus dessus."}
                   </p>
+                  <RuleNote ruleId="participation-financiere-deduction-aen" />
                   {results.economieModeVersementOptimal > 1 && (
                     <div className="optimum-line">
                       <span>
@@ -1068,6 +1077,7 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                           </p>
                         </div>
                       </details>
+                      <RuleNote ruleId="renonciation-remuneration-inopposable-urssaf" />
                     </>
                   )}
                   {inputs.modeVersementParticipation !== "retenue_brute" && (
@@ -1085,8 +1095,18 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                       </label>
                       {inputs.compenserParticipationParAugmentationSalaire && (
                         <>
+                          <div className="verdict verdict--bad">
+                            <span className="verdict__label">Ce montage vous coûte</span>
+                            <span className="verdict__value">+{formatEUR(surcoutCompensation)}/an</span>
+                            <span className="verdict__sub">
+                              {formatEUR(results.coutNetAugmentationParticipation)} de coût net d'augmentation pour
+                              éviter {formatEUR(results.aenNetBeforeParticipation * (inputs.tnsContributionRate + results.tauxIRUtilise))} de
+                              cotisations et d'IR. Il est <strong>perdant avant même</strong> de poser la question de sa
+                              légalité.
+                            </span>
+                          </div>
                           <p className="warning-block warning-block--danger">
-                            🚨 <strong>Montage à haut risque juridique — à ne pas mettre en place sans avis d'un
+                            🚨 <strong>Et il est à haut risque juridique — à ne pas mettre en place sans avis d'un
                             avocat fiscaliste.</strong> Faire financer la participation par la société elle-même rend
                             l'opération <strong>circulaire</strong> : la rémunération majorée revient aussitôt sous forme
                             de participation, sans autre effet net que la disparition de l'avantage en nature. Trois

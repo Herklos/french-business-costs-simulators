@@ -330,6 +330,39 @@ export const TAX_RULES: TaxRule[] = [
       "À valider avec un expert-comptable avant de mettre en place le dispositif (facturation, mentions obligatoires, cohérence de la participation avec le prix de marché, régularisations éventuelles en cas de revente).",
   },
   {
+    id: "participation-financiere-deduction-aen",
+    category: "aen_vehicule",
+    label: "Participation financière du bénéficiaire : déduction de l'avantage en nature",
+    value: "Vient en déduction de la valeur de l'AEN, jusqu'à l'annuler si elle l'égale",
+    legalReference: "Art. R242-1 CSS ; BOI-RSA-BASE-30-50-30 ; rescrit BOI-RES-TVA-000161 (formes de contrepartie)",
+    sourceLabel: "URSSAF",
+    sourceUrl: "https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "PRINCIPE : un avantage en nature est constitué lorsque le bénéficiaire dispose d'un bien gratuitement OU moyennant une participation inférieure à sa valeur réelle. La participation qu'il verse vient donc en déduction de la valeur de l'avantage, et l'annule lorsqu'elle l'égale — il n'y a alors plus d'assiette à soumettre à cotisations.\n\n" +
+      "MODALITÉS DE VERSEMENT ADMISES, d'après le rescrit BOI-RES-TVA-000161 : paiement effectif, retenue sur le salaire net ou brut, renoncement à un avantage contractuel convertible en rémunération. En pratique de paie, la retenue s'opère sur le NET à payer, « sans modifier le brut soumis à charges ».\n\n" +
+      "POINT DE VIGILANCE MODÉLISÉ PAR LE SIMULATEUR : une réduction de la rémunération BRUTE ne s'impute pas, en plus, sur l'avantage en nature. Le sacrifice est alors déjà porté par la rémunération amputée ; le déduire une seconde fois de l'avantage retrancherait deux fois un sacrifice unique de l'assiette du bénéficiaire. Le simulateur n'impute donc la participation sur l'AEN que pour les modalités prélevées sur des ressources nettes.\n\n" +
+      "LIMITE : l'URSSAF peut requalifier si la proportion entre les frais réellement engagés par l'entreprise et la participation demandée est manifestement disproportionnée, ou si la participation n'est pas réellement supportée par le bénéficiaire (cf. règle « risque-abus-droit-participation-compensee »).",
+  },
+  {
+    id: "renonciation-remuneration-inopposable-urssaf",
+    category: "risques_juridiques",
+    label: "Renonciation à une rémunération déjà due : inopposable à l'URSSAF",
+    value: "Les cotisations restent dues sur la rémunération abandonnée",
+    legalReference: "Jurisprudence Cour de cassation (chambre civile 2e / sociale) ; art. L242-1 CSS",
+    sourceLabel: "LégiSocial",
+    sourceUrl:
+      "https://www.legisocial.fr/jurisprudences-sociales/369-la-remuneration-dun-dirigeant-doit-etre-soumise-cotisations-meme-sil-y-renonce-par-la-suite.html",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "DISTINCTION DÉTERMINANTE pour qui envisage de financer une participation en réduisant sa rémunération.\n\n" +
+      "— RÉDUCTION DÉCIDÉE POUR L'AVENIR : la rémunération future est abaissée par décision de l'organe social AVANT d'être due. Rien n'étant dû, rien n'est cotisé ni imposé. C'est la seule voie qui produise réellement l'économie.\n\n" +
+      "— RENONCIATION APRÈS COUP : le dirigeant renonce à encaisser une rémunération déjà due. La Cour de cassation juge cette renonciation INOPPOSABLE À L'URSSAF : les cotisations restent dues sur la somme abandonnée, l'économie sociale disparaît. L'administration fiscale peut en outre y voir une minoration artificielle de l'IS et de l'IR.\n\n" +
+      "Le simulateur ne chiffre que la première voie. Si le montage envisagé relève de la seconde, retenir une modalité de versement « sur ressources nettes », dont le coût correspond au montant effectivement versé.",
+  },
+  {
     id: "risque-abus-droit-participation-compensee",
     category: "risques_juridiques",
     label: "Risque d'abus de droit : participation compensée par une augmentation de rémunération",

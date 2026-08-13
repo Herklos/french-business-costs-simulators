@@ -269,6 +269,38 @@ select:focus {
   border: 1px solid rgba(248, 113, 113, 0.4);
 }
 
+/* Verdict chiffré, mis en avant quand un montage est explicitement perdant ou gagnant. */
+.verdict {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin: 0.6rem 0;
+  padding: 0.7rem 0.9rem;
+  border-radius: 8px;
+  border-left: 4px solid var(--bad);
+  background: rgba(248, 113, 113, 0.13);
+}
+
+.verdict__label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.verdict__value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--bad);
+  line-height: 1.1;
+}
+
+.verdict__sub {
+  font-size: 0.8rem;
+  color: var(--text);
+  line-height: 1.45;
+}
+
 /* Repli « en savoir plus » sous chaque étape d'une check-list. */
 .checklist__more {
   margin: 0.4rem 0 0.2rem;

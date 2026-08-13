@@ -63,3 +63,45 @@ describe("getRuleStatus", () => {
     expect(getRuleStatus(regleAvecEcheance, new Date("2026-12-31"))).toBe("expiring_soon");
   });
 });
+
+describe("intégrité du registre des règles", () => {
+  it("n'expose aucune règle en double", () => {
+    const ids = TAX_RULES.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("renseigne systématiquement référence légale, source et période de validité", () => {
+    for (const rule of TAX_RULES) {
+      expect(rule.legalReference.trim().length, rule.id).toBeGreaterThan(0);
+      expect(rule.sourceLabel.trim().length, rule.id).toBeGreaterThan(0);
+      expect(rule.label.trim().length, rule.id).toBeGreaterThan(0);
+      expect(rule.value.trim().length, rule.id).toBeGreaterThan(0);
+      expect(rule.validFrom, rule.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      if (rule.validUntil !== null) expect(rule.validUntil, rule.id).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    }
+  });
+
+  it("n'ouvre jamais une période de validité qui se referme avant de commencer", () => {
+    for (const rule of TAX_RULES) {
+      if (rule.validUntil) expect(rule.validUntil >= rule.validFrom, rule.id).toBe(true);
+    }
+  });
+
+  it("ne pointe que vers des URL de source exploitables", () => {
+    for (const rule of TAX_RULES) {
+      if (rule.sourceUrl) expect(rule.sourceUrl, rule.id).toMatch(/^https:\/\//);
+    }
+  });
+
+  it("renvoie toujours vers des règles existantes lorsqu'une note en cite une autre", () => {
+    // Les notes se citent mutuellement (« cf. règle "xxx" ») : un renvoi orphelin laisserait le
+    // lecteur sans la précision annoncée.
+    const ids = new Set(TAX_RULES.map((r) => r.id));
+    for (const rule of TAX_RULES) {
+      for (const cite of rule.notes?.match(/« ([a-z0-9-]{8,}) »/g) ?? []) {
+        const id = cite.replace(/[«»\s]/g, "");
+        if (id.includes("-")) expect(ids.has(id), `${rule.id} cite « ${id} », introuvable`).toBe(true);
+      }
+    }
+  });
+});
