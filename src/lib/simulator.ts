@@ -297,7 +297,9 @@ export interface SimulationResults {
   financingAnnual: number; // coût annuel du financement seul (mensualités crédit, loyers LOA/LLD, ou coût comptant/opportunité)
   valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule possédé en fin de période (comptant, crédit, LOA option levée) lissée sur la durée, déduite du décaissement — 0 sinon
   optionAchatAnnualisee: number; // levée d'option d'achat LOA lissée sur la durée du contrat, ajoutée au décaissement — 0 hors LOA ou option non levée
-  tvaDeductible: number; // TVA récupérée sur le véhicule (loyer ou amortissement) + l'entretien — 0 si l'option n'est pas activée
+  tvaDeductible: number; // TVA récupérée au total (récurrente + option d'achat) — 0 si l'option n'est pas activée
+  tvaDeductibleRecurrente: number; // part récurrente : loyer LOA/LLD ou amortissement annuel, + entretien
+  tvaOptionAchatAnnualisee: number; // part issue de la levée d'option d'achat LOA, lissée sur la durée du contrat
   tvaCollecteeSurParticipation: number; // TVA collectée sur la participation financière encaissée du dirigeant
   gainTvaNet: number; // indicateur : tvaDeductible − tvaCollecteeSurParticipation (le calcul du coût utilise les deux termes séparément)
   tvaEffectivementDeductible: boolean; // false si l'option est cochée sans contrepartie versée (mise à disposition gratuite = hors champ)
@@ -632,6 +634,8 @@ function computeSocieteForMode(
     valeurResiduelleAnnualisee,
     optionAchatAnnualisee,
     tvaDeductible,
+    tvaDeductibleRecurrente: baseTvaDeductibleTTC * coefTVA,
+    tvaOptionAchatAnnualisee,
     tvaCollecteeSurParticipation,
     gainTvaNet,
     tvaEffectivementDeductible,
@@ -932,7 +936,23 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
             ? [{ label: "− Valeur résiduelle annualisée du véhicule (revente lissée sur la durée de détention)", value: s.valeurResiduelleAnnualisee }]
             : []),
           ...(s.tvaEffectivementDeductible
-            ? [{ label: "− TVA déductible récupérée (véhicule + entretien)", value: s.tvaDeductible }]
+            ? [
+                {
+                  label:
+                    mode === "comptant" || mode === "credit"
+                      ? "− TVA déductible récupérée (amortissement annuel du prix + entretien)"
+                      : `− TVA déductible récupérée (${FINANCING_LABELS[mode]} : loyers + entretien)`,
+                  value: s.tvaDeductibleRecurrente,
+                },
+                ...(s.tvaOptionAchatAnnualisee > 0
+                  ? [
+                      {
+                        label: "− TVA déductible récupérée sur la levée d'option d'achat, lissée sur la durée",
+                        value: s.tvaOptionAchatAnnualisee,
+                      },
+                    ]
+                  : []),
+              ]
             : []),
           { label: "= Décaissement réel société (total annuel)", value: s.companyCashBaseAnnual },
           { label: "Réintégration fiscale CO2 (plafond amortissement)", value: s.reintegrationFiscaleCO2 },

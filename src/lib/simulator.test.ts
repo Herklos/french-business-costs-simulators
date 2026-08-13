@@ -902,22 +902,54 @@ describe("computeSimulation — exhaustivité du comparatif annuel/mensuel", () 
     }
   });
 
-  it("le coût annuel de chaque option se reconstitue à partir de ses propres lignes de détail", () => {
-    const inputs: SimulationInputs = { ...createDefaultInputs(), financingMode: "loa", monthlyParticipation: 150 };
+  // Exercé avec ET sans récupération de TVA : sans le cas activé, la reconstitution passerait
+  // trivialement (tous les termes de TVA à zéro) et ne vérifierait donc rien de ce côté.
+  it.each([false, true])(
+    "le coût annuel de chaque option se reconstitue à partir de ses lignes de détail (TVA activée : %s)",
+    (tvaRecuperableVehicule) => {
+      const inputs: SimulationInputs = {
+        ...createDefaultInputs(),
+        financingMode: "loa",
+        monthlyParticipation: 150,
+        tvaRecuperableVehicule,
+      };
+      const r = computeSimulation(withFinancingLoa(inputs, { leveeOption: true }));
+      const soc = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+      const val = (fragment: string) => soc.detail.find((d) => d.label.includes(fragment))?.value ?? 0;
+      // Somme de TOUTES les lignes correspondantes : la TVA est décomposée en deux postes.
+      const somme = (fragment: string) =>
+        soc.detail.filter((d) => d.label.includes(fragment)).reduce((acc, d) => acc + d.value, 0);
+
+      const reconstitue =
+        val("Financement du véhicule") +
+        val("option d'achat LOA, lissée") +
+        val("Assurance annuelle") +
+        val("Entretien annuel") +
+        val("Taxes annuelles CO2") -
+        val("Valeur résiduelle annualisée") -
+        somme("TVA déductible récupérée");
+      expect(reconstitue).toBeCloseTo(val("= Décaissement réel société"), 6);
+
+      // Et la décomposition doit bien totaliser la TVA effectivement retenue dans le calcul.
+      expect(somme("TVA déductible récupérée")).toBeCloseTo(r.tvaDeductible, 6);
+    },
+  );
+
+  it("décompose la TVA récupérée en deux lignes vérifiables quand l'option d'achat est levée", () => {
+    const inputs: SimulationInputs = {
+      ...createDefaultInputs(),
+      financingMode: "loa",
+      monthlyParticipation: 150,
+      tvaRecuperableVehicule: true,
+    };
     const r = computeSimulation(withFinancingLoa(inputs, { leveeOption: true }));
     const soc = r.allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
-    const val = (fragment: string) => soc.detail.find((d) => d.label.includes(fragment))?.value ?? 0;
-
-    // Le décaissement affiché doit être exactement la somme algébrique des postes qui le composent.
-    const reconstitue =
-      val("Financement du véhicule") +
-      val("option d'achat LOA") +
-      val("Assurance annuelle") +
-      val("Entretien annuel") +
-      val("Taxes annuelles CO2") -
-      val("Valeur résiduelle annualisée") -
-      val("TVA déductible récupérée");
-    expect(reconstitue).toBeCloseTo(val("= Décaissement réel société"), 6);
+    const lignes = soc.detail.filter((d) => d.label.includes("TVA déductible récupérée"));
+    expect(lignes).toHaveLength(2);
+    expect(lignes[1].label).toContain("levée d'option d'achat");
+    expect(lignes[0].value).toBeCloseTo(r.tvaDeductibleRecurrente, 6);
+    expect(lignes[1].value).toBeCloseTo(r.tvaOptionAchatAnnualisee, 6);
+    expect(r.tvaDeductibleRecurrente + r.tvaOptionAchatAnnualisee).toBeCloseTo(r.tvaDeductible, 6);
   });
 
   it("la levée de l'option d'achat déplace bien le coût vers le comparatif (et pas seulement l'affichage)", () => {

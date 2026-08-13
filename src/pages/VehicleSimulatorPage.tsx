@@ -1315,8 +1315,12 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               <li>Économie d'impôt sur la quote-part pro : {formatEUR(results.economieImpotQuotePartPro)}</li>
               {results.tvaEffectivementDeductible && (
                 <li>
-                  TVA récupérée sur le véhicule et l'entretien (déjà déduite du décaissement ci-dessus) :{" "}
-                  {formatEUR(results.tvaDeductible)} — la TVA collectée sur la participation (
+                  TVA récupérée (déjà déduite du décaissement ci-dessus) : {formatEUR(results.tvaDeductible)}, dont{" "}
+                  {formatEUR(results.tvaDeductibleRecurrente)} sur le véhicule et l'entretien
+                  {results.tvaOptionAchatAnnualisee > 0
+                    ? ` et ${formatEUR(results.tvaOptionAchatAnnualisee)} sur la levée d'option d'achat lissée`
+                    : ""}{" "}
+                  — la TVA collectée sur la participation (
                   {formatEUR(results.tvaCollecteeSurParticipation)}) est reversée au Trésor et retirée de la
                   participation encaissée, qui n'est donc imposée que sur sa base HT
                 </li>
