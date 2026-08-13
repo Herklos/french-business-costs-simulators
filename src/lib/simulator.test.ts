@@ -598,11 +598,45 @@ describe("computeSimulation — TVA déductible sur participation financière (r
     expect(beaucoup.tvaDeductible - peu.tvaDeductible).toBeCloseTo(1200 * coef, 6);
   });
 
-  it("réduit le décaissement réel de la société du gain net de TVA", () => {
+  it("réduit le décaissement réel de la société de la seule TVA récupérée", () => {
+    // La TVA collectée sur la participation n'entre PAS dans le décaissement : elle est prise en
+    // compte en ramenant la participation encaissée à son montant HT (cf. test dédié ci-dessous),
+    // sans quoi elle serait comptée deux fois.
     const sans = computeSimulation(baseTva({ tvaRecuperableVehicule: false }));
     const avec = computeSimulation(baseTva({ tvaRecuperableVehicule: true }));
-    expect(sans.companyCashBaseAnnual - avec.companyCashBaseAnnual).toBeCloseTo(avec.gainTvaNet, 6);
-    expect(avec.gainTvaNet).toBeGreaterThan(0);
+    expect(sans.companyCashBaseAnnual - avec.companyCashBaseAnnual).toBeCloseTo(avec.tvaDeductible, 6);
+    expect(avec.tvaDeductible).toBeGreaterThan(0);
+  });
+
+  it("neutralise l'option si aucune contrepartie n'est versée (mise à disposition gratuite = hors champ)", () => {
+    // Rescrit BOI-RES-TVA-000161 : un avantage en nature sans contrepartie réelle n'ouvre aucun droit
+    // à déduction. Cocher l'option sans participation ne doit donc rien changer au résultat.
+    const sansOption = baseTva({ tvaRecuperableVehicule: false, monthlyParticipation: 0 });
+    const avecOption = baseTva({ tvaRecuperableVehicule: true, monthlyParticipation: 0 });
+    const r = computeSimulation(avecOption);
+    expect(r.tvaEffectivementDeductible).toBe(false);
+    expect(r.tvaDeductible).toBe(0);
+    expect(r.gainTvaNet).toBe(0);
+    const a = computeSimulation(sansOption).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    const b = computeSimulation(avecOption).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    expect(b.globalCostAnnual).toBeCloseTo(a.globalCostAnnual, 9);
+  });
+
+  it("n'impose la participation encaissée que sur sa base HT (la TVA collectée n'est pas un produit)", () => {
+    const inputs = baseTva({ tvaRecuperableVehicule: true, monthlyParticipation: 300 });
+    const r = computeSimulation(inputs);
+    const baseHT = r.participationAnnual - r.tvaCollecteeSurParticipation;
+    expect(r.tvaCollecteeSurParticipation).toBeCloseTo(3600 / 6, 6); // 20% TTC -> 1/6
+    expect(baseHT).toBeCloseTo(3000, 6);
+    // Taux réduit IS 15% sur le cas par défaut : l'impôt doit porter sur 3 000 €, pas sur 3 600 €.
+    expect(r.impotSurParticipation).toBeCloseTo(3000 * 0.15, 6);
+    expect(r.participationNetteSociete).toBeCloseTo(3000 - 450, 6);
+  });
+
+  it("laisse le coût du dirigeant inchangé par l'option TVA (elle ne concerne que la société)", () => {
+    const sans = computeSimulation(baseTva({ tvaRecuperableVehicule: false, monthlyParticipation: 300 }));
+    const avec = computeSimulation(baseTva({ tvaRecuperableVehicule: true, monthlyParticipation: 300 }));
+    expect(avec.coutTotalGerantSociete).toBeCloseTo(sans.coutTotalGerantSociete, 9);
   });
 
   it("en comptant/crédit, étale la TVA du prix d'achat sur l'amortissement annuel", () => {
@@ -695,6 +729,19 @@ describe("computeSimulation — participation financière du dirigeant", () => {
     for (let p = 0; p <= 150; p += 1) {
       expect(socOf(baseP(p)).globalCostAnnual).toBeGreaterThanOrEqual(coutOptimum - 1e-6);
     }
+  });
+
+  it("reste l'optimum lorsque l'option TVA est activée (la TVA collectée renchérit chaque euro versé)", () => {
+    const withTva = (p: number): SimulationInputs => ({ ...baseP(p), tvaRecuperableVehicule: true });
+    const socTva = (p: number) =>
+      computeSimulation(withTva(p)).allOptions.find((o) => o.owner === "societe" && o.mode === "loa")!;
+    const optimum = computeSimulation(withTva(0)).participationOptimaleMensuelle;
+    let meilleur = { p: -1, cout: Infinity };
+    for (let p = 1; p <= 200; p += 1) {
+      const cout = socTva(p).globalCostAnnual;
+      if (cout < meilleur.cout) meilleur = { p, cout };
+    }
+    expect(Math.abs(meilleur.p - optimum)).toBeLessThan(1.5);
   });
 
   it("au-delà de l'optimum, chaque euro versé augmente le coût global", () => {

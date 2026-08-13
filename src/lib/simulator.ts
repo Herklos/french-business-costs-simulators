@@ -288,7 +288,8 @@ export interface SimulationResults {
   valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule (comptant/crédit) lissée sur la durée, déduite du décaissement — 0 sinon
   tvaDeductible: number; // TVA récupérée sur le véhicule (loyer ou amortissement) + l'entretien — 0 si l'option n'est pas activée
   tvaCollecteeSurParticipation: number; // TVA collectée sur la participation financière encaissée du dirigeant
-  gainTvaNet: number; // tvaDeductible − tvaCollecteeSurParticipation, déduit du décaissement société
+  gainTvaNet: number; // indicateur : tvaDeductible − tvaCollecteeSurParticipation (le calcul du coût utilise les deux termes séparément)
+  tvaEffectivementDeductible: boolean; // false si l'option est cochée sans contrepartie versée (mise à disposition gratuite = hors champ)
   impotSurParticipation: number; // IS/IR généré par la participation encaissée (produit imposable)
   participationNetteSociete: number; // participation encaissée nette de l'impôt qu'elle génère, déduite du coût net société
   participationOptimaleMensuelle: number; // participation mensuelle ramenant exactement l'AEN à 0 — au-delà, plus aucun gain fiscal
@@ -487,14 +488,25 @@ function computeSocieteForMode(
   //  - l'entretien, qui suit le régime du véhicule auquel il se rattache.
   // Exclus : l'assurance (opération exonérée de TVA, art. 261 C CGI) et les taxes annuelles.
   // En contrepartie, la mise à disposition devient une prestation taxable : la société collecte
-  // de la TVA sur la participation encaissée, qui vient en déduction du gain.
+  // de la TVA sur la participation encaissée.
+  //
+  // CONDITION IMPÉRATIVE : sans contrepartie réelle versée par le dirigeant, la mise à disposition
+  // reste une opération à titre gratuit — donc hors champ de la TVA, sans aucun droit à déduction
+  // (rescrit BOI-RES-TVA-000161 : un avantage en nature constaté sur le bulletin, sans contrepartie
+  // réelle, n'ouvre pas ce droit). L'option est donc neutralisée tant que la participation est nulle,
+  // pour ne pas afficher un gain qui ne serait pas défendable.
   const coefTVA = inputs.tauxTVA / (1 + inputs.tauxTVA); // part de TVA contenue dans un montant TTC
-  const baseTvaDeductibleTTC = inputs.tvaRecuperableVehicule ? composantPlafonnee + inputs.annualMaintenance : 0;
+  const tvaEffectivementDeductible = inputs.tvaRecuperableVehicule && participationAnnual > 0;
+  const baseTvaDeductibleTTC = tvaEffectivementDeductible ? composantPlafonnee + inputs.annualMaintenance : 0;
   const tvaDeductible = baseTvaDeductibleTTC * coefTVA;
-  const tvaCollecteeSurParticipation = inputs.tvaRecuperableVehicule ? participationAnnual * coefTVA : 0;
+  const tvaCollecteeSurParticipation = tvaEffectivementDeductible ? participationAnnual * coefTVA : 0;
+  // Position nette de TVA, exposée à titre d'indicateur. Attention : ce n'est PAS le terme utilisé
+  // dans le calcul du coût ci-dessous — la TVA collectée y est prise en compte via la participation
+  // ramenée à son montant HT, pour éviter de la compter deux fois.
   const gainTvaNet = tvaDeductible - tvaCollecteeSurParticipation;
 
-  // Décaissement réel de la société (indépendant du montage retenu pour l'AEN) : financement + assurance + entretien + taxes − valeur résiduelle annualisée (si véhicule possédé) − gain net de TVA.
+  // Décaissement réel de la société : financement + assurance + entretien + taxes − valeur résiduelle
+  // annualisée (si véhicule possédé) − TVA récupérée (le coût réel des postes concernés devient HT).
   // La participation encaissée n'y figure pas : ce n'est pas une moindre charge mais un PRODUIT
   // imposable, traité séparément ci-dessous pour être taxé sur la totalité de son montant (et non
   // sur sa seule quote-part professionnelle, comme le serait une réduction de charge).
@@ -504,17 +516,19 @@ function computeSocieteForMode(
     inputs.annualMaintenance +
     annualVehicleTax -
     valeurResiduelleAnnualisee -
-    gainTvaNet;
+    tvaDeductible;
   const quotePartPrivéeNonDeductible = companyCashBaseAnnual * ratio;
   const quotePartProfessionnelleBrute = companyCashBaseAnnual - quotePartPrivéeNonDeductible;
   const quotePartProfessionnelleDeductible = Math.max(0, quotePartProfessionnelleBrute - reintegrationFiscaleCO2);
   const economieImpotQuotePartPro = computeEconomieImpot(inputs, quotePartProfessionnelleDeductible, tauxIRUtilise);
 
-  // Participation encaissée : produit imposable en totalité. L'impôt qu'elle génère se calcule avec
-  // la même mécanique (barème IS progressif ou IR selon le régime) que l'économie d'impôt sur une
-  // charge déductible de même montant — d'où la réutilisation de computeEconomieImpot.
-  const impotSurParticipation = computeEconomieImpot(inputs, participationAnnual, tauxIRUtilise);
-  const participationNetteSociete = participationAnnual - impotSurParticipation;
+  // Participation encaissée : produit imposable, mais sur son seul montant HORS TAXE — la TVA
+  // collectée n'est pas un produit, elle est reversée au Trésor. L'impôt qu'elle génère se calcule
+  // avec la même mécanique (barème IS progressif ou IR selon le régime) que l'économie d'impôt sur
+  // une charge déductible de même montant — d'où la réutilisation de computeEconomieImpot.
+  const participationHT = participationAnnual - tvaCollecteeSurParticipation;
+  const impotSurParticipation = computeEconomieImpot(inputs, participationHT, tauxIRUtilise);
+  const participationNetteSociete = participationHT - impotSurParticipation;
   const coutNetSociete = companyCashBaseAnnual - economieImpotQuotePartPro - participationNetteSociete;
 
   const globalCostSociete = coutNetSociete + coutTotalGerantSociete;
@@ -541,6 +555,7 @@ function computeSocieteForMode(
     tvaDeductible,
     tvaCollecteeSurParticipation,
     gainTvaNet,
+    tvaEffectivementDeductible,
     impotSurParticipation,
     participationNetteSociete,
     // Participation mensuelle qui ramène exactement l'AEN à 0. En deçà, chaque euro versé économise
@@ -811,12 +826,8 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           ...(s.valeurResiduelleAnnualisee > 0
             ? [{ label: "− Valeur résiduelle annualisée du véhicule (comptant/crédit, revente lissée sur la durée)", value: s.valeurResiduelleAnnualisee }]
             : []),
-          ...(inputs.tvaRecuperableVehicule
-            ? [
-                { label: "− TVA déductible récupérée (véhicule + entretien)", value: s.tvaDeductible },
-                { label: "+ TVA collectée sur la participation financière", value: s.tvaCollecteeSurParticipation },
-                { label: "= Gain net de TVA", value: s.gainTvaNet },
-              ]
+          ...(s.tvaEffectivementDeductible
+            ? [{ label: "− TVA déductible récupérée (véhicule + entretien)", value: s.tvaDeductible }]
             : []),
           { label: "= Décaissement réel société (total annuel)", value: s.companyCashBaseAnnual },
           ...optionAchatDetail,
@@ -826,7 +837,10 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           ...(s.participationAnnual > 0
             ? [
                 { label: "− Participation encaissée du dirigeant", value: s.participationAnnual },
-                { label: "+ Impôt société sur cette participation (produit imposable)", value: s.impotSurParticipation },
+                ...(s.tvaEffectivementDeductible
+                  ? [{ label: "+ TVA collectée sur cette participation (reversée au Trésor)", value: s.tvaCollecteeSurParticipation }]
+                  : []),
+                { label: "+ Impôt société sur cette participation (produit imposable, base HT)", value: s.impotSurParticipation },
               ]
             : []),
           { label: "Coût net société", value: s.coutNetSociete },

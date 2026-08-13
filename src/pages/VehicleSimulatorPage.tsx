@@ -92,10 +92,14 @@ function buildVehicleExportText(sim: SimulationInputs): string {
         ? ` · impôt société généré par la participation encaissée : ${formatEUR(r.impotSurParticipation)}/an`
         : ""),
   );
-  if (sim.tvaRecuperableVehicule) {
+  if (sim.tvaRecuperableVehicule && r.tvaEffectivementDeductible) {
     push(
-      `TVA récupérée sur le véhicule (participation au prix de marché, taux ${formatPercent(sim.tauxTVA)}) : gain net ${formatEUR(r.gainTvaNet)}/an ` +
-        `(${formatEUR(r.tvaDeductible)} déduits − ${formatEUR(r.tvaCollecteeSurParticipation)} collectés) — options « Société » uniquement`,
+      `TVA récupérée sur le véhicule (participation au prix de marché, taux ${formatPercent(sim.tauxTVA)}) : ${formatEUR(r.tvaDeductible)}/an déduits ` +
+        `sur le véhicule et l'entretien, ${formatEUR(r.tvaCollecteeSurParticipation)}/an collectés sur la participation (position nette ${formatEUR(r.gainTvaNet)}/an) — options « Société » uniquement`,
+    );
+  } else if (sim.tvaRecuperableVehicule) {
+    push(
+      "TVA récupérée sur le véhicule : option cochée mais SANS EFFET — aucune participation versée, donc mise à disposition à titre gratuit, hors du champ de la TVA (rescrit BOI-RES-TVA-000161).",
     );
   }
   if (sim.compenserMensualiteParAugmentationSalaire) {
@@ -854,18 +858,23 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                       />
                     </Field>
                     <StatCard
-                      label="Gain net de TVA (mode société sélectionné)"
+                      label="Position nette de TVA (mode société sélectionné)"
                       value={`${formatEUR(results.gainTvaNet)}/an`}
-                      sub={`${formatEUR(results.tvaDeductible)} récupérés − ${formatEUR(results.tvaCollecteeSurParticipation)} collectés`}
+                      sub={
+                        results.tvaEffectivementDeductible
+                          ? `${formatEUR(results.tvaDeductible)} récupérés − ${formatEUR(results.tvaCollecteeSurParticipation)} collectés`
+                          : "Option sans effet : aucune contrepartie versée"
+                      }
                       tone={results.gainTvaNet > 0 ? "good" : "neutral"}
                     />
                   </div>
-                  {inputs.monthlyParticipation <= 0 && (
+                  {!results.tvaEffectivementDeductible && (
                     <p className="warning-block warning-block--danger">
-                      ⚠️ Aucune participation financière saisie ci-dessus. Sans contrepartie réelle facturée au dirigeant,
-                      la mise à disposition n'est pas une prestation taxable et <strong>le droit à déduction n'est pas
-                      ouvert</strong> : le gain affiché ne serait pas défendable en contrôle. Saisissez une participation
-                      cohérente avec le prix du marché (proche de ce qu'un loueur facturerait pour un véhicule similaire).
+                      🚫 Option sans effet : aucune participation financière n'est saisie ci-dessus. Sans contrepartie
+                      réelle versée par le dirigeant, la mise à disposition reste une opération à titre gratuit, donc{" "}
+                      <strong>hors du champ de la TVA — aucun droit à déduction</strong>. Le calcul neutralise donc
+                      l'option tant que la participation est nulle. Saisissez une participation cohérente avec le prix
+                      du marché pour qu'elle produise son effet.
                     </p>
                   )}
                   <p className="hint-block">
@@ -1281,11 +1290,17 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               <li>Quote-part professionnelle déductible : {formatEUR(results.quotePartProfessionnelleDeductible)}</li>
               <li>Quote-part privée réintégrée (non déductible) : {formatEUR(results.quotePartPrivéeNonDeductible)}</li>
               <li>Économie d'impôt sur la quote-part pro : {formatEUR(results.economieImpotQuotePartPro)}</li>
-              {inputs.tvaRecuperableVehicule && (
+              {results.tvaEffectivementDeductible && (
                 <li>
-                  Gain net de TVA (déjà déduit du décaissement ci-dessus) : {formatEUR(results.gainTvaNet)} —{" "}
-                  {formatEUR(results.tvaDeductible)} récupérés sur le véhicule et l'entretien, moins{" "}
-                  {formatEUR(results.tvaCollecteeSurParticipation)} collectés sur la participation
+                  TVA récupérée sur le véhicule et l'entretien (déjà déduite du décaissement ci-dessus) :{" "}
+                  {formatEUR(results.tvaDeductible)} — la TVA collectée sur la participation (
+                  {formatEUR(results.tvaCollecteeSurParticipation)}) est reversée au Trésor et retirée de la
+                  participation encaissée, qui n'est donc imposée que sur sa base HT
+                </li>
+              )}
+              {inputs.tvaRecuperableVehicule && !results.tvaEffectivementDeductible && (
+                <li className="warning-inline">
+                  Option TVA cochée mais sans effet : aucune participation versée, donc aucun droit à déduction.
                 </li>
               )}
             </ul>
