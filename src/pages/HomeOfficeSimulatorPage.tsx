@@ -188,9 +188,7 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                     </button>
                   ))}
                 </div>
-                <span className="field__hint">
-                  Déplace les charges : copropriété en immeuble, entretien courant en maison.
-                </span>
+                <span className="field__hint">Copropriété en immeuble, entretien courant en maison.</span>
               </div>
               <Field label="Surface totale du logement (m²)">
                 <NumberInput value={inputs.surfaceTotaleM2} onChange={(e) => update("surfaceTotaleM2", Number(e.target.value))} />
@@ -224,42 +222,129 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                   onChange={(e) => update("loyerMarcheM2Mensuel", Number(e.target.value))}
                 />
               </Field>
-              {/* Une <div> plutôt qu'un <Field> : imbriquer un <label> dans un autre est invalide. */}
+              {/* Une <div> plutôt qu'un <Field> : celui-ci rend un <label>, et un bouton encapsulé
+                  dans un label est déclenché par un clic n'importe où sur le libellé. */}
               <div className="field">
-                <span className="field__label">Calcul du loyer</span>
-                <label className="charge-line__toggle">
-                  <input
-                    type="checkbox"
-                    checked={inputs.loyerAutoDepuisPrixM2}
-                    onChange={(e) => update("loyerAutoDepuisPrixM2", e.target.checked)}
-                  />
-                  <span>Calculer automatiquement depuis le prix au m²</span>
-                </label>
+                <span className="field__label">Montant du loyer</span>
+                <div className="toggle-group">
+                  {(
+                    [
+                      [true, "Calculé"],
+                      [false, "Saisi"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={String(value)}
+                      type="button"
+                      className={`btn btn--ghost ${inputs.loyerAutoDepuisPrixM2 === value ? "btn--active" : ""}`}
+                      onClick={() => update("loyerAutoDepuisPrixM2", value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="field__hint">
+                  {inputs.loyerAutoDepuisPrixM2
+                    ? "Déduit du prix au m² et des surfaces."
+                    : "Saisi à la main sur la ligne « Loyer » ci-dessous."}
+                </span>
               </div>
             </div>
-            <p className="hint-block">
-              Quote-part du bureau : <strong>{formatPercent(results.quotePartSurface)}</strong> · Charges retenues
-              (postes activés) : <strong>{parPeriode(results.totalChargesRetenuesAnnuel)}</strong> · Indemnité brute :{" "}
-              <strong>{parPeriode(results.indemniteAnnuelleBrute)}</strong>
-            </p>
-            {inputs.loyerAutoDepuisPrixM2 && (
-              <p className="hint-block">
-                Loyer imputable au bureau : {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois ={" "}
-                <strong>{formatEUR(results.loyerAnnuelBureauRetenu / 12)}</strong>/mois, soit{" "}
-                <strong>{formatEUR(results.loyerAnnuelBureauRetenu)}</strong>/an. La ligne « Loyer » ci-dessous porte la
-                valeur locative du logement entier ({parPeriode(results.loyerAnnuelLogementRetenu)}), ensuite ramenée au
-                bureau par la quote-part de surface — les deux calculs donnent le même montant.
+
+            {/* Synthèse des quatre chiffres qui découlent directement de ce paramétrage : elle évite
+                d'avoir à descendre dans le tableau des charges pour savoir où l'on en est. */}
+            <div className="keyfigures">
+              <div className="keyfigures__head">
+                <span className="keyfigures__title">Ce que ce paramétrage produit</span>
+                <div className="toggle-group toggle-group--mini">
+                  {(
+                    [
+                      ["an", "Annuel"],
+                      ["mois", "Mensuel"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`btn btn--ghost ${periodeAffichage === value ? "btn--active" : ""}`}
+                      onClick={() => setPeriodeAffichage(value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="keyfigures__grid">
+                <div className="keyfigure">
+                  <span className="keyfigure__label">Quote-part du bureau</span>
+                  <span className="keyfigure__value">{formatPercent(results.quotePartSurface)}</span>
+                  <span className="keyfigure__sub">
+                    {inputs.surfaceBureauM2} m² sur {inputs.surfaceTotaleM2} m²
+                  </span>
+                </div>
+                <div className="keyfigure">
+                  <span className="keyfigure__label">Loyer imputé au bureau</span>
+                  <span className="keyfigure__value">{parPeriode(results.loyerAnnuelBureauRetenu)}</span>
+                  <span className="keyfigure__sub">
+                    {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois
+                  </span>
+                </div>
+                <div className="keyfigure">
+                  <span className="keyfigure__label">Charges retenues</span>
+                  <span className="keyfigure__value">{parPeriode(results.totalChargesRetenuesAnnuel)}</span>
+                  <span className="keyfigure__sub">
+                    {results.chargeLinesEffectives.filter((c) => c.enabled).length} postes activés, logement entier
+                  </span>
+                </div>
+                <div className="keyfigure keyfigure--accent">
+                  <span className="keyfigure__label">Indemnité brute</span>
+                  <span className="keyfigure__value">{parPeriode(results.indemniteAnnuelleBrute)}</span>
+                  <span className="keyfigure__sub">charges retenues × quote-part</span>
+                </div>
+              </div>
+
+              {/* Jauge de surface : le seuil de 30 % n'est pas un plafond légal mais le point au-delà
+                  duquel la justification doit être renforcée. Le montrer en permanence vaut mieux que
+                  de n'alerter qu'une fois dépassé. */}
+              <div className="surface-gauge">
+                <div className="surface-gauge__track">
+                  <div
+                    className={`surface-gauge__fill${surfaceDepasseTolerance ? " surface-gauge__fill--over" : ""}`}
+                    style={{ width: `${Math.min(100, surfaceRatio * 100)}%` }}
+                  />
+                  <div className="surface-gauge__marker" style={{ left: `${SURFACE_TOLERANCE * 100}%` }} />
+                </div>
+                <span className="surface-gauge__legend">
+                  Tolérance pratique de {formatPercent(SURFACE_TOLERANCE)} de la surface totale
+                </span>
+              </div>
+            </div>
+
+            {surfaceDepasseTolerance && (
+              <p className="warning-block">
+                ⚠️ Surface du bureau ({formatPercent(surfaceRatio)}) au-delà de la tolérance pratique de 30% de la
+                surface totale généralement admise sans justification renforcée. Restez en mesure de prouver la
+                réalité de cet usage professionnel (photos, plan, absence d'usage personnel de la pièce).
               </p>
             )}
+
             <details className="charge-line__ref">
-              <summary>Vérifier ce loyer de marché — sources publiques</summary>
+              <summary>Comment ce loyer est calculé, et comment le justifier</summary>
               <p>
-                Les valeurs proposées sont des médianes d'agglomération indicatives. En cas de contrôle, la
-                justification attendue reste 2 ou 3 annonces comparables, datées et archivées au moment où le loyer a
-                été fixé.
+                La ligne « Loyer » de la section suivante porte la valeur locative du{" "}
+                <strong>logement entier</strong> ({parPeriode(results.loyerAnnuelLogementRetenu)}), comme tous les
+                autres postes de charge ; elle est ensuite ramenée au bureau par la quote-part de surface. Le résultat
+                est identique à {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois — appliquer
+                directement le prix au m² à la surface du bureau la proratiserait deux fois.
                 <br />
+                <br />
+                Les valeurs proposées par ville sont des médianes d'agglomération indicatives. En cas de contrôle, la
+                justification attendue reste 2 ou 3 annonces comparables, datées et archivées au moment où le loyer a
+                été fixé. Sources publiques pour vérifier ou affiner :
                 {SOURCES_LOYERS.map((s) => (
                   <span key={s.url}>
+                    <br />
                     <br />
                     <a href={s.url} target="_blank" rel="noreferrer noopener">
                       {s.label}
@@ -270,13 +355,6 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
               </p>
             </details>
             <RuleNote ruleId="domicile-loyer-coherent-avec-le-marche" />
-            {surfaceDepasseTolerance && (
-              <p className="warning-block">
-                ⚠️ Surface du bureau ({formatPercent(surfaceRatio)}) au-delà de la tolérance pratique de 30% de la
-                surface totale généralement admise sans justification renforcée. Restez en mesure de prouver la
-                réalité de cet usage professionnel (photos, plan, absence d'usage personnel de la pièce).
-              </p>
-            )}
             <RuleNote ruleId="domicile-surface-bureau-tolerance-30-pourcent" />
           </Section>
 
@@ -285,32 +363,16 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             subtitle="Chaque poste (y compris le loyer) est inclus par défaut mais peut être désactivé individuellement. Les montants pré-remplis sont des ordres de grandeur 2025-2026 : remplacez-les par vos factures réelles, seules opposables en cas de contrôle."
           >
             <div className="charges-toolbar">
-              <div className="toggle-group">
-                {(
-                  [
-                    ["an", "Annuel"],
-                    ["mois", "Mensuel"],
-                  ] as const
-                ).map(([value, label]) => (
-                  <button
-                    key={value}
-                    type="button"
-                    className={`btn btn--ghost ${periodeAffichage === value ? "btn--active" : ""}`}
-                    onClick={() => setPeriodeAffichage(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <span className="charges-toolbar__context">
+                Références pour {inputs.surfaceTotaleM2} m² en{" "}
+                {inputs.typeLogement === "maison" ? "maison individuelle" : "immeuble collectif"},{" "}
+                {inputs.statutOccupant === "locataire" ? "locataire" : "propriétaire"} · montants{" "}
+                {periodeAffichage === "mois" ? "mensuels" : "annuels"}
+              </span>
               <button type="button" className="charge-line__apply" onClick={appliquerReferences}>
                 ↺ Tout réaligner sur les références
               </button>
             </div>
-            <p className="hint-block">
-              Valeurs de référence pour {inputs.surfaceTotaleM2} m² en{" "}
-              {inputs.typeLogement === "maison" ? "maison individuelle" : "immeuble collectif"}, en tant que{" "}
-              {inputs.statutOccupant === "locataire" ? "locataire" : "propriétaire"}.
-            </p>
             <ul className="charge-lines">
               {results.chargeLinesEffectives.map((c) => {
                 const reference = montantReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement);
@@ -354,8 +416,8 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                     {loyerAuto ? (
                       <div className="charge-line__ref">
                         Calculé : {inputs.surfaceTotaleM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois
-                        {periodeAffichage === "an" ? " × 12" : ""}. Décochez « Calculer automatiquement » ci-dessus
-                        pour saisir votre loyer réel.
+                        {periodeAffichage === "an" ? " × 12" : ""}. Basculez « Montant du loyer » sur « Saisi »
+                        ci-dessus pour renseigner votre loyer réel.
                       </div>
                     ) : (
                       infos !== undefined &&
