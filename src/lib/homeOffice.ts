@@ -22,6 +22,14 @@ export type RegimeFoncier = "micro" | "reel";
 export type StatutOccupant = "locataire" | "proprietaire";
 
 /**
+ * Nature du logement. Elle déplace la structure des charges plus qu'elle n'en change le total :
+ * en immeuble collectif l'essentiel de l'entretien passe par les charges de copropriété, en maison
+ * individuelle ce poste disparaît au profit de l'entretien courant, plus élevé et à la charge
+ * directe du propriétaire (chaudière, toiture, jardin).
+ */
+export type TypeLogement = "appartement" | "maison";
+
+/**
  * Deux façons de formaliser la mise à disposition, avec le même traitement fiscal de fond (revenu
  * foncier pour le dirigeant, charge déductible pour la société) mais une robustesse juridique
  * différente :
@@ -49,8 +57,14 @@ export const DEFAULT_CHARGE_LINES: Omit<ChargeLine, "montantAnnuel">[] = [
   { id: "eau", label: "Eau", enabled: true },
   { id: "assuranceHabitation", label: "Assurance habitation", enabled: true },
   { id: "taxeFonciere", label: "Taxe foncière", enabled: true },
-  { id: "entretienCopropriete", label: "Entretien / charges de copropriété", enabled: true },
-  { id: "internetTelephone", label: "Internet / téléphone (quote-part pro)", enabled: false },
+  // Désactivée par défaut : la TEOM figure déjà sur l'avis de taxe foncière, donc dans la ligne
+  // ci-dessus. Ne l'activer qu'en cas de saisie hors TEOM, ou en tant que locataire.
+  { id: "taxeOrduresMenageres", label: "Taxe d'enlèvement des ordures ménagères (TEOM)", enabled: false },
+  { id: "entretienCopropriete", label: "Charges de copropriété", enabled: true },
+  { id: "travauxEntretien", label: "Entretien courant et petites réparations", enabled: true },
+  // Laissé à 0 : seuls ceux qui emploient réellement une aide ménagère ont ce poste à déclarer.
+  { id: "menageNettoyage", label: "Ménage / nettoyage", enabled: true },
+  { id: "internetTelephone", label: "Internet / téléphone", enabled: true },
 ];
 
 export interface HomeOfficeInputs {
@@ -65,6 +79,7 @@ export interface HomeOfficeInputs {
   eligibleTauxReduitPME: boolean; // conditions art. 219 I-b CGI : CA<10M€, capital détenu ≥75% par des personnes physiques
 
   statutOccupant: StatutOccupant;
+  typeLogement: TypeLogement;
   surfaceTotaleM2: number;
   surfaceBureauM2: number;
 
@@ -85,6 +100,14 @@ export interface HomeOfficeInputs {
 
   regimeFoncier: RegimeFoncier; // micro-foncier (abattement 30%) ou réel (charges réelles déduites)
   autresRevenusFonciersFoyer: number; // pour vérifier le plafond micro-foncier (15 000 €)
+
+  /**
+   * Intérêts annuels de l'emprunt immobilier du logement (propriétaire). Ils ne font PAS partie de
+   * la base de l'indemnité — le loyer de marché rémunère déjà la mise à disposition du bien, les y
+   * ajouter compterait deux fois le coût du capital. En revanche, ils sont déductibles du revenu
+   * foncier au régime réel, au prorata de la surface professionnelle (art. 31, I-1°-d CGI).
+   */
+  interetsEmpruntAnnuels: number;
 
   formalisation: Formalisation; // indemnité d'occupation (souple) ou bail professionnel réel (plus robuste)
   fraisMiseEnPlaceBail: number; // coût ponctuel (rédaction, enregistrement) si bail professionnel — 0 sinon
@@ -109,10 +132,11 @@ export interface HomeOfficeInputs {
 export function chargeLinesDeReference(
   surfaceTotaleM2: number,
   statutOccupant: StatutOccupant,
+  typeLogement: TypeLogement,
   lignesActuelles: ChargeLine[] = DEFAULT_CHARGE_LINES.map((c) => ({ ...c, montantAnnuel: 0 })),
 ): ChargeLine[] {
   return lignesActuelles.map((c) => {
-    const reference = montantReferenceCharge(c.id, surfaceTotaleM2, statutOccupant);
+    const reference = montantReferenceCharge(c.id, surfaceTotaleM2, statutOccupant, typeLogement);
     return reference === undefined ? c : { ...c, montantAnnuel: reference };
   });
 }
@@ -120,6 +144,7 @@ export function chargeLinesDeReference(
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
   const surfaceTotaleM2 = 80;
   const statutOccupant: StatutOccupant = "proprietaire";
+  const typeLogement: TypeLogement = "appartement";
   const ville = "lyon";
 
   return {
@@ -132,14 +157,16 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     beneficeAvantChargePrevisionnel: 40000,
     eligibleTauxReduitPME: true,
     statutOccupant,
+    typeLogement,
     surfaceTotaleM2,
     surfaceBureauM2: 12,
     ville,
     loyerMarcheM2Mensuel: prixM2Ville(ville),
     loyerAutoDepuisPrixM2: true,
-    chargeLines: chargeLinesDeReference(surfaceTotaleM2, statutOccupant),
+    chargeLines: chargeLinesDeReference(surfaceTotaleM2, statutOccupant, typeLogement),
     regimeFoncier: "micro",
     autresRevenusFonciersFoyer: 0,
+    interetsEmpruntAnnuels: 0,
     formalisation: "indemnite",
     fraisMiseEnPlaceBail: 0,
     personalTaxProfile: createDefaultPersonalTaxProfile(),
@@ -167,6 +194,8 @@ export interface HomeOfficeResults {
   eligibleMicroFoncier: boolean;
   baseImposableFonciere: number;
   abattementApplique: number;
+  /** Quote-part professionnelle des intérêts d'emprunt déduite — nulle hors régime réel. */
+  interetsEmpruntDeduits: number;
 
   tauxIRUtilise: number;
   irDu: number;
@@ -213,6 +242,7 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
 
   let baseImposableFonciere: number;
   let abattementApplique = 0;
+  let interetsEmpruntDeduits = 0;
   if (regimeEffectif === "micro") {
     abattementApplique = indemniteAnnuelleBrute * ABATTEMENT_MICRO_FONCIER;
     baseImposableFonciere = indemniteAnnuelleBrute - abattementApplique;
@@ -222,7 +252,10 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
     const chargesHorsLoyer = chargeLinesEffectives
       .filter((c) => c.enabled && c.id !== "loyer")
       .reduce((sum, c) => sum + c.montantAnnuel, 0);
-    const chargesDeductibles = chargesHorsLoyer * quotePartSurface;
+    // Les intérêts d'emprunt ne sont pas dans la base de l'indemnité (cf. `interetsEmpruntAnnuels`)
+    // mais sont déductibles du revenu foncier au réel, au prorata de la surface professionnelle.
+    interetsEmpruntDeduits = Math.max(0, inputs.interetsEmpruntAnnuels) * quotePartSurface;
+    const chargesDeductibles = chargesHorsLoyer * quotePartSurface + interetsEmpruntDeduits;
     abattementApplique = chargesDeductibles;
     baseImposableFonciere = Math.max(0, indemniteAnnuelleBrute - chargesDeductibles);
   }
@@ -283,6 +316,7 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
     eligibleMicroFoncier,
     baseImposableFonciere,
     abattementApplique,
+    interetsEmpruntDeduits,
     tauxIRUtilise,
     irDu,
     prelevementsSociaux,

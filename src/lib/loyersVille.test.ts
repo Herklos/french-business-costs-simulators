@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   LOYERS_VILLES,
   LOYER_M2_DEFAUT_AUTRE,
+  SOURCES_LOYERS,
   VILLE_AUTRE,
   findLoyerVille,
   loyerAnnuelLogement,
@@ -59,5 +60,30 @@ describe("loyerAnnuelLogement", () => {
 
   it("surface nulle : loyer nul", () => {
     expect(loyerAnnuelLogement(16, 0)).toBe(0);
+  });
+});
+
+describe("SOURCES_LOYERS — sources publiques citées dans le simulateur", () => {
+  it("expose au moins une source", () => {
+    expect(SOURCES_LOYERS.length).toBeGreaterThan(0);
+  });
+
+  it("chaque source a un libellé, une note et une URL exploitable", () => {
+    for (const s of SOURCES_LOYERS) {
+      expect(s.label.length, s.url).toBeGreaterThan(10);
+      expect(s.note.length, s.url).toBeGreaterThan(30);
+      expect(s.url).toMatch(/^https:\/\/[^\s]+$/);
+      expect(() => new URL(s.url), s.url).not.toThrow();
+      expect(s.url, s.label).not.toMatch(/[,\s]$/);
+    }
+  });
+
+  it("ne cite pas deux fois la même URL", () => {
+    const urls = SOURCES_LOYERS.map((s) => s.url);
+    expect(new Set(urls).size).toBe(urls.length);
+  });
+
+  it("cite la carte des loyers ANIL, seule source officielle couvrant toutes les communes", () => {
+    expect(SOURCES_LOYERS.some((s) => s.url.includes("data.gouv.fr") && s.url.includes("carte-des-loyers"))).toBe(true);
   });
 });

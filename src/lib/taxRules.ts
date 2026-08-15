@@ -475,6 +475,20 @@ export const TAX_RULES: TaxRule[] = [
       "Il n'est pas possible de louer l'intégralité de la résidence principale à sa société (changement de destination) : seule la pièce dédiée à l'usage professionnel peut faire l'objet d'un bail. Le bail professionnel réel formalise davantage la relation (obligations, révision) que la simple indemnité d'occupation, réduisant le risque de requalification en cas de contrôle, au prix de frais de mise en place (rédaction, enregistrement).",
   },
   {
+    id: "foncier-charges-deductibles-regime-reel",
+    category: "revenus_fonciers",
+    label: "Charges déductibles du revenu foncier au régime réel, dont les intérêts d'emprunt",
+    value: "Charges réelles au prorata de la surface professionnelle — les intérêts d'emprunt en font partie",
+    legalReference: "Art. 31, I-1° CGI (dont d : intérêts des dettes contractées pour l'acquisition du bien)",
+    sourceLabel: "BOFiP-Impôts — RFPI, charges déductibles",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1876-PGP.html",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Le choix du régime est structurant : le micro-foncier applique un abattement forfaitaire de 30 % qui REMPLACE toute déduction, tandis que le régime réel déduit les charges effectives. Un propriétaire encore lourdement endetté a donc souvent intérêt au réel, un propriétaire sans emprunt au micro.\n\n" +
+      "POURQUOI LES INTÉRÊTS NE S'AJOUTENT PAS À L'INDEMNITÉ : le loyer de marché rémunère déjà la mise à disposition du bien, coût du capital compris. Les ajouter à la base de l'indemnité les compterait une seconde fois et exposerait la fraction excédentaire à une requalification (cf. règle « domicile-loyer-coherent-avec-le-marche »). Le simulateur les traite donc uniquement en déduction du revenu foncier, au prorata de la surface professionnelle — comme la doctrine l'admet pour un cabinet occupant 10 % de la surface, qui déduit 10 % des intérêts.",
+  },
+  {
     id: "domicile-loyer-coherent-avec-le-marche",
     category: "revenus_fonciers",
     label: "Le loyer ou l'indemnité d'occupation doit être cohérent avec le marché local",

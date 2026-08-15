@@ -707,6 +707,21 @@ td {
   color: var(--text-muted);
 }
 
+/* Sélecteur segmenté compact tenant dans une cellule de formulaire. */
+.toggle-group {
+  display: flex;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.toggle-group .btn {
+  flex: 1;
+  min-width: 0;
+  padding: 0.45rem 0.25rem;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
 /* Valeur de référence 2025-2026 rappelée sous chaque poste, avec sa source dépliable. */
 .charge-line__ref {
   font-size: 0.72rem;

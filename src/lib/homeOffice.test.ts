@@ -147,7 +147,7 @@ describe("createDefaultHomeOfficeInputs — placeholders alignés sur les réfé
   it("chaque poste de charge est pré-rempli à sa valeur de référence", () => {
     const inputs = createDefaultHomeOfficeInputs();
     for (const ligne of inputs.chargeLines) {
-      const reference = montantReferenceCharge(ligne.id, inputs.surfaceTotaleM2, inputs.statutOccupant);
+      const reference = montantReferenceCharge(ligne.id, inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement);
       if (reference === undefined) continue; // le loyer, calculé depuis le prix au m²
       expect(ligne.montantAnnuel).toBe(reference);
     }
@@ -158,24 +158,24 @@ describe("chargeLinesDeReference", () => {
   it("réaligne les montants sur les références sans toucher aux cases cochées", () => {
     const inputs = createDefaultHomeOfficeInputs();
     const modifiees = inputs.chargeLines.map((c) => ({ ...c, montantAnnuel: 1, enabled: c.id === "eau" }));
-    const realignees = chargeLinesDeReference(inputs.surfaceTotaleM2, inputs.statutOccupant, modifiees);
+    const realignees = chargeLinesDeReference(inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement, modifiees);
     for (const ligne of realignees) {
       expect(ligne.enabled).toBe(ligne.id === "eau");
-      const reference = montantReferenceCharge(ligne.id, inputs.surfaceTotaleM2, inputs.statutOccupant);
+      const reference = montantReferenceCharge(ligne.id, inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement);
       expect(ligne.montantAnnuel).toBe(reference ?? 1);
     }
   });
 
   it("passer de propriétaire à locataire annule la taxe foncière", () => {
     const inputs = createDefaultHomeOfficeInputs();
-    const locataire = chargeLinesDeReference(inputs.surfaceTotaleM2, "locataire", inputs.chargeLines);
+    const locataire = chargeLinesDeReference(inputs.surfaceTotaleM2, "locataire", inputs.typeLogement, inputs.chargeLines);
     expect(locataire.find((c) => c.id === "taxeFonciere")?.montantAnnuel).toBe(0);
   });
 
   it("une surface plus grande augmente les postes proportionnels à la surface", () => {
     const inputs = createDefaultHomeOfficeInputs();
-    const petit = chargeLinesDeReference(40, "proprietaire", inputs.chargeLines);
-    const grand = chargeLinesDeReference(120, "proprietaire", inputs.chargeLines);
+    const petit = chargeLinesDeReference(40, "proprietaire", "appartement", inputs.chargeLines);
+    const grand = chargeLinesDeReference(120, "proprietaire", "appartement", inputs.chargeLines);
     const chauffagePetit = petit.find((c) => c.id === "chauffage")?.montantAnnuel ?? 0;
     const chauffageGrand = grand.find((c) => c.id === "chauffage")?.montantAnnuel ?? 0;
     expect(chauffageGrand).toBeCloseTo(3 * chauffagePetit, 0);
@@ -204,6 +204,124 @@ describe("computeHomeOffice — régime micro-foncier / réel", () => {
     const r = computeHomeOffice(inputs);
     expect(r.abattementApplique).toBeCloseTo(r.indemniteAnnuelleBrute * 0.3, 6);
     expect(r.baseImposableFonciere).toBeCloseTo(r.indemniteAnnuelleBrute * 0.7, 6);
+  });
+});
+
+describe("computeHomeOffice — intérêts d'emprunt (art. 31, I-1°-d CGI)", () => {
+  const avecEmprunt: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 20, // quote-part de 25 %, calcul lisible
+    interetsEmpruntAnnuels: 6000,
+  };
+
+  it("au régime réel, seule la quote-part professionnelle des intérêts est déduite", () => {
+    const r = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "reel" });
+    expect(r.interetsEmpruntDeduits).toBeCloseTo(6000 * 0.25, 6);
+  });
+
+  it("au micro-foncier, l'abattement forfaitaire remplace toute déduction d'intérêts", () => {
+    const r = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "micro", autresRevenusFonciersFoyer: 0 });
+    expect(r.eligibleMicroFoncier).toBe(true);
+    expect(r.interetsEmpruntDeduits).toBe(0);
+  });
+
+  it("les intérêts n'entrent JAMAIS dans la base de l'indemnité — le loyer rémunère déjà le bien", () => {
+    const sans = computeHomeOffice({ ...avecEmprunt, interetsEmpruntAnnuels: 0, regimeFoncier: "reel" });
+    const avec = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "reel" });
+    expect(avec.indemniteAnnuelleBrute).toBeCloseTo(sans.indemniteAnnuelleBrute, 6);
+    expect(avec.totalChargesRetenuesAnnuel).toBeCloseTo(sans.totalChargesRetenuesAnnuel, 6);
+    expect(avec.coutNetSociete).toBeCloseTo(sans.coutNetSociete, 6);
+  });
+
+  it("des intérêts déduits réduisent la base imposable et donc l'impôt du dirigeant", () => {
+    const sans = computeHomeOffice({ ...avecEmprunt, interetsEmpruntAnnuels: 0, regimeFoncier: "reel" });
+    const avec = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "reel" });
+    expect(avec.baseImposableFonciere).toBeLessThan(sans.baseImposableFonciere);
+    expect(avec.coutFiscalGerant).toBeLessThan(sans.coutFiscalGerant);
+    expect(avec.gainNetGerant).toBeGreaterThan(sans.gainNetGerant);
+  });
+
+  it("la base imposable ne devient jamais négative, même avec des intérêts colossaux", () => {
+    const r = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "reel", interetsEmpruntAnnuels: 500000 });
+    expect(r.baseImposableFonciere).toBe(0);
+    expect(r.irDu).toBe(0);
+    expect(r.prelevementsSociaux).toBe(0);
+  });
+
+  it("des intérêts négatifs sont neutralisés plutôt que d'augmenter la base imposable", () => {
+    const r = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "reel", interetsEmpruntAnnuels: -5000 });
+    expect(r.interetsEmpruntDeduits).toBe(0);
+  });
+
+  it("l'égalité coutNetGlobal = coût fiscal dirigeant − économie société tient avec des intérêts déduits", () => {
+    const r = computeHomeOffice({ ...avecEmprunt, regimeFoncier: "reel" });
+    expect(r.coutNetGlobal).toBeCloseTo(r.coutFiscalGerant - r.economieImpotSociete, 6);
+    expect(r.coutNetGlobal).toBeCloseTo(r.coutNetSociete - r.gainNetGerant, 6);
+  });
+});
+
+describe("computeHomeOffice — immeuble collectif vs maison individuelle", () => {
+  it("les charges de copropriété disparaissent en maison après réalignement sur les références", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    const maison: HomeOfficeInputs = {
+      ...inputs,
+      typeLogement: "maison",
+      chargeLines: chargeLinesDeReference(inputs.surfaceTotaleM2, inputs.statutOccupant, "maison", inputs.chargeLines),
+    };
+    const r = computeHomeOffice(maison);
+    expect(r.chargeLinesEffectives.find((c) => c.id === "entretienCopropriete")?.montantAnnuel).toBe(0);
+    expect(r.chargeLinesEffectives.find((c) => c.id === "travauxEntretien")?.montantAnnuel).toBeGreaterThan(0);
+  });
+
+  it("le type de logement seul, sans réalignement, ne modifie aucun montant saisi", () => {
+    // Il ne pilote que les VALEURS DE RÉFÉRENCE : basculer le bouton ne doit pas écraser en
+    // silence des factures déjà renseignées.
+    const inputs = createDefaultHomeOfficeInputs();
+    const enMaison = computeHomeOffice({ ...inputs, typeLogement: "maison" });
+    const enImmeuble = computeHomeOffice({ ...inputs, typeLogement: "appartement" });
+    expect(enMaison.indemniteAnnuelleBrute).toBeCloseTo(enImmeuble.indemniteAnnuelleBrute, 6);
+  });
+});
+
+describe("computeHomeOffice — postes de charge ajoutés", () => {
+  it("la TEOM est désactivée par défaut, pour ne pas doubler la taxe foncière", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    expect(inputs.chargeLines.find((c) => c.id === "taxeOrduresMenageres")?.enabled).toBe(false);
+  });
+
+  it("activer la TEOM augmente l'indemnité de sa seule quote-part", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    const teom = inputs.chargeLines.find((c) => c.id === "taxeOrduresMenageres")?.montantAnnuel ?? 0;
+    expect(teom).toBeGreaterThan(0);
+    const avec = computeHomeOffice({
+      ...inputs,
+      chargeLines: inputs.chargeLines.map((c) => (c.id === "taxeOrduresMenageres" ? { ...c, enabled: true } : c)),
+    });
+    const sans = computeHomeOffice(inputs);
+    expect(avec.indemniteAnnuelleBrute - sans.indemniteAnnuelleBrute).toBeCloseTo(teom * sans.quotePartSurface, 6);
+  });
+
+  it("le ménage est pré-rempli à 0 : il n'ajoute rien tant qu'il n'est pas renseigné", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    expect(inputs.chargeLines.find((c) => c.id === "menageNettoyage")?.montantAnnuel).toBe(0);
+  });
+
+  it("internet et téléphone sont activés par défaut", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    expect(inputs.chargeLines.find((c) => c.id === "internetTelephone")?.enabled).toBe(true);
+  });
+
+  it("chaque poste activé contribue à l'indemnité à hauteur de sa quote-part, sans exception", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    const reference = computeHomeOffice(inputs);
+    for (const ligne of inputs.chargeLines) {
+      if (!ligne.enabled) continue;
+      const sansCePoste = computeHomeOffice(disableCharge(inputs, ligne.id));
+      const attendu =
+        ligne.id === "loyer" ? reference.loyerAnnuelBureauRetenu : ligne.montantAnnuel * reference.quotePartSurface;
+      expect(reference.indemniteAnnuelleBrute - sansCePoste.indemniteAnnuelleBrute, ligne.id).toBeCloseTo(attendu, 6);
+    }
   });
 });
 

@@ -55,6 +55,28 @@ export const LOYERS_VILLES: LoyerVille[] = [
   { id: "saint-etienne", label: "Saint-Étienne", prixM2Mensuel: 8.5 },
 ];
 
+/**
+ * Sources publiques permettant de vérifier — et surtout d'affiner à son quartier — la médiane
+ * d'agglomération retenue ci-dessus. Affichées sous le champ « ville » du simulateur.
+ */
+export const SOURCES_LOYERS: { label: string; url: string; note: string }[] = [
+  {
+    label: "Carte des loyers ANIL — indicateurs par commune (data.gouv.fr)",
+    url: "https://www.data.gouv.fr/datasets/carte-des-loyers-indicateurs-de-loyers-dannonce-par-commune-en-2025",
+    note: "Jeu de données officiel couvrant ~34 900 communes, construit sur plus de 9 millions d'annonces. Publié CHARGES COMPRISES : retrancher les charges avant de le comparer à la valeur ci-dessus.",
+  },
+  {
+    label: "Observatoires locaux des loyers (OLL)",
+    url: "https://www.observatoires-des-loyers.org/connaitre-les-loyers/carte-des-niveaux-de-loyers",
+    note: "Loyers médians hors charges par agglomération et par type de bien, sur une soixantaine d'agglomérations — la référence la plus solide là où elle existe.",
+  },
+  {
+    label: "Encadrement des loyers — simulateur officiel",
+    url: "https://www.pap.fr/bailleur/encadrement-loyers",
+    note: "Dans les zones encadrées (Paris, Lille, Lyon, Bordeaux, Montpellier...), le loyer de référence majoré constitue un plafond opposable : le dépasser rend l'indemnité difficile à défendre.",
+  },
+];
+
 /** Loyer de marché retenu par défaut hors des villes référencées (moyenne nationale approchée). */
 export const LOYER_M2_DEFAUT_AUTRE = 11;
 

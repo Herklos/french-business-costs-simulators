@@ -6,7 +6,7 @@ import {
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
 } from "../lib/homeOffice";
-import { LOYERS_VILLES, VILLE_AUTRE, prixM2Ville } from "../lib/loyersVille";
+import { LOYERS_VILLES, SOURCES_LOYERS, VILLE_AUTRE, prixM2Ville } from "../lib/loyersVille";
 import { findChargeReference, fourchetteReferenceCharge, montantReferenceCharge } from "../lib/logementCharges";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
@@ -33,7 +33,9 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   push(`Généré le ${new Date().toLocaleDateString("fr-FR")}`);
   push("");
   push("— Logement —");
-  push(`Statut : ${sim.statutOccupant} · Surface totale : ${sim.surfaceTotaleM2} m² · Surface bureau : ${sim.surfaceBureauM2} m²`);
+  push(
+    `Statut : ${sim.statutOccupant} · Type : ${sim.typeLogement === "maison" ? "maison individuelle" : "immeuble collectif"} · Surface totale : ${sim.surfaceTotaleM2} m² · Surface bureau : ${sim.surfaceBureauM2} m²`,
+  );
   push(`Quote-part bureau : ${formatPercent(r.quotePartSurface)}`);
   push(
     `Ville : ${LOYERS_VILLES.find((v) => v.id === sim.ville)?.label ?? "autre"} · Loyer de marché retenu : ${sim.loyerMarcheM2Mensuel} €/m²/mois hors charges${sim.loyerAutoDepuisPrixM2 ? " (loyer calculé automatiquement)" : " (loyer saisi manuellement)"}`,
@@ -48,6 +50,11 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   push("");
   push(`Formalisation : ${sim.formalisation === "bail_professionnel" ? "Bail professionnel réel" : "Indemnité d'occupation"}`);
   push(`Régime foncier : ${sim.regimeFoncier === "micro" ? "Micro-foncier" : "Réel"}${!r.eligibleMicroFoncier ? " (plafond dépassé, régime réel appliqué)" : ""}`);
+  if (r.interetsEmpruntDeduits > 0) {
+    push(
+      `Intérêts d'emprunt : ${formatEUR(sim.interetsEmpruntAnnuels)}/an, dont ${formatEUR(r.interetsEmpruntDeduits)} de quote-part professionnelle déduite du revenu foncier`,
+    );
+  }
   push("");
   push("— Résultats —");
   push(`Indemnité annuelle brute : ${formatEUR(r.indemniteAnnuelleBrute)}`);
@@ -108,7 +115,7 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
   function appliquerReferences() {
     setInputs((prev) => ({
       ...prev,
-      chargeLines: chargeLinesDeReference(prev.surfaceTotaleM2, prev.statutOccupant, prev.chargeLines),
+      chargeLines: chargeLinesDeReference(prev.surfaceTotaleM2, prev.statutOccupant, prev.typeLogement, prev.chargeLines),
     }));
   }
 
@@ -144,6 +151,31 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                   <option value="locataire">Locataire</option>
                 </select>
               </Field>
+              {/* Volontairement une <div> et non un <Field> : celui-ci rend un <label>, et un bouton
+                  encapsulé dans un label est déclenché par un clic n'importe où sur le libellé. */}
+              <div className="field">
+                <span className="field__label">Type de logement</span>
+                <div className="toggle-group">
+                  {(
+                    [
+                      ["appartement", "Immeuble"],
+                      ["maison", "Maison"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      className={`btn btn--ghost ${inputs.typeLogement === value ? "btn--active" : ""}`}
+                      onClick={() => update("typeLogement", value)}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="field__hint">
+                  Déplace les charges : copropriété en immeuble, entretien courant en maison.
+                </span>
+              </div>
               <Field label="Surface totale du logement (m²)">
                 <NumberInput value={inputs.surfaceTotaleM2} onChange={(e) => update("surfaceTotaleM2", Number(e.target.value))} />
               </Field>
@@ -176,7 +208,9 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                   onChange={(e) => update("loyerMarcheM2Mensuel", Number(e.target.value))}
                 />
               </Field>
-              <Field label="Calcul du loyer">
+              {/* Une <div> plutôt qu'un <Field> : imbriquer un <label> dans un autre est invalide. */}
+              <div className="field">
+                <span className="field__label">Calcul du loyer</span>
                 <label className="charge-line__toggle">
                   <input
                     type="checkbox"
@@ -185,7 +219,7 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                   />
                   <span>Calculer automatiquement depuis le prix au m²</span>
                 </label>
-              </Field>
+              </div>
             </div>
             <p className="hint-block">
               Quote-part du bureau : <strong>{formatPercent(results.quotePartSurface)}</strong> · Charges retenues
@@ -201,6 +235,24 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                 ramenée au bureau par la quote-part de surface — les deux calculs donnent le même montant.
               </p>
             )}
+            <details className="charge-line__ref">
+              <summary>Vérifier ce loyer de marché — sources publiques</summary>
+              <p>
+                Les valeurs proposées sont des médianes d'agglomération indicatives. En cas de contrôle, la
+                justification attendue reste 2 ou 3 annonces comparables, datées et archivées au moment où le loyer a
+                été fixé.
+                <br />
+                {SOURCES_LOYERS.map((s) => (
+                  <span key={s.url}>
+                    <br />
+                    <a href={s.url} target="_blank" rel="noreferrer noopener">
+                      {s.label}
+                    </a>{" "}
+                    — {s.note}
+                  </span>
+                ))}
+              </p>
+            </details>
             <RuleNote ruleId="domicile-loyer-coherent-avec-le-marche" />
             {surfaceDepasseTolerance && (
               <p className="warning-block">
@@ -217,7 +269,8 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             subtitle="Chaque poste (y compris le loyer) est inclus par défaut mais peut être désactivé individuellement. Les montants pré-remplis sont des ordres de grandeur 2025-2026 : remplacez-les par vos factures réelles, seules opposables en cas de contrôle."
           >
             <p className="hint-block">
-              Valeurs de référence pour {inputs.surfaceTotaleM2} m² en tant que{" "}
+              Valeurs de référence pour {inputs.surfaceTotaleM2} m² en{" "}
+              {inputs.typeLogement === "maison" ? "maison individuelle" : "immeuble collectif"}, en tant que{" "}
               {inputs.statutOccupant === "locataire" ? "locataire" : "propriétaire"}.{" "}
               <button type="button" className="charge-line__apply" onClick={appliquerReferences}>
                 ↺ Tout réaligner sur les références
@@ -225,8 +278,8 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             </p>
             <ul className="charge-lines">
               {results.chargeLinesEffectives.map((c) => {
-                const reference = montantReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant);
-                const fourchette = fourchetteReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant);
+                const reference = montantReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement);
+                const fourchette = fourchetteReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement);
                 const infos = findChargeReference(c.id);
                 const loyerAuto = c.id === "loyer" && inputs.loyerAutoDepuisPrixM2;
                 // On ne signale que la sous-évaluation : c'est le biais que corrige cette section.
@@ -243,7 +296,9 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                           onChange={(e) => updateChargeLine(c.id, { enabled: e.target.checked })}
                         />
                         <span>
-                          {c.label}
+                          {c.id === "entretienCopropriete" && inputs.typeLogement === "maison"
+                            ? "Charges de copropriété (sans objet en maison individuelle)"
+                            : c.label}
                           {c.id === "loyer" &&
                             (loyerAuto
                               ? " (valeur locative de marché)"
@@ -289,7 +344,12 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                           <p>
                             {infos.note}
                             <br />
-                            <em>Source : {infos.source}.</em>
+                            <em>
+                              Source :{" "}
+                              <a href={infos.sourceUrl} target="_blank" rel="noreferrer noopener">
+                                {infos.source}
+                              </a>
+                            </em>
                           </p>
                         </details>
                       )
@@ -360,6 +420,34 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                 Plafond micro-foncier (15 000 €) dépassé : le régime réel est appliqué automatiquement.
               </p>
             )}
+            {inputs.statutOccupant === "proprietaire" && (
+              <Field
+                label="Intérêts annuels de l'emprunt immobilier (€/an)"
+                hint="Déductibles du revenu foncier au régime réel uniquement, au prorata de la surface professionnelle. Ils ne s'ajoutent pas à l'indemnité : le loyer de marché rémunère déjà la mise à disposition du bien."
+              >
+                <NumberInput
+                  value={inputs.interetsEmpruntAnnuels}
+                  onChange={(e) => update("interetsEmpruntAnnuels", Number(e.target.value))}
+                />
+              </Field>
+            )}
+            {inputs.interetsEmpruntAnnuels > 0 && inputs.regimeFoncier === "micro" && results.eligibleMicroFoncier && (
+              <p className="hint-block">
+                Au micro-foncier, l'abattement forfaitaire de 30 % remplace toute déduction : vos intérêts d'emprunt
+                ne sont pas pris en compte. Comparez avec le régime réel, qui déduirait{" "}
+                <strong>
+                  {formatEUR(Math.max(0, inputs.interetsEmpruntAnnuels) * results.quotePartSurface)}
+                </strong>{" "}
+                de quote-part professionnelle.
+              </p>
+            )}
+            {results.interetsEmpruntDeduits > 0 && (
+              <p className="hint-block">
+                Quote-part professionnelle des intérêts déduite du revenu foncier :{" "}
+                <strong>{formatEUR(results.interetsEmpruntDeduits)}</strong>/an.
+              </p>
+            )}
+            <RuleNote ruleId="foncier-charges-deductibles-regime-reel" />
             <RuleNote ruleId="foncier-abattement-micro" />
             <RuleNote ruleId="foncier-prelevements-sociaux" />
           </Section>
