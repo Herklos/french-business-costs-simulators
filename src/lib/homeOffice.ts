@@ -11,6 +11,8 @@
 import type { ImpositionSociete } from "./companyTypes";
 import { type PersonalTaxProfile, createDefaultPersonalTaxProfile, resolvePersonalTaxProfile } from "./frenchIncomeTax";
 import { computeEconomieImpotIS } from "./corporateTax";
+import { loyerAnnuelLogement, prixM2Ville } from "./loyersVille";
+import { montantReferenceCharge } from "./logementCharges";
 
 export const PRELEVEMENTS_SOCIAUX_FONCIER = 0.172;
 export const ABATTEMENT_MICRO_FONCIER = 0.3;
@@ -41,7 +43,7 @@ export interface ChargeLine {
 }
 
 export const DEFAULT_CHARGE_LINES: Omit<ChargeLine, "montantAnnuel">[] = [
-  { id: "loyer", label: "Loyer réel / valeur locative de marché", enabled: true },
+  { id: "loyer", label: "Loyer du logement", enabled: true },
   { id: "electricite", label: "Électricité", enabled: true },
   { id: "chauffage", label: "Chauffage", enabled: true },
   { id: "eau", label: "Eau", enabled: true },
@@ -66,6 +68,17 @@ export interface HomeOfficeInputs {
   surfaceTotaleM2: number;
   surfaceBureauM2: number;
 
+  /** Ville du logement (cf. LOYERS_VILLES), ou VILLE_AUTRE pour saisir le prix au m² à la main. */
+  ville: string;
+  /** Loyer de marché retenu, en €/m²/mois hors charges. */
+  loyerMarcheM2Mensuel: number;
+  /**
+   * Si vrai, la ligne de charge « loyer » est calculée automatiquement à partir du prix au m² et
+   * des surfaces, au lieu d'être saisie. Le montant saisi est alors conservé mais ignoré, pour être
+   * retrouvé intact en cas de retour au mode manuel.
+   */
+  loyerAutoDepuisPrixM2: boolean;
+
   // Postes de charge du logement, chacun activable/désactivable (le loyer/valeur locative en fait
   // partie et peut lui aussi être exclu si l'on souhaite ne rembourser que les charges réelles).
   chargeLines: ChargeLine[];
@@ -86,17 +99,28 @@ export interface HomeOfficeInputs {
   coworkingJoursParMois: number; // utilisé si typeComparaisonExterne === "coworking"
 }
 
+/**
+ * Recalcule chaque poste de charge à partir des valeurs de référence 2025-2026 (cf.
+ * `logementCharges.ts`), pour la surface et le statut d'occupation donnés. Le loyer est laissé au
+ * calcul automatique depuis le prix au m² de la ville et n'est donc pas repris ici.
+ *
+ * Les états activé/désactivé choisis par l'utilisateur sont préservés : seuls les montants changent.
+ */
+export function chargeLinesDeReference(
+  surfaceTotaleM2: number,
+  statutOccupant: StatutOccupant,
+  lignesActuelles: ChargeLine[] = DEFAULT_CHARGE_LINES.map((c) => ({ ...c, montantAnnuel: 0 })),
+): ChargeLine[] {
+  return lignesActuelles.map((c) => {
+    const reference = montantReferenceCharge(c.id, surfaceTotaleM2, statutOccupant);
+    return reference === undefined ? c : { ...c, montantAnnuel: reference };
+  });
+}
+
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
-  const montantsParDefaut: Record<string, number> = {
-    loyer: 900 * 12,
-    electricite: 900,
-    chauffage: 800,
-    eau: 300,
-    assuranceHabitation: 250,
-    taxeFonciere: 1200,
-    entretienCopropriete: 600,
-    internetTelephone: 360,
-  };
+  const surfaceTotaleM2 = 80;
+  const statutOccupant: StatutOccupant = "proprietaire";
+  const ville = "lyon";
 
   return {
     id: crypto.randomUUID(),
@@ -107,10 +131,13 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     corporateTaxRate: 0.25,
     beneficeAvantChargePrevisionnel: 40000,
     eligibleTauxReduitPME: true,
-    statutOccupant: "proprietaire",
-    surfaceTotaleM2: 80,
+    statutOccupant,
+    surfaceTotaleM2,
     surfaceBureauM2: 12,
-    chargeLines: DEFAULT_CHARGE_LINES.map((c) => ({ ...c, montantAnnuel: montantsParDefaut[c.id] ?? 0 })),
+    ville,
+    loyerMarcheM2Mensuel: prixM2Ville(ville),
+    loyerAutoDepuisPrixM2: true,
+    chargeLines: chargeLinesDeReference(surfaceTotaleM2, statutOccupant),
     regimeFoncier: "micro",
     autresRevenusFonciersFoyer: 0,
     formalisation: "indemnite",
@@ -125,6 +152,15 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
 
 export interface HomeOfficeResults {
   quotePartSurface: number;
+  /** Lignes de charge après substitution du loyer calculé automatiquement le cas échéant. */
+  chargeLinesEffectives: ChargeLine[];
+  /**
+   * Loyer de marché annuel du logement entier (calculé ou saisi). Renseigné même si la ligne
+   * « loyer » est désactivée, afin que l'interface puisse afficher ce que coûterait sa réactivation.
+   */
+  loyerAnnuelLogementRetenu: number;
+  /** Part de ce loyer imputable au bureau (= prix au m² × surface bureau × 12). */
+  loyerAnnuelBureauRetenu: number;
   totalChargesRetenuesAnnuel: number; // somme des postes activés
   indemniteAnnuelleBrute: number;
 
@@ -151,7 +187,21 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   const quotePartSurface =
     inputs.surfaceTotaleM2 > 0 ? Math.min(1, inputs.surfaceBureauM2 / inputs.surfaceTotaleM2) : 0;
 
-  const totalChargesRetenuesAnnuel = inputs.chargeLines
+  // Le loyer de marché est déduit du prix au m² de la ville. On le porte sur le LOGEMENT ENTIER
+  // (prix au m² × surface totale) et non sur le seul bureau : la ligne « loyer » est une charge du
+  // logement comme les autres, proratisée ensuite par la quote-part de surface. Après cette
+  // proratisation, la part imputée au bureau vaut exactement prix au m² × surface du bureau × 12 —
+  // l'appliquer directement au bureau reviendrait à le proratiser deux fois.
+  const loyerAnnuelLogementRetenu = inputs.loyerAutoDepuisPrixM2
+    ? loyerAnnuelLogement(inputs.loyerMarcheM2Mensuel, inputs.surfaceTotaleM2)
+    : (inputs.chargeLines.find((c) => c.id === "loyer")?.montantAnnuel ?? 0);
+  const loyerAnnuelBureauRetenu = loyerAnnuelLogementRetenu * quotePartSurface;
+
+  const chargeLinesEffectives = inputs.chargeLines.map((c) =>
+    c.id === "loyer" ? { ...c, montantAnnuel: loyerAnnuelLogementRetenu } : c,
+  );
+
+  const totalChargesRetenuesAnnuel = chargeLinesEffectives
     .filter((c) => c.enabled)
     .reduce((sum, c) => sum + c.montantAnnuel, 0);
   const indemniteAnnuelleBrute = totalChargesRetenuesAnnuel * quotePartSurface;
@@ -169,7 +219,7 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   } else {
     // Régime réel : les charges hors loyer (déjà intégrées dans l'indemnité au prorata) sont
     // déduites explicitement — le loyer/valeur locative lui-même reste imposable.
-    const chargesHorsLoyer = inputs.chargeLines
+    const chargesHorsLoyer = chargeLinesEffectives
       .filter((c) => c.enabled && c.id !== "loyer")
       .reduce((sum, c) => sum + c.montantAnnuel, 0);
     const chargesDeductibles = chargesHorsLoyer * quotePartSurface;
@@ -225,6 +275,9 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
 
   return {
     quotePartSurface,
+    chargeLinesEffectives,
+    loyerAnnuelLogementRetenu,
+    loyerAnnuelBureauRetenu,
     totalChargesRetenuesAnnuel,
     indemniteAnnuelleBrute,
     eligibleMicroFoncier,

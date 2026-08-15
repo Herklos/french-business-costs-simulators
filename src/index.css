@@ -679,14 +679,20 @@ td {
 }
 
 .charge-line {
-  display: grid;
-  grid-template-columns: 1fr 140px auto;
-  align-items: center;
-  gap: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.5rem 0.75rem;
+}
+
+.charge-line__row {
+  display: grid;
+  grid-template-columns: 1fr 140px auto;
+  align-items: center;
+  gap: 0.75rem;
 }
 
 .charge-line__toggle {
@@ -699,6 +705,58 @@ td {
 .charge-line__unit {
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+/* Valeur de référence 2025-2026 rappelée sous chaque poste, avec sa source dépliable. */
+.charge-line__ref {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+
+.charge-line__ref--low {
+  color: var(--warn);
+}
+
+.charge-line__ref summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.charge-line__ref summary::-webkit-details-marker {
+  display: none;
+}
+
+.charge-line__ref summary::before {
+  content: "▸ ";
+}
+
+.charge-line__ref[open] summary::before {
+  content: "▾ ";
+}
+
+.charge-line__ref p {
+  margin: 0.3rem 0 0;
+  padding-left: 0.85rem;
+  border-left: 2px solid var(--border);
+  color: var(--text-muted);
+}
+
+.charge-line__apply {
+  margin-left: 0.4rem;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: inherit;
+  font: inherit;
+  font-size: 0.68rem;
+  padding: 0 0.35rem;
+  cursor: pointer;
+}
+
+.charge-line__apply:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 .compare-toolbar {

@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type ChargeLine,
   type HomeOfficeInputs,
+  chargeLinesDeReference,
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
 } from "../lib/homeOffice";
+import { LOYERS_VILLES, VILLE_AUTRE, prixM2Ville } from "../lib/loyersVille";
+import { findChargeReference, fourchetteReferenceCharge, montantReferenceCharge } from "../lib/logementCharges";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
@@ -32,9 +35,13 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   push("— Logement —");
   push(`Statut : ${sim.statutOccupant} · Surface totale : ${sim.surfaceTotaleM2} m² · Surface bureau : ${sim.surfaceBureauM2} m²`);
   push(`Quote-part bureau : ${formatPercent(r.quotePartSurface)}`);
+  push(
+    `Ville : ${LOYERS_VILLES.find((v) => v.id === sim.ville)?.label ?? "autre"} · Loyer de marché retenu : ${sim.loyerMarcheM2Mensuel} €/m²/mois hors charges${sim.loyerAutoDepuisPrixM2 ? " (loyer calculé automatiquement)" : " (loyer saisi manuellement)"}`,
+  );
+  push(`Loyer imputable au bureau : ${formatEUR(r.loyerAnnuelBureauRetenu)}/an`);
   push("");
   push("— Charges retenues —");
-  for (const c of sim.chargeLines) {
+  for (const c of r.chargeLinesEffectives) {
     push(`  ${c.enabled ? "☑" : "☐"} ${c.label} : ${formatEUR(c.montantAnnuel)}/an`);
   }
   push(`Total charges retenues : ${formatEUR(r.totalChargesRetenuesAnnuel)}/an`);
@@ -84,6 +91,27 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
     }));
   }
 
+  /** Changer de ville réaligne le prix au m² sur la médiane locale ; « Autre » conserve la saisie. */
+  function selectVille(ville: string) {
+    setInputs((prev) => ({
+      ...prev,
+      ville,
+      loyerMarcheM2Mensuel: ville === VILLE_AUTRE ? prev.loyerMarcheM2Mensuel : prixM2Ville(ville),
+    }));
+  }
+
+  /**
+   * Réaligne tous les postes de charge sur les références 2025-2026, à la surface et au statut
+   * d'occupation courants. Action explicite plutôt qu'automatique : une fois les vraies factures
+   * saisies, un recalcul silencieux sur un changement de surface les écraserait.
+   */
+  function appliquerReferences() {
+    setInputs((prev) => ({
+      ...prev,
+      chargeLines: chargeLinesDeReference(prev.surfaceTotaleM2, prev.statutOccupant, prev.chargeLines),
+    }));
+  }
+
   const surfaceRatio = inputs.surfaceTotaleM2 > 0 ? inputs.surfaceBureauM2 / inputs.surfaceTotaleM2 : 0;
   const surfaceDepasseTolerance = surfaceRatio > SURFACE_TOLERANCE;
 
@@ -123,11 +151,57 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                 <NumberInput value={inputs.surfaceBureauM2} onChange={(e) => update("surfaceBureauM2", Number(e.target.value))} />
               </Field>
             </div>
+            <div className="grid grid--3">
+              <Field label="Ville du logement">
+                <select value={inputs.ville} onChange={(e) => selectVille(e.target.value)}>
+                  {LOYERS_VILLES.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label} — {v.prixM2Mensuel} €/m²
+                    </option>
+                  ))}
+                  <option value={VILLE_AUTRE}>Autre ville (saisie manuelle)</option>
+                </select>
+              </Field>
+              <Field
+                label="Loyer de marché (€/m²/mois, hors charges)"
+                hint={
+                  inputs.ville === VILLE_AUTRE
+                    ? "Relevez 2 ou 3 annonces comparables (même quartier, même surface) et archivez-les : c'est la justification attendue en cas de contrôle."
+                    : "Médiane indicative de l'agglomération — ajustez-la à votre quartier."
+                }
+              >
+                <NumberInput
+                  step="0.5"
+                  value={inputs.loyerMarcheM2Mensuel}
+                  onChange={(e) => update("loyerMarcheM2Mensuel", Number(e.target.value))}
+                />
+              </Field>
+              <Field label="Calcul du loyer">
+                <label className="charge-line__toggle">
+                  <input
+                    type="checkbox"
+                    checked={inputs.loyerAutoDepuisPrixM2}
+                    onChange={(e) => update("loyerAutoDepuisPrixM2", e.target.checked)}
+                  />
+                  <span>Calculer automatiquement depuis le prix au m²</span>
+                </label>
+              </Field>
+            </div>
             <p className="hint-block">
               Quote-part du bureau : <strong>{formatPercent(results.quotePartSurface)}</strong> · Charges retenues
               (postes activés) : <strong>{formatEUR(results.totalChargesRetenuesAnnuel)}</strong>/an · Indemnité
               annuelle brute : <strong>{formatEUR(results.indemniteAnnuelleBrute)}</strong>
             </p>
+            {inputs.loyerAutoDepuisPrixM2 && (
+              <p className="hint-block">
+                Loyer imputable au bureau : {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois × 12 ={" "}
+                <strong>{formatEUR(results.loyerAnnuelBureauRetenu)}</strong>/an, soit{" "}
+                <strong>{formatEUR(results.loyerAnnuelBureauRetenu / 12)}</strong>/mois. La ligne « Loyer » ci-dessous
+                porte la valeur locative du logement entier ({formatEUR(results.loyerAnnuelLogementRetenu)}/an), ensuite
+                ramenée au bureau par la quote-part de surface — les deux calculs donnent le même montant.
+              </p>
+            )}
+            <RuleNote ruleId="domicile-loyer-coherent-avec-le-marche" />
             {surfaceDepasseTolerance && (
               <p className="warning-block">
                 ⚠️ Surface du bureau ({formatPercent(surfaceRatio)}) au-delà de la tolérance pratique de 30% de la
@@ -140,31 +214,101 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
 
           <Section
             title="Charges du logement retenues dans l'indemnité"
-            subtitle="Chaque poste (y compris le loyer) est inclus par défaut mais peut être désactivé individuellement."
+            subtitle="Chaque poste (y compris le loyer) est inclus par défaut mais peut être désactivé individuellement. Les montants pré-remplis sont des ordres de grandeur 2025-2026 : remplacez-les par vos factures réelles, seules opposables en cas de contrôle."
           >
+            <p className="hint-block">
+              Valeurs de référence pour {inputs.surfaceTotaleM2} m² en tant que{" "}
+              {inputs.statutOccupant === "locataire" ? "locataire" : "propriétaire"}.{" "}
+              <button type="button" className="charge-line__apply" onClick={appliquerReferences}>
+                ↺ Tout réaligner sur les références
+              </button>
+            </p>
             <ul className="charge-lines">
-              {inputs.chargeLines.map((c) => (
-                <li key={c.id} className="charge-line">
-                  <label className="charge-line__toggle">
-                    <input
-                      type="checkbox"
-                      checked={c.enabled}
-                      onChange={(e) => updateChargeLine(c.id, { enabled: e.target.checked })}
-                    />
-                    <span>
-                      {c.label}
-                      {c.id === "loyer" && (inputs.statutOccupant === "locataire" ? " (loyer réel)" : " (valeur locative de marché)")}
-                    </span>
-                  </label>
-                  <NumberInput
-                    disabled={!c.enabled}
-                    value={c.montantAnnuel}
-                    onChange={(e) => updateChargeLine(c.id, { montantAnnuel: Number(e.target.value) })}
-                  />
-                  <span className="charge-line__unit">€/an</span>
-                </li>
-              ))}
+              {results.chargeLinesEffectives.map((c) => {
+                const reference = montantReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant);
+                const fourchette = fourchetteReferenceCharge(c.id, inputs.surfaceTotaleM2, inputs.statutOccupant);
+                const infos = findChargeReference(c.id);
+                const loyerAuto = c.id === "loyer" && inputs.loyerAutoDepuisPrixM2;
+                // On ne signale que la sous-évaluation : c'est le biais que corrige cette section.
+                // Une saisie supérieure à la fourchette peut parfaitement refléter des factures
+                // réelles élevées, et n'a rien d'anormal.
+                const sousEvalue = fourchette !== undefined && fourchette[0] > 0 && c.montantAnnuel < fourchette[0];
+                return (
+                  <li key={c.id} className="charge-line">
+                    <div className="charge-line__row">
+                      <label className="charge-line__toggle">
+                        <input
+                          type="checkbox"
+                          checked={c.enabled}
+                          onChange={(e) => updateChargeLine(c.id, { enabled: e.target.checked })}
+                        />
+                        <span>
+                          {c.label}
+                          {c.id === "loyer" &&
+                            (loyerAuto
+                              ? " (valeur locative de marché)"
+                              : inputs.statutOccupant === "locataire"
+                                ? " (loyer réel)"
+                                : " (valeur locative estimée)")}
+                        </span>
+                      </label>
+                      <NumberInput
+                        disabled={!c.enabled || loyerAuto}
+                        value={c.montantAnnuel}
+                        onChange={(e) => updateChargeLine(c.id, { montantAnnuel: Number(e.target.value) })}
+                      />
+                      <span className="charge-line__unit">€/an</span>
+                    </div>
+                    {loyerAuto ? (
+                      <div className="charge-line__ref">
+                        Calculé : {inputs.surfaceTotaleM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois × 12. Décochez
+                        « Calculer automatiquement » ci-dessus pour saisir votre loyer réel.
+                      </div>
+                    ) : (
+                      infos !== undefined &&
+                      reference !== undefined && (
+                        <details className={`charge-line__ref${sousEvalue ? " charge-line__ref--low" : ""}`}>
+                          <summary>
+                            {sousEvalue ? "⚠️ " : ""}Référence : {formatEUR(reference)}/an
+                            {fourchette !== undefined && fourchette[1] > 0 && (
+                              <> (fourchette {formatEUR(fourchette[0])} – {formatEUR(fourchette[1])})</>
+                            )}
+                            {c.montantAnnuel !== reference && (
+                              <button
+                                type="button"
+                                className="charge-line__apply"
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  updateChargeLine(c.id, { montantAnnuel: reference });
+                                }}
+                              >
+                                appliquer
+                              </button>
+                            )}
+                          </summary>
+                          <p>
+                            {infos.note}
+                            <br />
+                            <em>Source : {infos.source}.</em>
+                          </p>
+                        </details>
+                      )
+                    )}
+                  </li>
+                );
+              })}
             </ul>
+            {inputs.statutOccupant === "locataire" &&
+              results.chargeLinesEffectives.some(
+                (c) => c.id === "taxeFonciere" && c.enabled && c.montantAnnuel > 0,
+              ) && (
+                <p className="warning-block">
+                  ⚠️ Vous êtes locataire : la taxe foncière est due par votre bailleur, pas par vous. Désactivez ce
+                  poste ou remettez-le à 0 — sinon l'indemnité refacture à la société une charge que vous ne supportez
+                  pas, ce qui la rend indéfendable en cas de contrôle.
+                </p>
+              )}
+            <RuleNote ruleId="domicile-charges-reelles-justificatifs" />
           </Section>
 
           <Section

@@ -475,6 +475,37 @@ export const TAX_RULES: TaxRule[] = [
       "Il n'est pas possible de louer l'intégralité de la résidence principale à sa société (changement de destination) : seule la pièce dédiée à l'usage professionnel peut faire l'objet d'un bail. Le bail professionnel réel formalise davantage la relation (obligations, révision) que la simple indemnité d'occupation, réduisant le risque de requalification en cas de contrôle, au prix de frais de mise en place (rédaction, enregistrement).",
   },
   {
+    id: "domicile-loyer-coherent-avec-le-marche",
+    category: "revenus_fonciers",
+    label: "Le loyer ou l'indemnité d'occupation doit être cohérent avec le marché local",
+    value: "Prix au m² du marché local × surface du bureau — un loyer surévalué est requalifié",
+    legalReference: "Art. 39-1-1° CGI (charge non excessive) et art. 109-1-2° CGI (revenus distribués)",
+    sourceLabel: "Carte des loyers ANIL / data.gouv.fr et observatoires locaux des loyers",
+    sourceUrl:
+      "https://www.data.gouv.fr/datasets/carte-des-loyers-indicateurs-de-loyers-dannonce-par-commune-en-2025",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Une charge n'est déductible que si elle est engagée dans l'intérêt de l'exploitation et n'est pas excessive (art. 39-1-1° CGI). La fraction excédant la valeur de marché est réintégrée au résultat de la société ET imposée chez le dirigeant comme revenu distribué (art. 109-1-2° CGI) — double sanction.\n\n" +
+      "COMMENT LE JUSTIFIER : la référence attendue est le prix au m² de locaux comparables (même commune, même quartier, surface équivalente). Deux ou trois annonces datées et archivées au moment de la fixation du loyer constituent la preuve la plus simple ; la « carte des loyers » ANIL (indicateurs communaux publiés annuellement sur data.gouv.fr à partir de plus de 9 millions d'annonces) et les observatoires locaux des loyers fournissent une référence publique complémentaire. ATTENTION : les indicateurs ANIL sont publiés CHARGES COMPRISES — retenir une valeur hors charges dès lors que les charges du logement sont facturées séparément, sous peine de les compter deux fois.\n\n" +
+      "ORDRE DE GRANDEUR PRUDENT souvent retenu en pratique : au-delà de ~200 €/m²/an (soit ~3 000 €/an pour 15 m²), un loyer appelle une justification documentée solide.\n\n" +
+      "Le simulateur calcule le loyer comme prix au m²/mois × surface du bureau × 12, à partir d'une médiane indicative par ville qui reste modifiable.",
+  },
+  {
+    id: "domicile-charges-reelles-justificatifs",
+    category: "revenus_fonciers",
+    label: "Charges du logement refacturées : montants réels et justificatifs conservés",
+    value: "Factures, avis de taxe foncière et appels de fonds — les moyennes statistiques ne sont pas opposables",
+    legalReference: "Art. 39-1 CGI (justification des charges) et art. L102 B LPF (conservation 6 ans)",
+    sourceLabel: "Compta-online — frais eau/EDF au domicile du gérant",
+    sourceUrl: "https://www.compta-online.com/frais-eau-edf-etc-sur-siege-social-domicile-gerant-t29552",
+    validFrom: "2020-01-01",
+    validUntil: null,
+    notes:
+      "Les montants pré-remplis par le simulateur sont des ordres de grandeur statistiques 2025-2026 (factures d'énergie, prix moyen de l'eau au m³, baromètres d'assurance habitation et de charges de copropriété, moyenne de taxe foncière). Ils servent à dimensionner l'indemnité sans la sous-évaluer, PAS à la justifier : seuls les documents réels — factures d'énergie et d'eau, quittance ou avis de taxe foncière, appels de fonds de copropriété, échéancier d'assurance — sont opposables, et doivent être conservés 6 ans (art. L102 B LPF).\n\n" +
+      "PIÈGES DE DOUBLE COMPTE : (1) un abonnement internet déjà refacturé à la société comme frais professionnel ne doit pas être réintégré ici ; (2) l'eau est souvent déjà incluse dans les charges de copropriété ; (3) si le logement est chauffé à l'électricité, ne pas remplir à la fois « Électricité » et « Chauffage » ; (4) un locataire n'acquitte pas la taxe foncière et supporte une assurance habitation moins chère qu'un propriétaire.",
+  },
+  {
     id: "is-taux-normal",
     category: "impot_societe",
     label: "Taux normal de l'impôt sur les sociétés (barème progressif)",
