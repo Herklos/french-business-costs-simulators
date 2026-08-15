@@ -18,6 +18,15 @@ export const PRELEVEMENTS_SOCIAUX_FONCIER = 0.172;
 export const ABATTEMENT_MICRO_FONCIER = 0.3;
 export const PLAFOND_MICRO_FONCIER = 15000;
 
+/**
+ * Part de la surface totale au-delà de laquelle un bureau à domicile appelle une justification
+ * renforcée. Ce n'est PAS un plafond légal — aucun texte ne fixe de seuil — mais la tolérance
+ * pratique généralement admise. Elle est paramétrable dans le simulateur : au-delà de 30 %, il
+ * reste possible de justifier une surface plus grande, au prix d'un risque de requalification
+ * croissant (cf. règle « domicile-surface-bureau-tolerance-30-pourcent »).
+ */
+export const TOLERANCE_SURFACE_BUREAU_DEFAUT = 0.3;
+
 export type RegimeFoncier = "micro" | "reel";
 export type StatutOccupant = "locataire" | "proprietaire";
 
@@ -82,6 +91,8 @@ export interface HomeOfficeInputs {
   typeLogement: TypeLogement;
   surfaceTotaleM2: number;
   surfaceBureauM2: number;
+  /** Seuil d'alerte sur la quote-part de surface, en fraction de la surface totale (0,3 = 30 %). */
+  toleranceSurfaceBureau: number;
 
   /** Ville du logement (cf. LOYERS_VILLES), ou VILLE_AUTRE pour saisir le prix au m² à la main. */
   ville: string;
@@ -160,6 +171,7 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     typeLogement,
     surfaceTotaleM2,
     surfaceBureauM2: 12,
+    toleranceSurfaceBureau: TOLERANCE_SURFACE_BUREAU_DEFAUT,
     ville,
     loyerMarcheM2Mensuel: prixM2Ville(ville),
     loyerAutoDepuisPrixM2: true,
@@ -179,6 +191,10 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
 
 export interface HomeOfficeResults {
   quotePartSurface: number;
+  /** Surface de bureau qui atteindrait exactement le seuil de tolérance retenu, en m². */
+  surfaceBureauTolerance: number;
+  /** Vrai si la quote-part dépasse le seuil de tolérance retenu. */
+  depasseToleranceSurface: boolean;
   /** Lignes de charge après substitution du loyer calculé automatiquement le cas échéant. */
   chargeLinesEffectives: ChargeLine[];
   /**
@@ -229,6 +245,10 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   const chargeLinesEffectives = inputs.chargeLines.map((c) =>
     c.id === "loyer" ? { ...c, montantAnnuel: loyerAnnuelLogementRetenu } : c,
   );
+
+  const toleranceSurfaceBureau = Math.min(1, Math.max(0, inputs.toleranceSurfaceBureau));
+  const surfaceBureauTolerance = Math.max(0, inputs.surfaceTotaleM2) * toleranceSurfaceBureau;
+  const depasseToleranceSurface = quotePartSurface > toleranceSurfaceBureau;
 
   const totalChargesRetenuesAnnuel = chargeLinesEffectives
     .filter((c) => c.enabled)
@@ -308,6 +328,8 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
 
   return {
     quotePartSurface,
+    surfaceBureauTolerance,
+    depasseToleranceSurface,
     chargeLinesEffectives,
     loyerAnnuelLogementRetenu,
     loyerAnnuelBureauRetenu,

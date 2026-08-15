@@ -116,6 +116,12 @@ body {
   }
 }
 
+/* Parcours en colonne unique, pour les simulateurs sans bandeau de résultats latéral : les sections
+   se lisent de haut en bas, largeur bornée pour que les libellés ne s'éloignent pas de leur champ. */
+.page__column {
+  max-width: 980px;
+}
+
 .layout__results {
   position: sticky;
   top: 5.5rem;
@@ -825,13 +831,6 @@ td {
   background: var(--text-muted);
 }
 
-.surface-gauge__legend {
-  display: block;
-  margin-top: 0.3rem;
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
 .toggle-group--mini .btn {
   padding: 0.25rem 0.55rem;
   font-size: 0.72rem;
@@ -899,9 +898,14 @@ td {
   cursor: pointer;
 }
 
-.charge-line__apply:hover {
+.charge-line__apply:not(:disabled):hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.charge-line__apply:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .compare-toolbar {
@@ -1470,4 +1474,22 @@ td {
 
 .perspective-note .field {
   max-width: 20rem;
+}
+
+/* Saisie en ligne du seuil de tolérance, dans la légende de la jauge de surface. */
+.surface-gauge__legend {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.surface-gauge__input {
+  width: 3.6rem;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.72rem;
 }

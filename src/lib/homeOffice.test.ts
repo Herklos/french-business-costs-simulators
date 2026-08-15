@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   type HomeOfficeInputs,
+  TOLERANCE_SURFACE_BUREAU_DEFAUT,
   chargeLinesDeReference,
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
@@ -187,6 +188,59 @@ describe("chargeLinesDeReference", () => {
     expect(chauffageGrand).toBeCloseTo(3 * chauffagePetit, 0);
     // ...mais laisse inchangés les postes forfaitaires.
     expect(petit.find((c) => c.id === "eau")?.montantAnnuel).toBe(grand.find((c) => c.id === "eau")?.montantAnnuel);
+  });
+});
+
+describe("computeHomeOffice — seuil de tolérance de surface paramétrable", () => {
+  const base: HomeOfficeInputs = { ...createDefaultHomeOfficeInputs(), surfaceTotaleM2: 80, surfaceBureauM2: 32 };
+
+  it("le seuil par défaut est de 30 %", () => {
+    expect(createDefaultHomeOfficeInputs().toleranceSurfaceBureau).toBe(TOLERANCE_SURFACE_BUREAU_DEFAUT);
+    expect(TOLERANCE_SURFACE_BUREAU_DEFAUT).toBe(0.3);
+  });
+
+  it("la surface correspondant au seuil vaut surface totale × seuil", () => {
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: 0.3 }).surfaceBureauTolerance).toBeCloseTo(24, 6);
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: 0.5 }).surfaceBureauTolerance).toBeCloseTo(40, 6);
+  });
+
+  it("un bureau de 40 % dépasse un seuil à 30 % mais pas un seuil relevé à 50 %", () => {
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: 0.3 }).depasseToleranceSurface).toBe(true);
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: 0.5 }).depasseToleranceSurface).toBe(false);
+  });
+
+  it("atteindre exactement le seuil ne le dépasse pas", () => {
+    const r = computeHomeOffice({ ...base, surfaceBureauM2: 24, toleranceSurfaceBureau: 0.3 });
+    expect(r.quotePartSurface).toBeCloseTo(0.3, 6);
+    expect(r.depasseToleranceSurface).toBe(false);
+  });
+
+  it("le seuil est purement indicatif : il ne change AUCUN montant calculé", () => {
+    // C'est le point important : relever le curseur déplace l'alerte, jamais l'indemnité.
+    const strict = computeHomeOffice({ ...base, toleranceSurfaceBureau: 0.1 });
+    const laxiste = computeHomeOffice({ ...base, toleranceSurfaceBureau: 0.9 });
+    expect(strict.indemniteAnnuelleBrute).toBeCloseTo(laxiste.indemniteAnnuelleBrute, 6);
+    expect(strict.gainNetGerant).toBeCloseTo(laxiste.gainNetGerant, 6);
+    expect(strict.coutNetSociete).toBeCloseTo(laxiste.coutNetSociete, 6);
+  });
+
+  it("porter le bureau au seuil augmente l'indemnité proportionnellement à la surface gagnée", () => {
+    const petit = computeHomeOffice({ ...base, surfaceBureauM2: 12, toleranceSurfaceBureau: 0.3 });
+    const auSeuil = computeHomeOffice({ ...base, surfaceBureauM2: 24, toleranceSurfaceBureau: 0.3 });
+    expect(auSeuil.indemniteAnnuelleBrute).toBeCloseTo(2 * petit.indemniteAnnuelleBrute, 6);
+    expect(auSeuil.depasseToleranceSurface).toBe(false);
+  });
+
+  it("un seuil hors bornes est ramené dans [0, 1] plutôt que de produire une surface absurde", () => {
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: -0.5 }).surfaceBureauTolerance).toBe(0);
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: 3 }).surfaceBureauTolerance).toBeCloseTo(80, 6);
+  });
+
+  it("un seuil nul signale tout bureau non nul comme dépassant", () => {
+    expect(computeHomeOffice({ ...base, toleranceSurfaceBureau: 0 }).depasseToleranceSurface).toBe(true);
+    expect(
+      computeHomeOffice({ ...base, surfaceBureauM2: 0, toleranceSurfaceBureau: 0 }).depasseToleranceSurface,
+    ).toBe(false);
   });
 });
 
