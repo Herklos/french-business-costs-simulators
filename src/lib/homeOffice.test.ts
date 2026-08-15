@@ -6,7 +6,7 @@ import {
   createDefaultHomeOfficeInputs,
 } from "./homeOffice";
 import { montantReferenceCharge } from "./logementCharges";
-import { prixM2Ville } from "./loyersVille";
+import { findLoyerVille, prixM2Ville } from "./loyersVille";
 
 function disableCharge(inputs: HomeOfficeInputs, id: string): HomeOfficeInputs {
   return { ...inputs, chargeLines: inputs.chargeLines.map((c) => (c.id === id ? { ...c, enabled: false } : c)) };
@@ -142,6 +142,12 @@ describe("createDefaultHomeOfficeInputs — placeholders alignés sur les réfé
   it("le prix au m² par défaut correspond à la ville par défaut", () => {
     const inputs = createDefaultHomeOfficeInputs();
     expect(inputs.loyerMarcheM2Mensuel).toBe(prixM2Ville(inputs.ville));
+  });
+
+  it("la ville par défaut est Paris et pointe vers une entrée réelle de la table", () => {
+    const inputs = createDefaultHomeOfficeInputs();
+    expect(inputs.ville).toBe("paris");
+    expect(findLoyerVille(inputs.ville)).toBeDefined();
   });
 
   it("chaque poste de charge est pré-rempli à sa valeur de référence", () => {

@@ -145,7 +145,7 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
   const surfaceTotaleM2 = 80;
   const statutOccupant: StatutOccupant = "proprietaire";
   const typeLogement: TypeLogement = "appartement";
-  const ville = "lyon";
+  const ville = "paris";
 
   return {
     id: crypto.randomUUID(),

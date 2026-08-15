@@ -23,6 +23,16 @@ import { formatEUR, formatPercent } from "../lib/format";
 
 const SURFACE_TOLERANCE = 0.3;
 
+/**
+ * Période d'affichage des montants de charge. Purement cosmétique : les entrées restent stockées en
+ * euros par an, seul l'affichage et la saisie sont divisés par 12. Un loyer se lit naturellement au
+ * mois — 1 280 €/mois parle davantage que 15 360 €/an — alors qu'une taxe foncière se lit à l'année.
+ */
+type PeriodeAffichage = "an" | "mois";
+
+const DIVISEUR_PERIODE: Record<PeriodeAffichage, number> = { an: 1, mois: 12 };
+const SUFFIXE_PERIODE: Record<PeriodeAffichage, string> = { an: "€/an", mois: "€/mois" };
+
 /** Résumé texte complet d'une simulation bureau à domicile, destiné à être copié dans le presse-papier. */
 function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   const r = computeHomeOffice(sim);
@@ -78,7 +88,13 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
     () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultHomeOfficeInputs()), initialShareData),
   );
   const [saveVersion, setSaveVersion] = useState(0);
+  const [periodeAffichage, setPeriodeAffichage] = useState<PeriodeAffichage>("an");
   const results = useMemo(() => computeHomeOffice(inputs), [inputs]);
+
+  const diviseur = DIVISEUR_PERIODE[periodeAffichage];
+  /** Montant annuel formaté dans la période d'affichage courante, suffixe compris. */
+  const parPeriode = (montantAnnuel: number) =>
+    `${formatEUR(montantAnnuel / diviseur)}${periodeAffichage === "mois" ? "/mois" : "/an"}`;
 
   // Le revenu de référence du foyer fiscal est un réglage transversal (identique quel que soit le
   // simulateur) : on le persiste à chaque modification pour le retrouver pré-rempli sur les autres
@@ -223,16 +239,16 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             </div>
             <p className="hint-block">
               Quote-part du bureau : <strong>{formatPercent(results.quotePartSurface)}</strong> · Charges retenues
-              (postes activés) : <strong>{formatEUR(results.totalChargesRetenuesAnnuel)}</strong>/an · Indemnité
-              annuelle brute : <strong>{formatEUR(results.indemniteAnnuelleBrute)}</strong>
+              (postes activés) : <strong>{parPeriode(results.totalChargesRetenuesAnnuel)}</strong> · Indemnité brute :{" "}
+              <strong>{parPeriode(results.indemniteAnnuelleBrute)}</strong>
             </p>
             {inputs.loyerAutoDepuisPrixM2 && (
               <p className="hint-block">
-                Loyer imputable au bureau : {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois × 12 ={" "}
-                <strong>{formatEUR(results.loyerAnnuelBureauRetenu)}</strong>/an, soit{" "}
-                <strong>{formatEUR(results.loyerAnnuelBureauRetenu / 12)}</strong>/mois. La ligne « Loyer » ci-dessous
-                porte la valeur locative du logement entier ({formatEUR(results.loyerAnnuelLogementRetenu)}/an), ensuite
-                ramenée au bureau par la quote-part de surface — les deux calculs donnent le même montant.
+                Loyer imputable au bureau : {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois ={" "}
+                <strong>{formatEUR(results.loyerAnnuelBureauRetenu / 12)}</strong>/mois, soit{" "}
+                <strong>{formatEUR(results.loyerAnnuelBureauRetenu)}</strong>/an. La ligne « Loyer » ci-dessous porte la
+                valeur locative du logement entier ({parPeriode(results.loyerAnnuelLogementRetenu)}), ensuite ramenée au
+                bureau par la quote-part de surface — les deux calculs donnent le même montant.
               </p>
             )}
             <details className="charge-line__ref">
@@ -268,13 +284,32 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             title="Charges du logement retenues dans l'indemnité"
             subtitle="Chaque poste (y compris le loyer) est inclus par défaut mais peut être désactivé individuellement. Les montants pré-remplis sont des ordres de grandeur 2025-2026 : remplacez-les par vos factures réelles, seules opposables en cas de contrôle."
           >
-            <p className="hint-block">
-              Valeurs de référence pour {inputs.surfaceTotaleM2} m² en{" "}
-              {inputs.typeLogement === "maison" ? "maison individuelle" : "immeuble collectif"}, en tant que{" "}
-              {inputs.statutOccupant === "locataire" ? "locataire" : "propriétaire"}.{" "}
+            <div className="charges-toolbar">
+              <div className="toggle-group">
+                {(
+                  [
+                    ["an", "Annuel"],
+                    ["mois", "Mensuel"],
+                  ] as const
+                ).map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    className={`btn btn--ghost ${periodeAffichage === value ? "btn--active" : ""}`}
+                    onClick={() => setPeriodeAffichage(value)}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
               <button type="button" className="charge-line__apply" onClick={appliquerReferences}>
                 ↺ Tout réaligner sur les références
               </button>
+            </div>
+            <p className="hint-block">
+              Valeurs de référence pour {inputs.surfaceTotaleM2} m² en{" "}
+              {inputs.typeLogement === "maison" ? "maison individuelle" : "immeuble collectif"}, en tant que{" "}
+              {inputs.statutOccupant === "locataire" ? "locataire" : "propriétaire"}.
             </p>
             <ul className="charge-lines">
               {results.chargeLinesEffectives.map((c) => {
@@ -309,24 +344,31 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                       </label>
                       <NumberInput
                         disabled={!c.enabled || loyerAuto}
-                        value={c.montantAnnuel}
-                        onChange={(e) => updateChargeLine(c.id, { montantAnnuel: Number(e.target.value) })}
+                        // Le montant reste stocké à l'année : en affichage mensuel on divise pour
+                        // afficher et on remultiplie à la saisie, pour ne pas dupliquer l'état.
+                        value={Math.round((c.montantAnnuel / diviseur) * 100) / 100}
+                        onChange={(e) => updateChargeLine(c.id, { montantAnnuel: Number(e.target.value) * diviseur })}
                       />
-                      <span className="charge-line__unit">€/an</span>
+                      <span className="charge-line__unit">{SUFFIXE_PERIODE[periodeAffichage]}</span>
                     </div>
                     {loyerAuto ? (
                       <div className="charge-line__ref">
-                        Calculé : {inputs.surfaceTotaleM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois × 12. Décochez
-                        « Calculer automatiquement » ci-dessus pour saisir votre loyer réel.
+                        Calculé : {inputs.surfaceTotaleM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois
+                        {periodeAffichage === "an" ? " × 12" : ""}. Décochez « Calculer automatiquement » ci-dessus
+                        pour saisir votre loyer réel.
                       </div>
                     ) : (
                       infos !== undefined &&
                       reference !== undefined && (
                         <details className={`charge-line__ref${sousEvalue ? " charge-line__ref--low" : ""}`}>
                           <summary>
-                            {sousEvalue ? "⚠️ " : ""}Référence : {formatEUR(reference)}/an
+                            {sousEvalue ? "⚠️ " : ""}Référence : {parPeriode(reference)}
                             {fourchette !== undefined && fourchette[1] > 0 && (
-                              <> (fourchette {formatEUR(fourchette[0])} – {formatEUR(fourchette[1])})</>
+                              <>
+                                {" "}
+                                (fourchette {formatEUR(fourchette[0] / diviseur)} –{" "}
+                                {formatEUR(fourchette[1] / diviseur)})
+                              </>
                             )}
                             {c.montantAnnuel !== reference && (
                               <button

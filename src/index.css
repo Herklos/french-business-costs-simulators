@@ -707,6 +707,17 @@ td {
   color: var(--text-muted);
 }
 
+/* Barre d'outils au-dessus de la liste des postes de charge : période d'affichage à gauche,
+   réalignement sur les références à droite. */
+.charges-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
+}
+
 /* Sélecteur segmenté compact tenant dans une cellule de formulaire. */
 .toggle-group {
   display: flex;
