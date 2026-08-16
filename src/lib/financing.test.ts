@@ -39,19 +39,19 @@ describe("computeComptant", () => {
 
 describe("computeCredit", () => {
   it("le coût total inclut l'apport et est supérieur au prix TTC (coût du crédit)", () => {
-    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0.04, dureeMois: 60 });
+    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0.04, dureeMois: 60, tauxOpportunite: 0 });
     expect(r.coutTotal).toBeGreaterThan(45000);
     expect(r.devientProprietaire).toBe(true);
     expect(r.loyerAnnuelMoyen).toBeCloseTo(r.coutMensuelEquivalent * 12, 6);
   });
 
   it("un apport égal au prix TTC ne génère aucune mensualité", () => {
-    const r = computeCredit({ prixTTC: 45000, apport: 45000, tauxAnnuel: 0.04, dureeMois: 60 });
+    const r = computeCredit({ prixTTC: 45000, apport: 45000, tauxAnnuel: 0.04, dureeMois: 60, tauxOpportunite: 0 });
     expect(r.coutTotal).toBeCloseTo(45000, 6);
   });
 
   it("taux à 0% (financement promotionnel) : le coût total = prix TTC exact, mensualité linéaire", () => {
-    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0, dureeMois: 60 });
+    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0, dureeMois: 60, tauxOpportunite: 0 });
     expect(r.coutTotal).toBeCloseTo(45000, 6);
     expect(r.coutMensuelEquivalent).toBeCloseTo(45000 / 60, 6);
   });

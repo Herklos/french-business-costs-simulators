@@ -349,7 +349,11 @@ export function applyVehicleModel(inputs: SimulationInputs, modelId: string): Si
       // Sans cela, le crédit resterait chiffré sur des hypothèses génériques — apport de 10 % et
       // taux de marché — pendant que la LOA et la LLD porteraient l'offre réelle du constructeur.
       // Le comparatif opposerait alors une promotion à une estimation, ce qui n'a pas de sens.
-      financing.credit = { prixTTC: model.defaultPrice, ...model.defaultCreditOffer };
+      financing.credit = {
+        prixTTC: model.defaultPrice,
+        tauxOpportunite: financing.comptant.tauxOpportunite,
+        ...model.defaultCreditOffer,
+      };
     }
     if (model.defaultLldOffer) {
       financing.lld = {
@@ -391,6 +395,13 @@ export interface GlobalOption {
   // elle lui coûte donc moins qu'un euro déjà net. Ce point de vue peut inverser le classement.
   coutPocheDirigeant: number;
   devientProprietaire: boolean; // le véhicule est-il possédé à l'issue de la période (comptant/crédit, ou LOA option levée) ?
+  /**
+   * Durée sur laquelle le coût annuel de cette option est lissé — durée de détention en comptant,
+   * durée du crédit ou du contrat de location sinon. Deux options lissées sur des durées
+   * différentes ne se comparent PAS à armes égales : étaler un total sur six ans plutôt que cinq
+   * en réduit le montant annuel sans que rien ne change au coût réel.
+   */
+  dureeAnnees: number;
   valeurResiduelleEstimee: number; // valeur de marché estimée du véhicule en fin de période — 0 si jamais possédé (LLD, LOA sans option)
   detail: GlobalOptionDetailLine[]; // détail du calcul, affiché au dépliage de l'option dans l'UI
 }
@@ -1194,6 +1205,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         partSociete: s.coutNetSociete,
         partDirigeant: s.coutTotalGerantSociete,
         devientProprietaire,
+        dureeAnnees: getDureeMoisForMode(inputs, mode) / 12,
         valeurResiduelleEstimee: valeurResiduelleEstimeeSociete,
         detail: [
           ...remiseSocieteDetail,
@@ -1289,6 +1301,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
         partSociete: p.ikReimbursement - p.economieImpotIK + coutNetSocieteAugmentation,
         partDirigeant: p.coutScenarioPersonnel,
         devientProprietaire,
+        dureeAnnees: getDureeMoisForMode(inputs, mode) / 12,
         valeurResiduelleEstimee: valeurResiduelleEstimeePersonnel,
         detail: [
           ...remisePersonnelDetail,

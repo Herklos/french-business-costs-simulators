@@ -21,6 +21,9 @@ export function getTauxUsureApplicable(montantEmprunte: number): number {
   return tranche ? tranche.taux : TAUX_USURE_PRETS_PERSONNELS[TAUX_USURE_PRETS_PERSONNELS.length - 1].taux;
 }
 
+/** Rendement alternatif du capital immobilisé, commun au comptant et à l'apport d'un crédit. */
+export const TAUX_OPPORTUNITE_DEFAUT = 0.03;
+
 export interface ComptantParams {
   prixTTC: number;
   dureeDetentionMois: number;
@@ -32,6 +35,10 @@ export interface CreditParams {
   apport: number;
   tauxAnnuel: number; // TAEG (0-1)
   dureeMois: number;
+  // Même rendement alternatif que celui du comptant : l'apport est du capital immobilisé au premier
+  // jour, exactement comme un achat comptant. Ne le facturer que d'un côté rendait le crédit
+  // artificiellement moins cher, d'autant plus que l'apport est important.
+  tauxOpportunite: number;
 }
 
 export interface LoaParams {
@@ -69,8 +76,14 @@ export interface FinancingInputs {
 // simulator.ts), en remplacement de l'estimation générique ci-dessous.
 export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
   return {
-    comptant: { prixTTC, dureeDetentionMois: 60, tauxOpportunite: 0.03 },
-    credit: { prixTTC, apport: prixTTC * 0.1, tauxAnnuel: 0.04, dureeMois: 60 },
+    comptant: { prixTTC, dureeDetentionMois: 60, tauxOpportunite: TAUX_OPPORTUNITE_DEFAUT },
+    credit: {
+      prixTTC,
+      apport: prixTTC * 0.1,
+      tauxAnnuel: 0.04,
+      dureeMois: 60,
+      tauxOpportunite: TAUX_OPPORTUNITE_DEFAUT,
+    },
     loa: {
       prixTTC,
       premierLoyerMajore: prixTTC * 0.2,
@@ -116,7 +129,7 @@ export function computeMensualiteCredit(montantEmprunte: number, tauxAnnuel: num
 }
 
 export function computeComptant(p: ComptantParams): FinancingResult {
-  const coutOpportunite = p.prixTTC * p.tauxOpportunite * (p.dureeDetentionMois / 12);
+  const coutOpportunite = coutOpportuniteCapital(p.prixTTC, p.tauxOpportunite, p.dureeDetentionMois);
   const coutTotal = p.prixTTC + coutOpportunite;
   const coutMensuelEquivalent = p.dureeDetentionMois > 0 ? coutTotal / p.dureeDetentionMois : 0;
   return {
@@ -130,12 +143,25 @@ export function computeComptant(p: ComptantParams): FinancingResult {
   };
 }
 
+/**
+ * Coût d'opportunité d'un capital immobilisé : ce que la somme aurait rapporté si elle était restée
+ * placée. Intérêts simples, cohérents avec le reste du modèle — l'actualisation exacte des flux
+ * dépasserait la précision recherchée, et l'écart résiduel est signalé plutôt que masqué.
+ */
+export function coutOpportuniteCapital(montant: number, tauxAnnuel: number, dureeMois: number): number {
+  return Math.max(0, montant) * Math.max(0, tauxAnnuel) * (Math.max(0, dureeMois) / 12);
+}
+
 export function computeCredit(p: CreditParams): FinancingResult {
   const montantEmprunte = Math.max(0, p.prixTTC - p.apport);
   const mensualite = computeMensualiteCredit(montantEmprunte, p.tauxAnnuel, p.dureeMois);
   const totalMensualites = mensualite * p.dureeMois;
   const coutCredit = totalMensualites - montantEmprunte;
-  const coutTotal = p.apport + totalMensualites;
+  // L'apport est immobilisé dès le premier jour, au même titre qu'un achat comptant : il supporte
+  // donc le même coût d'opportunité. L'omettre faisait mécaniquement gagner le crédit dès qu'un
+  // apport était saisi, sans qu'aucune ligne du détail ne l'explique.
+  const coutOpportuniteApport = coutOpportuniteCapital(p.apport, p.tauxOpportunite, p.dureeMois);
+  const coutTotal = p.apport + totalMensualites + coutOpportuniteApport;
   const coutMensuelEquivalent = p.dureeMois > 0 ? coutTotal / p.dureeMois : 0;
   return {
     mode: "credit",
@@ -143,7 +169,7 @@ export function computeCredit(p: CreditParams): FinancingResult {
     coutTotal,
     coutMensuelEquivalent,
     loyerAnnuelMoyen: coutMensuelEquivalent * 12,
-    detail: { montantEmprunte, mensualite, totalMensualites, coutCredit, apport: p.apport },
+    detail: { montantEmprunte, mensualite, totalMensualites, coutCredit, apport: p.apport, coutOpportuniteApport },
     devientProprietaire: true,
   };
 }
