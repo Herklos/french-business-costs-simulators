@@ -10,6 +10,8 @@ import {
   TAUX_FORFAIT_SOCIAL_PREVOYANCE,
   computeMutuellePrevoyance,
   createDefaultMutuellePrevoyanceInputs,
+  applyMutuelleDraft,
+  extractMutuelleDraft,
 } from "../lib/mutuellePrevoyance";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
@@ -22,7 +24,7 @@ import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
-import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import { loadDraft, savePersonalTaxProfile, saveDraft, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation mutuelle/prévoyance, destiné à être copié dans le presse-papier. */
@@ -81,7 +83,11 @@ function buildMutuelleExportText(sim: MutuellePrevoyanceInputs): string {
 
 export function MutuellePrevoyanceSimulatorPage({ initialShareData }: { initialShareData?: string }) {
   const [inputs, setInputs] = useState<MutuellePrevoyanceInputs>(
-    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultMutuellePrevoyanceInputs()), initialShareData),
+    () =>
+      mergeSharedInputs(
+        withPersistedPersonalTaxProfile(applyMutuelleDraft(createDefaultMutuellePrevoyanceInputs(), loadDraft("mutuelle"))),
+        initialShareData,
+      ),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeMutuellePrevoyance(inputs), [inputs]);
@@ -89,6 +95,11 @@ export function MutuellePrevoyanceSimulatorPage({ initialShareData }: { initialS
   useEffect(() => {
     savePersonalTaxProfile(inputs.personalTaxProfile);
   }, [inputs.personalTaxProfile]);
+
+  // Tout le reste du formulaire est memorise sur cet appareil et recharge a la visite suivante.
+  useEffect(() => {
+    saveDraft("mutuelle", extractMutuelleDraft(inputs));
+  }, [inputs]);
 
   function update<K extends keyof MutuellePrevoyanceInputs>(key: K, value: MutuellePrevoyanceInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

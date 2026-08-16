@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   DUREE_DETENTION_MINIMALE_INTEGRATION_FISCALE_ANNEES,
   DUREE_DETENTION_MINIMALE_MERE_FILLE_ANNEES,
@@ -7,6 +7,8 @@ import {
   SEUIL_DETENTION_MERE_FILLE_POURCENT,
   computeHolding,
   createDefaultHoldingInputs,
+  applyHoldingDraft,
+  extractHoldingDraft,
 } from "../lib/holding";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
@@ -17,6 +19,7 @@ import { ShareButton } from "../components/ShareButton";
 import { PdfButton } from "../components/PdfButton";
 import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
+import { loadDraft, saveDraft } from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation holding, destiné à être copié dans le presse-papier. */
@@ -52,11 +55,16 @@ function buildHoldingExportText(sim: HoldingInputs): string {
 }
 
 export function HoldingSimulatorPage({ initialShareData }: { initialShareData?: string }) {
-  const [inputs, setInputs] = useState<HoldingInputs>(
-    () => mergeSharedInputs(createDefaultHoldingInputs(), initialShareData),
+  const [inputs, setInputs] = useState<HoldingInputs>(() =>
+    mergeSharedInputs(applyHoldingDraft(createDefaultHoldingInputs(), loadDraft("holding")), initialShareData),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeHolding(inputs), [inputs]);
+
+  // Le formulaire est memorise sur cet appareil et recharge a la visite suivante.
+  useEffect(() => {
+    saveDraft("holding", extractHoldingDraft(inputs));
+  }, [inputs]);
 
   function update<K extends keyof HoldingInputs>(key: K, value: HoldingInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

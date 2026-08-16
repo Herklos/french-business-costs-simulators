@@ -8,6 +8,8 @@ import {
   breakdownCotisationsTNS,
   computeRemuneration,
   createDefaultRemunerationInputs,
+  applyRemunerationDraft,
+  extractRemunerationDraft,
 } from "../lib/remuneration";
 import {
   type InteressementInputs,
@@ -30,7 +32,7 @@ import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
-import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import { loadDraft, savePersonalTaxProfile, saveDraft, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { resolvePersonalTaxProfile } from "../lib/frenchIncomeTax";
 import { formatEUR, formatEURPrecise, formatPercent } from "../lib/format";
 
@@ -78,7 +80,11 @@ function buildRemunerationExportText(sim: RemunerationInputs): string {
 
 export function RemunerationSimulatorPage({ initialShareData }: { initialShareData?: string }) {
   const [inputs, setInputs] = useState<RemunerationInputs>(
-    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultRemunerationInputs()), initialShareData),
+    () =>
+      mergeSharedInputs(
+        withPersistedPersonalTaxProfile(applyRemunerationDraft(createDefaultRemunerationInputs(), loadDraft("remuneration"))),
+        initialShareData,
+      ),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeRemuneration(inputs), [inputs]);
@@ -122,6 +128,11 @@ export function RemunerationSimulatorPage({ initialShareData }: { initialShareDa
   useEffect(() => {
     savePersonalTaxProfile(inputs.personalTaxProfile);
   }, [inputs.personalTaxProfile]);
+
+  // Tout le reste du formulaire est memorise sur cet appareil et recharge a la visite suivante.
+  useEffect(() => {
+    saveDraft("remuneration", extractRemunerationDraft(inputs));
+  }, [inputs]);
 
   function update<K extends keyof RemunerationInputs>(key: K, value: RemunerationInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

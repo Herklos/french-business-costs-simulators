@@ -24,6 +24,7 @@ import { type DirigeantStatus, getCompanyType, resolveDirigeantStatus, type Impo
 import { type CompanyTaxContext, computeEconomieImpotSociete } from "./corporateTax";
 import { type PersonalTaxProfile, createDefaultPersonalTaxProfile, resolvePersonalTaxProfile } from "./frenchIncomeTax";
 import { PASS_2026 } from "./pass";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 
 export const RETRAITE_TNS_TAUX_BASE = 0.1; // 10% du bénéfice imposable (plafonné à 8×PASS)
 export const RETRAITE_TNS_TAUX_COMPLEMENTAIRE = 0.15; // 15% additionnels sur la tranche 1×PASS à 8×PASS
@@ -155,6 +156,23 @@ export interface RetraiteResults {
   renteViagereTauxConversion: number;
   renteViagereAnnuelleEstimee: number;
   renteViagereMensuelleEstimee: number;
+}
+
+/** Champs jamais persistés : identifiants techniques, libellé de simulation, profil transversal. */
+export const CHAMPS_RETRAITE_NON_PERSISTES = ["id", "name", "createdAt", "personalTaxProfile"] as const;
+
+const SCHEMA_BROUILLON_RETRAITE: DraftSchema = {
+  champsNonPersistes: CHAMPS_RETRAITE_NON_PERSISTES,
+  valeursAdmises: { impositionSociete: ["IS", "IR"] },
+  champsTaux: ["corporateTaxRate"],
+};
+
+export function extractRetraiteDraft(inputs: RetraiteInputs) {
+  return extractDraft(inputs, CHAMPS_RETRAITE_NON_PERSISTES);
+}
+
+export function applyRetraiteDraft(defaults: RetraiteInputs, draft: unknown): RetraiteInputs {
+  return applyDraft(defaults, draft, SCHEMA_BROUILLON_RETRAITE);
 }
 
 export function computeRetraite(inputs: RetraiteInputs): RetraiteResults {

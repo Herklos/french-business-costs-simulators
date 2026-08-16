@@ -11,6 +11,8 @@ import {
   compareMontagesMateriel,
   computeMateriel,
   createDefaultMaterielInputs,
+  applyMaterielDraft,
+  extractMaterielDraft,
 } from "../lib/materiel";
 import { MontageCards } from "../components/MontageCards";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
@@ -23,7 +25,7 @@ import { PdfButton } from "../components/PdfButton";
 import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
-import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import { loadDraft, savePersonalTaxProfile, saveDraft, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatEURPrecise, formatPercent } from "../lib/format";
 
 const MODE_LABELS = MODE_ACQUISITION_LABELS;
@@ -75,7 +77,11 @@ function buildMaterielExportText(sim: MaterielInputs): string {
 
 export function MaterielSimulatorPage({ initialShareData }: { initialShareData?: string }) {
   const [inputs, setInputs] = useState<MaterielInputs>(
-    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultMaterielInputs()), initialShareData),
+    () =>
+      mergeSharedInputs(
+        withPersistedPersonalTaxProfile(applyMaterielDraft(createDefaultMaterielInputs(), loadDraft("materiel"))),
+        initialShareData,
+      ),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeMateriel(inputs), [inputs]);
@@ -84,6 +90,11 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
   useEffect(() => {
     savePersonalTaxProfile(inputs.personalTaxProfile);
   }, [inputs.personalTaxProfile]);
+
+  // Tout le reste du formulaire est memorise sur cet appareil et recharge a la visite suivante.
+  useEffect(() => {
+    saveDraft("materiel", extractMaterielDraft(inputs));
+  }, [inputs]);
 
   function update<K extends keyof MaterielInputs>(key: K, value: MaterielInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

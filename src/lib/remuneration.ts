@@ -36,6 +36,7 @@ import {
   resolvePersonalTaxProfile,
 } from "./frenchIncomeTax";
 import { computeIS } from "./corporateTax";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 
 export const DEFAULT_TAUX_CHARGES_TNS = 0.43; // cf. taxRules "cotisations-tns-taux-global" — cotisations calculées sur la rémunération nette
 export const DEFAULT_TAUX_CHARGES_PATRONALES = 0.42; // ordre de grandeur cadre assimilé salarié, régime général, sur le brut
@@ -313,6 +314,23 @@ function computeScenario(
     tauxPrelevementGlobal,
     coutPour1EuroNet,
   };
+}
+
+/** Champs jamais persistés : identifiants techniques, libellé de simulation, profil transversal. */
+export const CHAMPS_REMUNERATION_NON_PERSISTES = ["id", "name", "createdAt", "personalTaxProfile"] as const;
+
+const SCHEMA_BROUILLON_REMUNERATION: DraftSchema = {
+  champsNonPersistes: CHAMPS_REMUNERATION_NON_PERSISTES,
+  valeursAdmises: { impositionSociete: ["IS", "IR"], modeRemuneration: ["salaire", "dividendes", "mixte"] },
+  champsTaux: ["corporateTaxRate"],
+};
+
+export function extractRemunerationDraft(inputs: RemunerationInputs) {
+  return extractDraft(inputs, CHAMPS_REMUNERATION_NON_PERSISTES);
+}
+
+export function applyRemunerationDraft(defaults: RemunerationInputs, draft: unknown): RemunerationInputs {
+  return applyDraft(defaults, draft, SCHEMA_BROUILLON_REMUNERATION);
 }
 
 export function computeRemuneration(inputs: RemunerationInputs): RemunerationResults {

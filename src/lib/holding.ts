@@ -43,6 +43,7 @@
 //  - Frais de structure (comptabilité, gestion de la holding) non modélisés.
 
 import { computeIS } from "./corporateTax";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 
 export const QUOTE_PART_FRAIS_ET_CHARGES_MERE_FILLE = 0.05; // art. 216 CGI
 export const SEUIL_DETENTION_MERE_FILLE_POURCENT = 5; // art. 145 CGI
@@ -107,6 +108,23 @@ export interface HoldingResults {
   capitalHoldingFinalNetApresSortie: number;
 
   ecartEnFaveurHolding: number; // capitalHoldingFinalNetApresSortie − capitalDirectPersonnelFinal
+}
+
+/** Champs jamais persistés : identifiants techniques, libellé de simulation, profil transversal. */
+export const CHAMPS_HOLDING_NON_PERSISTES = ["id", "name", "createdAt", "personalTaxProfile"] as const;
+
+const SCHEMA_BROUILLON_HOLDING: DraftSchema = {
+  champsNonPersistes: CHAMPS_HOLDING_NON_PERSISTES,
+  valeursAdmises: {},
+  champsTaux: ["corporateTaxRate"],
+};
+
+export function extractHoldingDraft(inputs: HoldingInputs) {
+  return extractDraft(inputs, CHAMPS_HOLDING_NON_PERSISTES);
+}
+
+export function applyHoldingDraft(defaults: HoldingInputs, draft: unknown): HoldingInputs {
+  return applyDraft(defaults, draft, SCHEMA_BROUILLON_HOLDING);
 }
 
 export function computeHolding(inputs: HoldingInputs): HoldingResults {

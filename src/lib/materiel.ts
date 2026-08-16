@@ -29,6 +29,7 @@
 import { type CompanyTaxContext, computeEconomieImpotSociete } from "./corporateTax";
 import { type PersonalTaxProfile, createDefaultPersonalTaxProfile, resolvePersonalTaxProfile } from "./frenchIncomeTax";
 import type { ImpositionSociete } from "./companyTypes";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 
 export const SEUIL_CHARGE_IMMEDIATE_HT = 500; // art. 39-1 3° CGI — petit matériel, non revalorisé depuis des décennies
 
@@ -198,6 +199,35 @@ export function tauxImpliciteLoa(prixHT: number, loyerMensuel: number, dureeMois
   }
   const tauxMensuel = (bas + haut) / 2;
   return Math.pow(1 + tauxMensuel, 12) - 1;
+}
+
+/** Champs jamais persistés : identifiants techniques, libellé de simulation, profil transversal. */
+export const CHAMPS_MATERIEL_NON_PERSISTES = ["id", "name", "createdAt", "personalTaxProfile"] as const;
+
+const SCHEMA_BROUILLON_MATERIEL: DraftSchema = {
+  champsNonPersistes: CHAMPS_MATERIEL_NON_PERSISTES,
+  valeursAdmises: {
+    impositionSociete: ["IS", "IR"],
+    categorie: ["informatique", "mobilier", "outillage", "autre"],
+    // Liste écrite en clair : `MODES_ACQUISITION` est déclarée plus bas, avec les libellés qu'elle
+    // accompagne, et la remonter ici séparerait la liste de ce qui lui donne son sens.
+    modeAcquisition: ["societe", "personnel_rembourse", "personnel_non_rembourse", "loa_sans_option", "loa_avec_option"],
+  },
+  champsTaux: ["corporateTaxRate", "tauxInflationMateriel", "tauxChargesSocialesAEN"],
+};
+
+export function extractMaterielDraft(inputs: MaterielInputs) {
+  return extractDraft(inputs, CHAMPS_MATERIEL_NON_PERSISTES);
+}
+
+export function applyMaterielDraft(defaults: MaterielInputs, draft: unknown): MaterielInputs {
+  const applique = applyDraft(defaults, draft, SCHEMA_BROUILLON_MATERIEL);
+  // L'ancien mode unique « loa » figure encore dans les brouillons écrits avant la séparation des
+  // deux issues : la liste des valeurs admises le rejetterait, et il retomberait sur l'achat.
+  const persiste = draft && typeof draft === "object" ? (draft as Record<string, unknown>) : {};
+  return typeof persiste.modeAcquisition === "string"
+    ? { ...applique, modeAcquisition: normaliserModeAcquisition(persiste.modeAcquisition) }
+    : applique;
 }
 
 export function computeMateriel(inputs: MaterielInputs): MaterielResults {

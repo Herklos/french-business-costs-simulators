@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { type RetraiteInputs, computeRetraite, createDefaultRetraiteInputs } from "../lib/retraite";
+import {
+  type RetraiteInputs,
+  applyRetraiteDraft,
+  computeRetraite,
+  createDefaultRetraiteInputs,
+  extractRetraiteDraft,
+} from "../lib/retraite";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
@@ -11,7 +17,7 @@ import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
-import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import { loadDraft, savePersonalTaxProfile, saveDraft, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /** Résumé texte complet d'une simulation épargne retraite, destiné à être copié dans le presse-papier. */
@@ -64,7 +70,11 @@ function buildRetraiteExportText(sim: RetraiteInputs): string {
 
 export function RetraiteSimulatorPage({ initialShareData }: { initialShareData?: string }) {
   const [inputs, setInputs] = useState<RetraiteInputs>(
-    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultRetraiteInputs()), initialShareData),
+    () =>
+      mergeSharedInputs(
+        withPersistedPersonalTaxProfile(applyRetraiteDraft(createDefaultRetraiteInputs(), loadDraft("retraite"))),
+        initialShareData,
+      ),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const [showDetail, setShowDetail] = useState(false);
@@ -73,6 +83,11 @@ export function RetraiteSimulatorPage({ initialShareData }: { initialShareData?:
   useEffect(() => {
     savePersonalTaxProfile(inputs.personalTaxProfile);
   }, [inputs.personalTaxProfile]);
+
+  // Tout le reste du formulaire est memorise sur cet appareil et recharge a la visite suivante.
+  useEffect(() => {
+    saveDraft("retraite", extractRetraiteDraft(inputs));
+  }, [inputs]);
 
   function update<K extends keyof RetraiteInputs>(key: K, value: RetraiteInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));

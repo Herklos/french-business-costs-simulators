@@ -47,6 +47,7 @@ import { type DirigeantStatus, getCompanyType, resolveDirigeantStatus, type Impo
 import { type CompanyTaxContext, computeEconomieImpotSociete } from "./corporateTax";
 import { type PersonalTaxProfile, createDefaultPersonalTaxProfile, resolvePersonalTaxProfile } from "./frenchIncomeTax";
 import { PASS_2026 } from "./pass";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 
 export const MADELIN_TAUX_PASS = 0.07; // 7% du PASS
 export const MADELIN_TAUX_BENEFICE = 0.0375; // 3,75% du bénéfice imposable
@@ -191,6 +192,23 @@ export interface MutuellePrevoyanceResults {
    */
   coutContratIndividuelEquivalent: number;
   economieVsContratIndividuel: number;
+}
+
+/** Champs jamais persistés : identifiants techniques, libellé de simulation, profil transversal. */
+export const CHAMPS_MUTUELLE_NON_PERSISTES = ["id", "name", "createdAt", "personalTaxProfile"] as const;
+
+const SCHEMA_BROUILLON_MUTUELLE: DraftSchema = {
+  champsNonPersistes: CHAMPS_MUTUELLE_NON_PERSISTES,
+  valeursAdmises: { impositionSociete: ["IS", "IR"] },
+  champsTaux: ["corporateTaxRate", "tauxChargesPatronalesReintegration", "tauxChargesSalarialesReintegration"],
+};
+
+export function extractMutuelleDraft(inputs: MutuellePrevoyanceInputs) {
+  return extractDraft(inputs, CHAMPS_MUTUELLE_NON_PERSISTES);
+}
+
+export function applyMutuelleDraft(defaults: MutuellePrevoyanceInputs, draft: unknown): MutuellePrevoyanceInputs {
+  return applyDraft(defaults, draft, SCHEMA_BROUILLON_MUTUELLE);
 }
 
 export function computeMutuellePrevoyance(inputs: MutuellePrevoyanceInputs): MutuellePrevoyanceResults {

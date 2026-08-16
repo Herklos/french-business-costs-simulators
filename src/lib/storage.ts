@@ -161,3 +161,33 @@ export function clearVehicleDraft() {
     // idem.
   }
 }
+
+/**
+ * Brouillon d'un simulateur, sous une cle derivee de son identifiant.
+ *
+ * Le vehicule et le domicile conservent leurs cles historiques, deja presentes sur les appareils
+ * des utilisateurs ; les autres simulateurs partagent ce nommage generique.
+ */
+function cleBrouillon(kind: SimulatorKind): string {
+  return `fbcs_draft_${kind}_v1`;
+}
+
+export function loadDraft(kind: SimulatorKind): unknown {
+  return lireJson(cleBrouillon(kind));
+}
+
+export function saveDraft(kind: SimulatorKind, draft: unknown) {
+  try {
+    localStorage.setItem(cleBrouillon(kind), JSON.stringify(draft));
+  } catch {
+    // idem : le pre-remplissage est un confort, jamais une condition d'usage du simulateur.
+  }
+}
+
+export function clearDraft(kind: SimulatorKind) {
+  try {
+    localStorage.removeItem(cleBrouillon(kind));
+  } catch {
+    // idem.
+  }
+}
