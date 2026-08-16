@@ -67,16 +67,20 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push(`Prix TTC : ${formatEUR(sim.vehiclePrice)} · Âge : ${sim.vehicleOverFiveYears ? "> 5 ans" : "≤ 5 ans"}`);
   push(`Motorisation : ${sim.isElectric ? "100% électrique" : "Thermique/hybride"}${sim.isElectric ? ` · Éco-score éligible : ${sim.isEcoScoreEligible ? "Oui" : "Non"}` : ` · CO2 : ${sim.co2EmissionsGkm} g/km`}`);
   push(`Usage privé : ${sim.privateUsePercent}% · Kilométrage annuel : ${sim.totalKmAnnual} km`);
-  if (sim.privateUsePercent >= 80) {
+  if (sim.privateUsePercent >= 60) {
     push("");
-    push("⚠️ Usage privé élevé — sécuriser via la qualification « véhicule de fonction » (élément de rémunération,");
-    push("art. 39-1-1° CGI) plutôt que « véhicule de service » (outil de travail) :");
+    push("Aucun seuil légal d'usage privé n'existe : un usage majoritaire, voire exclusif, est admis. Ce qui change");
+    push("avec la part privée est la voie de justification praticable — « véhicule de fonction » (élément de");
+    push("rémunération, art. 39-1-1° CGI) plutôt que « véhicule de service » (outil de travail, besoin professionnel");
+    push("à prouver) :");
     push("  1. Formaliser par une décision d'organe social (registre de l'associé unique en SASU/EURL, ou convention");
     push("     réglementée art. L227-10 / L223-19 c. com. en SAS/SARL) qualifiant le véhicule d'élément de rémunération.");
     push("  2. Déclarer l'AEN à 100% de l'usage privé réel, sans minoration.");
     push("  3. Vérifier que la rémunération globale (salaire + AEN) n'est pas excessive (art. 39-1-1° CGI).");
     push("  4. Tenir un carnet de bord même sans usage pro (cohérence et bonne foi).");
     push("  Réf. : CE 9e-10e ch., 4 oct. 2023, n°466887, Sté Collectivision (rémunération indirecte non anormale).");
+    push("Ce qui expose n'est pas le pourcentage mais l'AEN minoré, l'absence de décision sociale, ou des kilomètres");
+    push("professionnels déclarés au-delà de la réalité — l'abus de biens sociaux suppose la mauvaise foi.");
   }
   push("");
   push("— Charges annuelles réelles (hypothèses) —");
@@ -486,6 +490,27 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
             )}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-taux" />}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-plafond" />}
+            {inputs.isElectric && (
+              <details className="details-block">
+                <summary>Ce que l'électrique change vraiment — et deux avantages qu'on lui prête à tort</summary>
+                <p>
+                  Le choix électrique produit des effets réels et chiffrables : exonération des taxes annuelles CO2 et
+                  polluants, plafond de déduction de l'art. 39-4 CGI porté à {formatEUR(30000)} contre{" "}
+                  {formatEUR(18300)} pour un thermique ordinaire, absence de malus, abattement sur l'avantage en nature
+                  si l'éco-score est atteint, et TVA sur l'électricité de recharge déductible à 100 % là où l'essence
+                  et le gazole plafonnent à 80 %.
+                </p>
+                <p className="warning-block">
+                  Deux avantages lui sont en revanche prêtés à tort. La <strong>TVA du véhicule</strong> reste exclue du
+                  droit à déduction : l'exclusion s'apprécie sur la conception du véhicule — une voiture particulière
+                  reste une voiture particulière, électrique ou non — et elle ne se prorate pas selon l'usage
+                  professionnel. Et le <strong>suramortissement « énergies propres »</strong> ne concerne que les
+                  poids lourds et utilitaires légers d'au moins 2,6 tonnes : une voiture particulière en est exclue
+                  par sa catégorie.
+                </p>
+                <RuleNote ruleId="deduction-exceptionnelle-vehicules-electriques-lourds" />
+              </details>
+            )}
           </Section>
 
           {inputs.isElectric && ((selectedVehicleModel?.ceeOffers?.length ?? 0) > 0 || (selectedVehicleModel?.bonusRepriseConstructeur ?? 0) > 0 || inputs.bonusRepriseActif) && (
@@ -622,26 +647,46 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                 <NumberInput value={inputs.totalKmAnnual} onChange={(e) => update("totalKmAnnual", Number(e.target.value))} />
               </Field>
             </div>
-            {inputs.privateUsePercent >= 100 && (
-              <p className="warning-block warning-block--danger">
-                🚫 Usage 100% privé : le véhicule n'a aucun usage professionnel documenté. Il ne peut pas être justifié
-                comme <strong>véhicule de service</strong> (outil de travail) — cette qualification supposerait un besoin
-                professionnel réel et prouvable. Sans requalification en véhicule de fonction (ci-dessous), le risque est
-                élevé : abus de biens sociaux (jusqu'à 5 ans d'emprisonnement, 375 000 € d'amende) et remise en cause
-                totale de la déductibilité (acte anormal de gestion).
-              </p>
-            )}
-            {inputs.privateUsePercent >= 90 && inputs.privateUsePercent < 100 && (
-              <p className="warning-block warning-block--danger">
-                ⚠️ Usage privé très majoritaire (≥90%) : l'usage professionnel résiduel ne suffit plus à justifier le
-                véhicule comme simple outil de travail. La voie à sécuriser est celle du véhicule de fonction
-                (ci-dessous).
-              </p>
-            )}
-            {inputs.privateUsePercent >= 80 && inputs.privateUsePercent < 90 && (
+            {/* Ces messages ont longtemps été formulés comme des alertes déclenchées par des seuils
+                chiffrés — 80 %, 90 %, 100 %. C'était deux fois trompeur : aucun texte ne fixe de
+                proportion d'usage privé, et ce n'est pas le pourcentage qui crée le risque mais la
+                QUALIFICATION retenue. Un usage à 90 % correctement qualifié en véhicule de fonction
+                est plus solide qu'un usage à 50 % sans décision d'organe social. Le message porte
+                donc désormais sur la voie de justification qui reste ouverte, pas sur un seuil. */}
+            {inputs.privateUsePercent >= 60 && (
               <p className="warning-block">
-                Usage privé élevé (≥80%) : documentez précisément l'usage professionnel réel, et envisagez la
-                qualification en véhicule de fonction pour sécuriser la part privée (ci-dessous).
+                <strong>Aucun seuil légal d'usage privé n'existe.</strong> Ni le CGI, ni le BOFiP, ni la jurisprudence
+                ne fixent de proportion au-delà de laquelle un véhicule ne pourrait plus être porté par la société : un
+                usage privé majoritaire, voire exclusif, est admis. Ce qui change avec la part privée, ce n'est pas la
+                légalité mais la <strong>voie de justification qui reste praticable</strong>.
+                {inputs.privateUsePercent >= 90 ? (
+                  <>
+                    {" "}
+                    À {inputs.privateUsePercent} % d'usage privé, la voie du <strong>véhicule de service</strong> —
+                    l'outil de travail, dont la déductibilité repose sur un besoin professionnel prouvable — n'est plus
+                    praticable : le besoin invoqué ne correspondrait pas à l'usage constaté. Reste celle du{" "}
+                    <strong>véhicule de fonction</strong>, détaillée ci-dessous, qui ne suppose aucun usage
+                    professionnel mais un formalisme précis.
+                  </>
+                ) : (
+                  <>
+                    {" "}
+                    À {inputs.privateUsePercent} % d'usage privé, les deux voies restent ouvertes : celle du{" "}
+                    <strong>véhicule de service</strong>, à condition de pouvoir documenter le besoin professionnel
+                    réel, et celle du <strong>véhicule de fonction</strong>, détaillée ci-dessous. Choisissez-en une et
+                    tenez-la : c'est l'incohérence entre les documents, pas la part privée, qui se relève en contrôle.
+                  </>
+                )}
+              </p>
+            )}
+            {inputs.privateUsePercent >= 90 && (
+              <p className="warning-block warning-block--info">
+                Ce qui expose réellement n'est donc pas votre pourcentage, mais trois défauts qui peuvent
+                l'accompagner : un avantage en nature <strong>minoré</strong> par rapport à l'usage réel, l'absence de{" "}
+                <strong>décision d'organe social</strong> qualifiant le véhicule d'élément de rémunération, et des
+                kilomètres professionnels <strong>déclarés au-delà de la réalité</strong> pour faire paraître l'usage
+                plus professionnel qu'il n'est. L'abus de biens sociaux suppose la mauvaise foi : c'est la
+                dissimulation qui la caractérise, jamais l'usage privé assumé et déclaré.
               </p>
             )}
             {inputs.privateUsePercent >= 80 && (

@@ -1401,3 +1401,46 @@ describe("computeSimulation — plafonnement de l'AEN d'un véhicule loué", () 
     }
   });
 });
+
+describe("computeSimulation — l'usage privé ne crée aucun seuil de légalité", () => {
+  // Garde-fou de cohérence entre le moteur et le discours de l'interface : le simulateur ne doit
+  // faire dépendre AUCUNE conséquence chiffrée du franchissement d'un pourcentage d'usage privé.
+  // Les taux de 80 % ou 90 % qui structuraient les avertissements n'ont pas d'existence légale ;
+  // s'ils réapparaissaient dans les calculs, ils y introduiraient une discontinuité inventée.
+  it("l'avantage en nature varie continûment avec la part privée, sans saut", () => {
+    const base = { ...createDefaultInputs(), financingMode: "loa" as const, isElectric: false, annualFuelPrivateCost: 0 };
+    const aen = (p: number) => computeSimulation({ ...base, privateUsePercent: p }).aenBrut;
+    for (let p = 1; p <= 100; p++) {
+      const pas = aen(p) - aen(p - 1);
+      const pasReference = aen(50) - aen(49);
+      expect(pas, `saut à ${p} %`).toBeCloseTo(pasReference, 6);
+    }
+  });
+
+  it("la déductibilité de la charge suit le prorata, sans rupture à 80 % ni à 90 %", () => {
+    // Véhicule électrique sous le plafond de l'art. 39-4 CGI : aucune réintégration, donc aucun
+    // plancher à zéro ne vient masquer une éventuelle discontinuité. La quote-part déductible doit
+    // alors décroître d'un pas rigoureusement constant sur toute la plage.
+    const base = {
+      ...createDefaultInputs(),
+      financingMode: "loa" as const,
+      isElectric: true,
+      vehiclePrice: 25000,
+    };
+    const part = (p: number) => computeSimulation({ ...base, privateUsePercent: p }).quotePartProfessionnelleDeductible;
+    expect(computeSimulation({ ...base, privateUsePercent: 90 }).reintegrationFiscaleCO2).toBe(0);
+    const pasReference = part(49) - part(50);
+    expect(pasReference).toBeGreaterThan(0);
+    for (let p = 1; p <= 100; p++) {
+      expect(part(p - 1) - part(p), `rupture à ${p} %`).toBeCloseTo(pasReference, 6);
+    }
+  });
+
+  it("un usage 100 % privé reste calculable et ne produit aucune valeur de rupture", () => {
+    const r = computeSimulation({ ...createDefaultInputs(), privateUsePercent: 100 });
+    expect(Number.isFinite(r.aenBrut)).toBe(true);
+    expect(r.aenBrut).toBeGreaterThan(0);
+    expect(r.quotePartProfessionnelleDeductible).toBe(0);
+    expect(Number.isFinite(r.coutNetSociete)).toBe(true);
+  });
+});

@@ -313,15 +313,32 @@ export const TAX_RULES: TaxRule[] = [
     category: "fiscalite_vehicule_societe",
     label: "TVA récupérable sur véhicule et carburant",
     value: "Véhicule de tourisme : 0% récupérable (sauf mise à disposition avec participation financière réelle, cf. règle dédiée) · Carburant : 80% récupérable · Électricité de recharge : 100% récupérable",
-    legalReference: "Art. 206, IV, 2, 6° annexe II CGI",
-    sourceLabel: "Qonto / Légifiscal",
+    legalReference: "Art. 206, IV, 2, 6° et 8° annexe II CGI ; BOI-TVA-DED-30-30-20 et BOI-TVA-DED-30-30-70",
+    sourceLabel: "BOFiP-Impôts",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1186-PGP.html",
     validFrom: "2025-04-30",
     validUntil: "2026-12-31",
     notes:
-      "Principe : la TVA sur l'achat ou les loyers d'un véhicule de tourisme (VP) n'est pas déductible. Exceptions historiques : véhicules utilitaires (VU), taxis/VTC, auto-écoles, sociétés de location.\n\n" +
-      "L'électricité utilisée pour recharger un véhicule électrique est récupérable à 100%, contre 80% pour l'essence et le gazole — un avantage supplémentaire de l'électrique souvent oublié.\n\n" +
-      "Une exception nouvelle et importante existe depuis le 30/04/2025 en cas de participation financière réelle du dirigeant : cf. règle « tva-vehicule-fonction-participation-financiere ».\n\n" +
-      "Non modélisé dans le simulateur : les montants saisis sont considérés TTC nets de toute récupération.",
+      "PRINCIPE : la TVA grevant l'acquisition ou les loyers d'un véhicule conçu pour le transport de personnes (catégorie M, « véhicule de tourisme ») n'est pas déductible. L'exclusion s'apprécie sur la CONCEPTION du véhicule, pas sur son usage : elle ne dépend ni de la motorisation — un véhicule électrique y est soumis comme un thermique — ni du kilométrage professionnel.\n\n" +
+      "PAS DE PRORATA, c'est l'erreur la plus répandue : un véhicule utilisé à 10 % professionnellement n'ouvre pas droit à 10 % de déduction. L'exclusion est totale ou elle n'est pas. Le prorata d'usage professionnel gouverne la déductibilité de la CHARGE à l'IS, jamais celle de la TVA.\n\n" +
+      "PÉRIMÈTRE DE L'EXCLUSION : elle s'étend aux loyers, au premier loyer majoré, au prix de levée de l'option d'achat, et aux prestations afférentes au véhicule — dont l'entretien et les réparations, qui suivent le sort du bien auquel elles se rapportent (BOI-TVA-DED-30-30-70).\n\n" +
+      "EXCEPTIONS : véhicules utilitaires (VU), transport public de voyageurs, taxis et VTC, auto-écoles, véhicules affectés à une véritable activité de location. Cette dernière exception suppose une activité de location réelle : une convention interne mettant le véhicule à disposition du dirigeant ne transforme pas la société en loueur, l'administration s'attachant à l'activité effective et à l'affectation du véhicule. Une variante encadrée existe toutefois depuis le 30/04/2025 en cas de participation financière réelle : cf. règle « tva-vehicule-fonction-participation-financiere ».\n\n" +
+      "L'ÉLECTRICITÉ DE RECHARGE ÉCHAPPE À TOUT CELA : ce n'est pas une dépense afférente au véhicule exclu mais une dépense d'énergie, déductible à 100% (art. 206, IV, 2, 8° annexe II CGI), contre 80% pour l'essence et le gazole. Un avantage supplémentaire de l'électrique, souvent oublié — non modélisé par le simulateur, qui ne chiffre pas la recharge côté société.\n\n" +
+      "CE QUE LE SIMULATEUR MODÉLISE : la TVA du véhicule (loyers ou amortissement) et de l'entretien, uniquement lorsque l'option de participation financière est activée. En dehors de ce cas, tous les montants sont traités TTC, sans récupération.",
+  },
+  {
+    id: "deduction-exceptionnelle-vehicules-electriques-lourds",
+    category: "fiscalite_vehicule_societe",
+    label: "Déduction exceptionnelle « énergies propres » — inapplicable à une voiture particulière",
+    value: "20 % à 60 % de déduction supplémentaire, réservée aux véhicules d'un PTAC ≥ 2,6 tonnes",
+    legalReference: "Art. 39 decies A CGI ; loi n°2025-127 du 14 février 2025 de finances pour 2025, art. 77",
+    sourceLabel: "BOFiP-Impôts (BOI-BIC-BASE-100-20)",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/10079-PGP.html",
+    validFrom: "2025-01-01",
+    validUntil: "2030-12-31",
+    notes:
+      "Règle inscrite ici pour DÉMENTIR une confusion fréquente, pas pour être appliquée. On entend souvent qu'« un véhicule électrique bénéficie d'un suramortissement » : c'est vrai, mais le dispositif de l'art. 39 decies A vise les POIDS LOURDS et les VÉHICULES UTILITAIRES LÉGERS d'un poids total autorisé en charge d'au moins 2,6 tonnes. Une voiture particulière, fût-elle électrique et lourde, en est exclue par sa catégorie.\n\n" +
+      "Depuis le 1er janvier 2025, la déduction se calcule au surplus sur le SURCOÛT par rapport à un véhicule équivalent, et non sur le prix d'acquisition — et reste subordonnée au respect de l'encadrement européen des aides d'État. Le simulateur ne le modélise donc pas : l'invoquer dans une note justificative pour un véhicule de tourisme serait une erreur.",
   },
   {
     id: "tva-vehicule-fonction-participation-financiere",
