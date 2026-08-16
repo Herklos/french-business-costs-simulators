@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  clearLogementProfile,
+  clearHomeOfficeDraft,
   deleteSimulation,
   listSimulations,
-  loadLogementProfile,
+  loadHomeOfficeDraft,
   loadPersonalTaxProfile,
   renameSimulation,
   saveSimulation,
   savePersonalTaxProfile,
-  saveLogementProfile,
+  saveHomeOfficeDraft,
   withPersistedPersonalTaxProfile,
 } from "./storage";
 import { createDefaultPersonalTaxProfile } from "./frenchIncomeTax";
@@ -163,47 +163,47 @@ describe("storage — revenu de référence du foyer fiscal (profil transversal)
   });
 });
 
-describe("storage — description du logement (profil transversal du bureau à domicile)", () => {
+describe("storage — brouillon du simulateur bureau à domicile", () => {
   it("retourne null quand rien n'a été mémorisé", () => {
-    expect(loadLogementProfile()).toBeNull();
+    expect(loadHomeOfficeDraft()).toBeNull();
   });
 
   it("relit ce qui a été mémorisé", () => {
-    saveLogementProfile({ surfaceTotaleM2: 95, ville: "lille" });
-    expect(loadLogementProfile()).toEqual({ surfaceTotaleM2: 95, ville: "lille" });
+    saveHomeOfficeDraft({ surfaceTotaleM2: 95, ville: "lille" });
+    expect(loadHomeOfficeDraft()).toEqual({ surfaceTotaleM2: 95, ville: "lille" });
   });
 
   it("écrase le profil précédent plutôt que d'en empiler plusieurs", () => {
-    saveLogementProfile({ surfaceTotaleM2: 95 });
-    saveLogementProfile({ surfaceTotaleM2: 40 });
-    expect(loadLogementProfile()).toEqual({ surfaceTotaleM2: 40 });
+    saveHomeOfficeDraft({ surfaceTotaleM2: 95 });
+    saveHomeOfficeDraft({ surfaceTotaleM2: 40 });
+    expect(loadHomeOfficeDraft()).toEqual({ surfaceTotaleM2: 40 });
   });
 
   it("un contenu corrompu ne fait pas planter le chargement (retourne null)", () => {
-    localStorage.setItem("fbcs_logement_profile_v1", "{ceci n'est pas du json");
-    expect(loadLogementProfile()).toBeNull();
+    localStorage.setItem("fbcs_home_office_draft_v1", "{ceci n'est pas du json");
+    expect(loadHomeOfficeDraft()).toBeNull();
   });
 
   it("un contenu valide mais non-objet est ignoré", () => {
-    localStorage.setItem("fbcs_logement_profile_v1", JSON.stringify(42));
-    expect(loadLogementProfile()).toBeNull();
+    localStorage.setItem("fbcs_home_office_draft_v1", JSON.stringify(42));
+    expect(loadHomeOfficeDraft()).toBeNull();
   });
 
-  it("clearLogementProfile oublie le logement mémorisé", () => {
-    saveLogementProfile({ surfaceTotaleM2: 95 });
-    clearLogementProfile();
-    expect(loadLogementProfile()).toBeNull();
+  it("clearHomeOfficeDraft oublie le logement mémorisé", () => {
+    saveHomeOfficeDraft({ surfaceTotaleM2: 95 });
+    clearHomeOfficeDraft();
+    expect(loadHomeOfficeDraft()).toBeNull();
   });
 
   it("oublier un logement inexistant ne lève pas", () => {
-    expect(() => clearLogementProfile()).not.toThrow();
+    expect(() => clearHomeOfficeDraft()).not.toThrow();
   });
 
   it("n'interfère pas avec les simulations sauvegardées ni avec le profil fiscal", () => {
     saveSimulation("homeOffice", { id: "sim-1", name: "Bureau" });
     savePersonalTaxProfile({ mode: "manuel", tauxManuel: 0.3 } as never);
-    saveLogementProfile({ surfaceTotaleM2: 95 });
-    clearLogementProfile();
+    saveHomeOfficeDraft({ surfaceTotaleM2: 95 });
+    clearHomeOfficeDraft();
     expect(listSimulations("homeOffice")).toHaveLength(1);
     expect(loadPersonalTaxProfile()).not.toBeNull();
   });

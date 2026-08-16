@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
   type HomeOfficeInputs,
-  LOGEMENT_PROFILE_FIELDS,
+  type SurfaceAnnexe,
+  CHAMPS_NON_PERSISTES,
   PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL,
   TOLERANCE_SURFACE_BUREAU_DEFAUT,
-  applyLogementProfile,
+  applyHomeOfficeDraft,
   chargeLinesDeReference,
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
-  extractLogementProfile,
+  extractHomeOfficeDraft,
 } from "./homeOffice";
 import { montantReferenceCharge } from "./logementCharges";
 import { findLoyerVille, prixM2Ville } from "./loyersVille";
@@ -52,6 +53,92 @@ describe("computeHomeOffice — quote-part et charges", () => {
     const inputs = createDefaultHomeOfficeInputs();
     const r = computeHomeOffice(inputs);
     expect(r.indemniteAnnuelleBrute).toBeCloseTo(r.totalChargesRetenuesAnnuel * r.quotePartSurface, 6);
+  });
+});
+
+describe("computeHomeOffice — surfaces annexes d'usage mixte", () => {
+  const base: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 12,
+  };
+
+  function avecAnnexes(inputs: HomeOfficeInputs, annexes: Partial<SurfaceAnnexe>[]): HomeOfficeInputs {
+    return {
+      ...inputs,
+      surfacesAnnexes: inputs.surfacesAnnexes.map((a, i) => ({ ...a, ...(annexes[i] ?? {}) })),
+    };
+  }
+
+  it("aucune annexe renseignée par défaut : la quote-part est celle du seul bureau", () => {
+    const r = computeHomeOffice(base);
+    expect(r.surfaceAnnexeRetenue).toBe(0);
+    expect(r.surfaceProfessionnelleTotale).toBe(12);
+    expect(r.quotePartSurface).toBeCloseTo(12 / 80, 6);
+  });
+
+  it("une annexe est retenue pour surface × coefficient", () => {
+    const r = computeHomeOffice(avecAnnexes(base, [{ surfaceM2: 6, coefficientPro: 0.5 }]));
+    expect(r.surfaceAnnexeRetenue).toBeCloseTo(3, 6);
+    expect(r.surfaceProfessionnelleTotale).toBeCloseTo(15, 6);
+    expect(r.quotePartSurface).toBeCloseTo(15 / 80, 6);
+  });
+
+  it("les annexes s'additionnent", () => {
+    const r = computeHomeOffice(
+      avecAnnexes(base, [
+        { surfaceM2: 4, coefficientPro: 0.5 },
+        { surfaceM2: 6, coefficientPro: 0.5 },
+        { surfaceM2: 2, coefficientPro: 1 },
+      ]),
+    );
+    expect(r.surfaceAnnexeRetenue).toBeCloseTo(2 + 3 + 2, 6);
+  });
+
+  it("une annexe désactivée ne compte pas, même renseignée", () => {
+    const r = computeHomeOffice(avecAnnexes(base, [{ surfaceM2: 10, coefficientPro: 1, enabled: false }]));
+    expect(r.surfaceAnnexeRetenue).toBe(0);
+  });
+
+  it("un coefficient nul revient à ne pas compter l'annexe", () => {
+    const r = computeHomeOffice(avecAnnexes(base, [{ surfaceM2: 10, coefficientPro: 0 }]));
+    expect(r.surfaceAnnexeRetenue).toBe(0);
+  });
+
+  it("surfaces et coefficients hors bornes sont neutralisés", () => {
+    const r = computeHomeOffice(
+      avecAnnexes(base, [
+        { surfaceM2: -10, coefficientPro: 0.5 },
+        { surfaceM2: 6, coefficientPro: 5 },
+        { surfaceM2: 4, coefficientPro: -3 },
+      ]),
+    );
+    // La 1re est neutralisée, la 2e plafonnée à 100 %, la 3e ramenée à 0 %.
+    expect(r.surfaceAnnexeRetenue).toBeCloseTo(6, 6);
+  });
+
+  it("les annexes augmentent l'indemnité proportionnellement à la quote-part gagnée", () => {
+    const sans = computeHomeOffice(base);
+    const avec = computeHomeOffice(avecAnnexes(base, [{ surfaceM2: 8, coefficientPro: 0.5 }]));
+    expect(avec.quotePartSurface).toBeCloseTo(16 / 80, 6);
+    expect(avec.indemniteAnnuelleBrute).toBeCloseTo(sans.indemniteAnnuelleBrute * (16 / 12), 6);
+  });
+
+  it("les annexes peuvent faire franchir le seuil de justification renforcée", () => {
+    const sans = computeHomeOffice({ ...base, surfaceBureauM2: 22 });
+    expect(sans.depasseToleranceSurface).toBe(false);
+    const avec = computeHomeOffice(avecAnnexes({ ...base, surfaceBureauM2: 22 }, [{ surfaceM2: 8, coefficientPro: 0.5 }]));
+    expect(avec.depasseToleranceSurface).toBe(true);
+  });
+
+  it("la quote-part reste bornée à 100 % même avec des annexes démesurées", () => {
+    const r = computeHomeOffice(avecAnnexes(base, [{ surfaceM2: 500, coefficientPro: 1 }]));
+    expect(r.quotePartSurface).toBe(1);
+  });
+
+  it("le loyer imputé au bureau suit la surface professionnelle TOTALE, annexes comprises", () => {
+    const r = computeHomeOffice(avecAnnexes(base, [{ surfaceM2: 8, coefficientPro: 0.5 }]));
+    expect(r.loyerAnnuelBureauRetenu).toBeCloseTo(r.loyerAnnuelLogementRetenu * (16 / 80), 6);
   });
 });
 
@@ -248,7 +335,103 @@ describe("computeHomeOffice — seuil de tolérance de surface paramétrable", (
   });
 });
 
-describe("extractLogementProfile / applyLogementProfile", () => {
+describe("persistance — partition exhaustive des champs", () => {
+  it("TOUT champ de saisie est persisté, sauf ceux explicitement exclus", () => {
+    // Garde-fou : un champ ajouté à HomeOfficeInputs sans décision explicite serait silencieusement
+    // perdu d'une visite à l'autre. Ici, il apparaît forcément dans l'une des deux listes.
+    const tous = Object.keys(createDefaultHomeOfficeInputs());
+    const persistes = new Set(Object.keys(extractHomeOfficeDraft(createDefaultHomeOfficeInputs())));
+    const exclus = new Set<string>(CHAMPS_NON_PERSISTES);
+    for (const champ of tous) {
+      expect(persistes.has(champ) !== exclus.has(champ), `${champ} doit être exactement dans une liste`).toBe(true);
+    }
+    expect(persistes.size + exclus.size).toBe(tous.length);
+  });
+
+  it("les seuls champs exclus sont l'identité du brouillon et le profil fiscal transversal", () => {
+    expect([...CHAMPS_NON_PERSISTES].sort()).toEqual(["createdAt", "id", "personalTaxProfile"]);
+  });
+
+  it("les hypothèses de simulation sont bien mémorisées, elles aussi", () => {
+    const persistes = Object.keys(extractHomeOfficeDraft(createDefaultHomeOfficeInputs()));
+    for (const champ of [
+      "regimeFoncier",
+      "autresRevenusFonciersFoyer",
+      "formalisation",
+      "fraisMiseEnPlaceBail",
+      "impositionSociete",
+      "corporateTaxRate",
+      "beneficeAvantChargePrevisionnel",
+      "eligibleTauxReduitPME",
+      "typeComparaisonExterne",
+      "loyerBureauExterneMensuel",
+      "coworkingTarifJournalier",
+      "coworkingJoursParMois",
+      "name",
+      "country",
+    ]) {
+      expect(persistes, champ).toContain(champ);
+    }
+  });
+
+  it("un aller-retour restitue à l'identique une saisie modifiée de bout en bout", () => {
+    const modifie: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      name: "Mon bureau",
+      regimeFoncier: "reel",
+      autresRevenusFonciersFoyer: 4200,
+      formalisation: "bail_professionnel",
+      fraisMiseEnPlaceBail: 650,
+      impositionSociete: "IR",
+      corporateTaxRate: 0.15,
+      beneficeAvantChargePrevisionnel: 88000,
+      eligibleTauxReduitPME: false,
+      typeComparaisonExterne: "coworking",
+      loyerBureauExterneMensuel: 420,
+      coworkingTarifJournalier: 31,
+      coworkingJoursParMois: 14,
+    };
+    const restaure = applyHomeOfficeDraft(createDefaultHomeOfficeInputs(), extractHomeOfficeDraft(modifie));
+    for (const champ of Object.keys(extractHomeOfficeDraft(modifie)) as (keyof HomeOfficeInputs)[]) {
+      expect(restaure[champ], champ).toEqual(modifie[champ]);
+    }
+  });
+
+  it("l'identité du brouillon et le profil fiscal ne sont jamais écrasés par le stockage", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyHomeOfficeDraft(defauts, {
+      id: "id-volé",
+      createdAt: "1970-01-01",
+      personalTaxProfile: { mode: "manuel", tauxManuel: 0.99 },
+    });
+    expect(restaure.id).toBe(defauts.id);
+    expect(restaure.createdAt).toBe(defauts.createdAt);
+    expect(restaure.personalTaxProfile).toEqual(defauts.personalTaxProfile);
+  });
+
+  it("un champ à choix fermé refuse une valeur inconnue", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyHomeOfficeDraft(defauts, {
+      regimeFoncier: "forfaitaire",
+      formalisation: "poignée de main",
+      impositionSociete: "TVA",
+      typeComparaisonExterne: "télépathie",
+    });
+    expect(restaure.regimeFoncier).toBe(defauts.regimeFoncier);
+    expect(restaure.formalisation).toBe(defauts.formalisation);
+    expect(restaure.impositionSociete).toBe(defauts.impositionSociete);
+    expect(restaure.typeComparaisonExterne).toBe(defauts.typeComparaisonExterne);
+  });
+
+  it("un taux hors [0, 1] retombe sur son défaut plutôt que d'être écrêté", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyHomeOfficeDraft(defauts, { corporateTaxRate: 7, toleranceSurfaceBureau: 12 });
+    expect(restaure.corporateTaxRate).toBe(defauts.corporateTaxRate);
+    expect(restaure.toleranceSurfaceBureau).toBe(defauts.toleranceSurfaceBureau);
+  });
+});
+
+describe("extractHomeOfficeDraft / applyHomeOfficeDraft", () => {
   it("un aller-retour complet restitue exactement les champs du logement", () => {
     const modifie: HomeOfficeInputs = {
       ...createDefaultHomeOfficeInputs(),
@@ -267,15 +450,15 @@ describe("extractLogementProfile / applyLogementProfile", () => {
         enabled: false,
       })),
     };
-    const restaure = applyLogementProfile(createDefaultHomeOfficeInputs(), extractLogementProfile(modifie));
-    for (const champ of LOGEMENT_PROFILE_FIELDS) {
+    const restaure = applyHomeOfficeDraft(createDefaultHomeOfficeInputs(), extractHomeOfficeDraft(modifie));
+    for (const champ of Object.keys(extractHomeOfficeDraft(modifie)) as (keyof HomeOfficeInputs)[]) {
       expect(restaure[champ], champ).toEqual(modifie[champ]);
     }
   });
 
   it("ne touche PAS aux champs qui sont des hypothèses de simulation", () => {
     const defauts = createDefaultHomeOfficeInputs();
-    const restaure = applyLogementProfile(defauts, extractLogementProfile({ ...defauts, surfaceTotaleM2: 200 }));
+    const restaure = applyHomeOfficeDraft(defauts, extractHomeOfficeDraft({ ...defauts, surfaceTotaleM2: 200 }));
     expect(restaure.regimeFoncier).toBe(defauts.regimeFoncier);
     expect(restaure.beneficeAvantChargePrevisionnel).toBe(defauts.beneficeAvantChargePrevisionnel);
     expect(restaure.formalisation).toBe(defauts.formalisation);
@@ -287,7 +470,7 @@ describe("extractLogementProfile / applyLogementProfile", () => {
   it("un profil absent ou non exploitable laisse les valeurs par défaut intactes", () => {
     const defauts = createDefaultHomeOfficeInputs();
     for (const valeur of [null, undefined, 42, "texte", []]) {
-      const restaure = applyLogementProfile(defauts, valeur);
+      const restaure = applyHomeOfficeDraft(defauts, valeur);
       expect(restaure.surfaceTotaleM2, String(valeur)).toBe(defauts.surfaceTotaleM2);
       expect(restaure.ville, String(valeur)).toBe(defauts.ville);
     }
@@ -295,7 +478,7 @@ describe("extractLogementProfile / applyLogementProfile", () => {
 
   it("un champ invalide retombe sur sa valeur par défaut sans emporter les autres", () => {
     const defauts = createDefaultHomeOfficeInputs();
-    const restaure = applyLogementProfile(defauts, {
+    const restaure = applyHomeOfficeDraft(defauts, {
       surfaceTotaleM2: "quatre-vingts",
       surfaceBureauM2: -12,
       loyerMarcheM2Mensuel: Number.NaN,
@@ -323,7 +506,7 @@ describe("extractLogementProfile / applyLogementProfile", () => {
   it("un poste ajouté depuis la dernière visite apparaît à sa valeur de référence", () => {
     const defauts = createDefaultHomeOfficeInputs();
     // Profil enregistré par une version qui ne connaissait que deux postes.
-    const restaure = applyLogementProfile(defauts, {
+    const restaure = applyHomeOfficeDraft(defauts, {
       chargeLines: [
         { id: "eau", montantAnnuel: 111, enabled: true },
         { id: "electricite", montantAnnuel: 222, enabled: true },
@@ -338,7 +521,7 @@ describe("extractLogementProfile / applyLogementProfile", () => {
 
   it("un poste disparu du code n'est pas réintroduit par le stockage", () => {
     const defauts = createDefaultHomeOfficeInputs();
-    const restaure = applyLogementProfile(defauts, {
+    const restaure = applyHomeOfficeDraft(defauts, {
       chargeLines: [{ id: "poste-supprime-en-2024", montantAnnuel: 5000, enabled: true }],
     });
     expect(restaure.chargeLines.some((c) => c.id === "poste-supprime-en-2024")).toBe(false);
@@ -347,7 +530,7 @@ describe("extractLogementProfile / applyLogementProfile", () => {
 
   it("l'ordre et les libellés viennent du code, jamais du stockage", () => {
     const defauts = createDefaultHomeOfficeInputs();
-    const restaure = applyLogementProfile(defauts, {
+    const restaure = applyHomeOfficeDraft(defauts, {
       chargeLines: [...defauts.chargeLines].reverse().map((c) => ({ ...c, label: "libellé périmé" })),
     });
     expect(restaure.chargeLines.map((c) => c.id)).toEqual(defauts.chargeLines.map((c) => c.id));
@@ -363,7 +546,7 @@ describe("extractLogementProfile / applyLogementProfile", () => {
       ville: "bordeaux",
       loyerMarcheM2Mensuel: 14.5,
     };
-    const restaure = applyLogementProfile(createDefaultHomeOfficeInputs(), extractLogementProfile(saisie));
+    const restaure = applyHomeOfficeDraft(createDefaultHomeOfficeInputs(), extractHomeOfficeDraft(saisie));
     expect(computeHomeOffice(restaure).indemniteAnnuelleBrute).toBeCloseTo(
       computeHomeOffice(saisie).indemniteAnnuelleBrute,
       6,
@@ -372,8 +555,8 @@ describe("extractLogementProfile / applyLogementProfile", () => {
 
   it("survit à un aller-retour par JSON, comme dans le stockage réel", () => {
     const saisie: HomeOfficeInputs = { ...createDefaultHomeOfficeInputs(), surfaceTotaleM2: 95, ville: "lille" };
-    const viaJson = JSON.parse(JSON.stringify(extractLogementProfile(saisie)));
-    const restaure = applyLogementProfile(createDefaultHomeOfficeInputs(), viaJson);
+    const viaJson = JSON.parse(JSON.stringify(extractHomeOfficeDraft(saisie)));
+    const restaure = applyHomeOfficeDraft(createDefaultHomeOfficeInputs(), viaJson);
     expect(restaure.surfaceTotaleM2).toBe(95);
     expect(restaure.ville).toBe("lille");
   });

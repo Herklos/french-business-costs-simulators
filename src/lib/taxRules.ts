@@ -564,6 +564,23 @@ export const TAX_RULES: TaxRule[] = [
       "Révisé chaque trimestre par la Banque de France. Le dépasser constitue un délit d'usure (jusqu'à 2 ans d'emprisonnement et 300 000 € d'amende pour le prêteur). Le simulateur plafonne automatiquement le TAEG saisi pour le mode « Crédit » à ce seuil (tranche >6 000€, la plus fréquente pour un crédit auto) et affiche une alerte en cas de dépassement.",
   },
   {
+    id: "domicile-annexes-usage-mixte",
+    category: "revenus_fonciers",
+    label: "Annexes d'usage mixte : couloir, entrée et sanitaires comptés pour une fraction",
+    value: "Ventilation au prorata de l'usage professionnel — usuellement 50 %, sans coefficient légal",
+    legalReference: "BOI-RSA-BASE-30-50-30-30 (local exclusif vs mixte) et BOI-BNC-BASE-40-60-30 (dépenses mixtes)",
+    sourceLabel: "BOFiP-Impôts / Réseau ARAPL",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/7671-PGP.html/identifiant=BOI-RSA-BASE-30-50-30-30-20170621",
+    validFrom: "2017-06-21",
+    validUntil: null,
+    notes:
+      "LE PRINCIPE : le BOFiP distingue le local EXCLUSIVEMENT affecté à l'usage professionnel — charges déductibles en totalité — de la pièce servant AUSSI à autre chose, qui donne lieu à une ventilation au prorata de l'usage professionnel. Une dépense ou une surface d'usage mixte ne se traite donc ni par zéro ni par la totalité, mais par une fraction justifiée.\n\n" +
+      "CE QUI SE COMPTE : les annexes de circulation qui desservent le bureau (entrée, vestibule, couloir) et les sanitaires, retenus par convention de pratique à environ 50 %. C'est ce que fait tout bail de bureau réel, dont les mètres carrés facturés incluent circulations et sanitaires — un bureau sans accès ni WC ne se loue pas.\n\n" +
+      "CE QUI NE SE COMPTE PAS : le séjour, les chambres, la cuisine, les balcons, caves et parkings. Soutenir que le logement entier est d'usage mixte ne passe pas : c'est le caractère RAISONNABLE de la ventilation qui est examiné.\n\n" +
+      "AUCUN COEFFICIENT LÉGAL : les 50 % sont une convention professionnelle, pas une règle. La preuve attendue est un plan coté avec les surfaces annexes identifiées et leur pondération, conservé au dossier.\n\n" +
+      "ATTENTION : ces annexes figurent DÉJÀ au dénominateur, dans la surface totale du logement. Les ajouter au numérateur fait donc mécaniquement monter la quote-part et peut faire franchir le seuil de justification renforcée (cf. règle « domicile-surface-bureau-tolerance-30-pourcent »).",
+  },
+  {
     id: "domicile-surface-bureau-tolerance-30-pourcent",
     category: "risques_juridiques",
     label: "Tolérance pratique de surface pour un bureau professionnel au domicile",

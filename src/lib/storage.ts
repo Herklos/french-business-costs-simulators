@@ -95,16 +95,17 @@ export function withPersistedPersonalTaxProfile<T extends { personalTaxProfile: 
   return saved ? { ...defaults, personalTaxProfile: saved } : defaults;
 }
 
-// Description du logement (surfaces, type, ville, prix au m², factures) : même logique que le profil
-// fiscal ci-dessus. Ce sont des FAITS, pas des hypothèses de simulation — ils ne changent pas tant
-// qu'on n'a pas déménagé, et ressaisir sa surface et ses factures à chaque visite n'a aucun intérêt.
-// Persisté sous une clé dédiée et rechargé automatiquement à l'ouverture de la page.
-const LOGEMENT_PROFILE_KEY = "fbcs_logement_profile_v1";
+// Brouillon du simulateur bureau à domicile : TOUT ce que l'utilisateur y saisit, hors identité de
+// la simulation et hors profil fiscal du foyer (persisté à part, car transversal aux simulateurs).
+// Rechargé automatiquement à l'ouverture de la page, sans action explicite.
+const HOME_OFFICE_DRAFT_KEY = "fbcs_home_office_draft_v1";
 
-/** Profil de logement persisté, retourné brut : la validation champ par champ revient à l'appelant. */
-export function loadLogementProfile(): unknown {
+/** Ancienne clé, limitée à la description du logement. Relue une dernière fois pour ne rien perdre. */
+const HOME_OFFICE_DRAFT_LEGACY_KEY = "fbcs_logement_profile_v1";
+
+function lireJson(cle: string): unknown {
   try {
-    const raw = localStorage.getItem(LOGEMENT_PROFILE_KEY);
+    const raw = localStorage.getItem(cle);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === "object" ? parsed : null;
@@ -113,19 +114,25 @@ export function loadLogementProfile(): unknown {
   }
 }
 
-export function saveLogementProfile(profile: unknown) {
+/** Brouillon persisté, retourné brut : la validation champ par champ revient à l'appelant. */
+export function loadHomeOfficeDraft(): unknown {
+  return lireJson(HOME_OFFICE_DRAFT_KEY) ?? lireJson(HOME_OFFICE_DRAFT_LEGACY_KEY);
+}
+
+export function saveHomeOfficeDraft(draft: unknown) {
   try {
-    localStorage.setItem(LOGEMENT_PROFILE_KEY, JSON.stringify(profile));
+    localStorage.setItem(HOME_OFFICE_DRAFT_KEY, JSON.stringify(draft));
   } catch {
     // localStorage indisponible (mode privé, quota...) : on dégrade silencieusement, ce réglage
     // n'est qu'un confort de pré-remplissage, jamais requis pour utiliser le simulateur.
   }
 }
 
-/** Oublie le logement mémorisé — utile après un déménagement, pour repartir des valeurs par défaut. */
-export function clearLogementProfile() {
+/** Oublie le brouillon — utile après un déménagement, pour repartir des valeurs par défaut. */
+export function clearHomeOfficeDraft() {
   try {
-    localStorage.removeItem(LOGEMENT_PROFILE_KEY);
+    localStorage.removeItem(HOME_OFFICE_DRAFT_KEY);
+    localStorage.removeItem(HOME_OFFICE_DRAFT_LEGACY_KEY);
   } catch {
     // idem : l'absence de stockage n'est pas une erreur fonctionnelle.
   }

@@ -135,3 +135,41 @@ export const SOURCES_SEUIL_SURFACE: { label: string; url: string; note: string }
     note: "Rappelle qu'il n'existe pas de seuil légal, que dépasser la tolérance reste possible si l'occupation professionnelle est solidement justifiée, et qu'on ne peut pas louer l'intégralité d'un logement d'habitation à sa société.",
   },
 ];
+
+/**
+ * Coefficient d'usage professionnel usuellement retenu pour les annexes de circulation et les
+ * sanitaires, à défaut d'une clé de répartition plus fine. Convention de PRATIQUE, pas une règle :
+ * aucun texte ne fixe de coefficient, c'est à l'utilisateur de le justifier.
+ */
+export const COEFFICIENT_ANNEXE_MIXTE_USUEL = 0.5;
+
+/**
+ * Pièces qu'il est admis de compter en usage mixte, et celles qui ne le sont pas. Sert de garde-fou
+ * dans l'interface : la logique vaut pour les annexes de circulation et les sanitaires, jamais pour
+ * les pièces de vie.
+ */
+export const ANNEXES_MIXTES_ADMISES = ["Entrée, vestibule, hall", "Couloir de desserte du bureau", "WC", "Part de salle d'eau (~1 m²)"];
+export const ANNEXES_MIXTES_EXCLUES = ["Séjour et salon", "Chambres", "Cuisine", "Balcon, terrasse, cave, parking"];
+
+export const SOURCES_ANNEXES_MIXTES: { label: string; url: string; note: string }[] = [
+  {
+    label: "BOI-RSA-BASE-30-50-30-30 — frais réels, local d'habitation à usage professionnel",
+    url: "https://bofip.impots.gouv.fr/bofip/7671-PGP.html/identifiant=BOI-RSA-BASE-30-50-30-30-20170621",
+    note: "Pose la gradation qui fonde tout le calcul : lorsqu'il est établi que le local est EXCLUSIVEMENT affecté à l'usage professionnel, les charges sont déductibles en totalité ; lorsque la pièce sert aussi à d'autres usages, la déduction se fait au prorata. Aucun plafond de pourcentage n'y est fixé.",
+  },
+  {
+    label: "BOI-BNC-BASE-40-60-30 — dépenses à caractère mixte",
+    url: "https://bofip.impots.gouv.fr/bofip/4659-PGP.html/identifiant=BOI-BNC-BASE-40-60-30-20120912",
+    note: "Confirme le principe pour les professions libérales : quand une dépense présente un caractère mixte, privé et professionnel, une ventilation doit être opérée pour déterminer la part afférente à l'activité. C'est ce qui autorise à compter une FRACTION d'une pièce partagée, et non zéro ou la totalité.",
+  },
+  {
+    label: "Réseau ARAPL — travailler à domicile",
+    url: "https://www.arapl.org/travailler-a-domicile/",
+    note: "Source de la convention de pratique : les annexes de circulation (entrée, couloir donnant accès au bureau) et les sanitaires sont retenus en usage mixte, couramment à 50 %, à charge de justifier la surface par un plan. Le caractère raisonnable prime : le logement entier ne peut pas être déclaré mixte.",
+  },
+  {
+    label: "Détermination de la surface pondérée d'un local (BOI-IF-TFB-20-10-20-50)",
+    url: "https://bofip.impots.gouv.fr/bofip/2373-PGP.html/identifiant=BOI-IF-TFB-20-10-20-50-20121210",
+    note: "Rappelle que couloirs, entrées, vestibules, halls et sanitaires sont des annexes servant de circulation aux pièces ou en formant le complément — ils comptent donc déjà dans la surface TOTALE, au dénominateur. Attention : ce texte porte sur l'évaluation cadastrale, pas sur la déduction de charges ; ne l'invoquez pas comme fondement de la quote-part.",
+  },
+];

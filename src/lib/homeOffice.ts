@@ -95,6 +95,41 @@ export const DEFAULT_CHARGE_LINES: Omit<ChargeLine, "montantAnnuel">[] = [
   { id: "internetTelephone", label: "Internet / téléphone", enabled: true },
 ];
 
+/**
+ * Pièce d'usage MIXTE dont une fraction seulement sert à l'activité : entrée, couloir de desserte du
+ * bureau, WC, part de salle d'eau. Elles s'ajoutent au numérateur de la quote-part, pondérées par un
+ * coefficient d'usage professionnel.
+ *
+ * FONDEMENT : le BOFiP distingue le local EXCLUSIVEMENT professionnel — charges déductibles en
+ * totalité — de la pièce servant aussi à autre chose, qui donne lieu à une ventilation au prorata de
+ * l'usage professionnel (BOI-RSA-BASE-30-50-30-30). Aucun texte ne fixe de coefficient : les 50 %
+ * proposés ici sont une convention de pratique des associations de gestion, pas une règle. C'est
+ * l'utilisateur qui devra la défendre, plan coté et surfaces à l'appui.
+ *
+ * LIMITE : cette logique vaut pour les ANNEXES DE CIRCULATION et les sanitaires, pas pour le séjour,
+ * les chambres ou la cuisine. Soutenir que le logement entier est d'usage mixte ne passe pas.
+ */
+export interface SurfaceAnnexe {
+  id: string;
+  label: string;
+  /** Surface totale de la pièce, en m². */
+  surfaceM2: number;
+  /** Fraction d'usage professionnel retenue, entre 0 et 1. */
+  coefficientPro: number;
+  enabled: boolean;
+}
+
+/**
+ * Toutes à 0 m² par défaut : le simulateur ne gonfle jamais la quote-part tout seul. C'est à
+ * l'utilisateur de mesurer ses annexes s'il souhaite les faire valoir.
+ */
+export const DEFAULT_SURFACES_ANNEXES: SurfaceAnnexe[] = [
+  { id: "entree", label: "Entrée / vestibule", surfaceM2: 0, coefficientPro: 0.5, enabled: true },
+  { id: "couloir", label: "Couloir de desserte du bureau", surfaceM2: 0, coefficientPro: 0.5, enabled: true },
+  { id: "wc", label: "WC", surfaceM2: 0, coefficientPro: 0.5, enabled: true },
+  { id: "salleEau", label: "Salle d'eau — part attribuable (~1 m²)", surfaceM2: 0, coefficientPro: 0.5, enabled: true },
+];
+
 export interface HomeOfficeInputs {
   id: string;
   name: string;
@@ -110,6 +145,11 @@ export interface HomeOfficeInputs {
   typeLogement: TypeLogement;
   surfaceTotaleM2: number;
   surfaceBureauM2: number;
+  /**
+   * Annexes d'usage mixte comptées en plus du bureau, pondérées par leur coefficient professionnel.
+   * Vides par défaut : elles n'ont d'effet que si l'utilisateur les mesure et les renseigne.
+   */
+  surfacesAnnexes: SurfaceAnnexe[];
   /** Seuil d'alerte sur la quote-part de surface, en fraction de la surface totale (0,3 = 30 %). */
   toleranceSurfaceBureau: number;
 
@@ -188,106 +228,121 @@ export function chargeLinesDeReference(
 }
 
 /**
- * Champs qui décrivent le LOGEMENT lui-même, et non une hypothèse de simulation : ils ne changent
- * pas d'une simulation à l'autre tant qu'on n'a pas déménagé. Ils sont persistés à part et
- * rechargés automatiquement à l'ouverture de la page, sur le même principe que le profil fiscal du
- * foyer — ressaisir sa surface et ses factures à chaque visite n'a aucun intérêt.
+ * Champs volontairement EXCLUS de la persistance automatique.
  *
- * Le régime foncier, le bénéfice prévisionnel de la société ou la comparaison au bureau externe
- * n'en font délibérément pas partie : ce sont des hypothèses que l'on fait varier.
+ *  - `id` et `createdAt` identifient le brouillon en cours ; les figer ferait écraser la même
+ *    simulation sauvegardée à chaque session au lieu d'en créer de nouvelles.
+ *  - `personalTaxProfile` est persisté à part, sous sa propre clé, car il est TRANSVERSAL à tous les
+ *    simulateurs : le dupliquer ici ferait diverger les deux copies.
+ *
+ * Tout le reste — y compris les hypothèses de simulation — est mémorisé : c'est de la saisie
+ * utilisateur, et la reperdre à chaque visite n'a aucun intérêt.
  */
-export const LOGEMENT_PROFILE_FIELDS = [
-  "statutOccupant",
-  "typeLogement",
-  "surfaceTotaleM2",
-  "surfaceBureauM2",
-  "toleranceSurfaceBureau",
-  "empruntEnCours",
-  "ville",
-  "loyerMarcheM2Mensuel",
-  "loyerAutoDepuisPrixM2",
-  "chargeLines",
-  "interetsEmpruntAnnuels",
-  "assuranceEmpruntAnnuelle",
-] as const;
+export const CHAMPS_NON_PERSISTES = ["id", "createdAt", "personalTaxProfile"] as const;
 
-export type LogementProfile = Pick<HomeOfficeInputs, (typeof LOGEMENT_PROFILE_FIELDS)[number]>;
+export type HomeOfficeDraft = Omit<HomeOfficeInputs, (typeof CHAMPS_NON_PERSISTES)[number]>;
 
-/** Extrait du formulaire les seuls champs décrivant le logement, à persister. */
-export function extractLogementProfile(inputs: HomeOfficeInputs): LogementProfile {
-  return {
-    statutOccupant: inputs.statutOccupant,
-    typeLogement: inputs.typeLogement,
-    surfaceTotaleM2: inputs.surfaceTotaleM2,
-    surfaceBureauM2: inputs.surfaceBureauM2,
-    toleranceSurfaceBureau: inputs.toleranceSurfaceBureau,
-    empruntEnCours: inputs.empruntEnCours,
-    ville: inputs.ville,
-    loyerMarcheM2Mensuel: inputs.loyerMarcheM2Mensuel,
-    loyerAutoDepuisPrixM2: inputs.loyerAutoDepuisPrixM2,
-    chargeLines: inputs.chargeLines,
-    interetsEmpruntAnnuels: inputs.interetsEmpruntAnnuels,
-    assuranceEmpruntAnnuelle: inputs.assuranceEmpruntAnnuelle,
-  };
+/** Extrait du formulaire tout ce que l'utilisateur a pu modifier, hors champs exclus ci-dessus. */
+export function extractHomeOfficeDraft(inputs: HomeOfficeInputs): HomeOfficeDraft {
+  // Déstructuration plutôt qu'une liste à maintenir : un champ ajouté à HomeOfficeInputs est
+  // automatiquement persisté, sans qu'on ait à y penser.
+  const { id: _id, createdAt: _createdAt, personalTaxProfile: _profile, ...draft } = inputs;
+  return draft;
 }
+
+/** Valeurs admises pour les champs à choix fermé, vérifiées à la relecture. */
+const VALEURS_ADMISES: Partial<Record<keyof HomeOfficeDraft, readonly string[]>> = {
+  statutOccupant: ["locataire", "proprietaire"],
+  typeLogement: ["appartement", "maison"],
+  regimeFoncier: ["micro", "reel"],
+  formalisation: ["indemnite", "bail_professionnel"],
+  impositionSociete: ["IS", "IR"],
+  typeComparaisonExterne: ["location", "coworking"],
+};
+
+/** Champs bornés à l'intervalle [0, 1] : un taux relu hors bornes produirait des montants absurdes. */
+const CHAMPS_TAUX: readonly (keyof HomeOfficeDraft)[] = ["toleranceSurfaceBureau", "corporateTaxRate"];
 
 function nombreValide(valeur: unknown, defaut: number): number {
   return typeof valeur === "number" && Number.isFinite(valeur) && valeur >= 0 ? valeur : defaut;
 }
 
 /**
- * Applique un profil de logement relu du stockage aux valeurs par défaut.
+ * Fusionne une liste persistée sur la liste courante, PAR IDENTIFIANT. Un élément ajouté depuis la
+ * dernière visite garde sa valeur par défaut, un élément supprimé du code n'est pas ressuscité, et
+ * l'ordre comme les libellés viennent du code et non du stockage.
+ */
+function fusionnerParId<T extends { id: string }>(
+  courants: T[],
+  persistes: unknown,
+  champs: (persistee: Record<string, unknown>, courant: T) => Partial<T>,
+): T[] {
+  if (!Array.isArray(persistes)) return courants;
+  return courants.map((courant) => {
+    const persistee = persistes.find((p) => p && typeof p === "object" && p.id === courant.id);
+    return persistee ? { ...courant, ...champs(persistee as Record<string, unknown>, courant) } : courant;
+  });
+}
+
+/**
+ * Applique un brouillon relu du stockage aux valeurs par défaut.
  *
  * Chaque champ est validé individuellement : une donnée écrite par une version antérieure, tronquée
- * ou trafiquée à la main ne doit pas casser la page ni produire des montants absurdes — on retombe
- * silencieusement sur la valeur par défaut du champ concerné, sans perdre les autres.
- *
- * Les postes de charge sont fusionnés PAR IDENTIFIANT sur la liste courante : un poste ajouté depuis
- * la dernière visite apparaît avec sa valeur de référence, un poste supprimé disparaît, et l'ordre
- * reste celui du code plutôt que celui du stockage.
+ * ou trafiquée à la main retombe sur son défaut sans emporter les autres. La validation est générique
+ * — même type que le défaut, nombres finis et positifs — avec des règles spécifiques pour les champs
+ * à choix fermé, les taux et les listes.
  */
-export function applyLogementProfile(defaults: HomeOfficeInputs, profil: unknown): HomeOfficeInputs {
-  if (!profil || typeof profil !== "object") return defaults;
-  const p = profil as Partial<LogementProfile>;
+export function applyHomeOfficeDraft(defaults: HomeOfficeInputs, draft: unknown): HomeOfficeInputs {
+  if (!draft || typeof draft !== "object") return defaults;
+  const persiste = draft as Record<string, unknown>;
+  const resultat: HomeOfficeInputs = { ...defaults };
 
-  const chargeLines = Array.isArray(p.chargeLines)
-    ? defaults.chargeLines.map((ligne) => {
-        const persistee = (p.chargeLines as ChargeLine[]).find((c) => c && c.id === ligne.id);
-        if (!persistee) return ligne;
-        return {
-          ...ligne,
-          montantAnnuel: nombreValide(persistee.montantAnnuel, ligne.montantAnnuel),
-          enabled: typeof persistee.enabled === "boolean" ? persistee.enabled : ligne.enabled,
-        };
-      })
-    : defaults.chargeLines;
+  for (const cle of Object.keys(defaults) as (keyof HomeOfficeInputs)[]) {
+    if ((CHAMPS_NON_PERSISTES as readonly string[]).includes(cle)) continue;
+    if (!(cle in persiste)) continue;
+    const valeur = persiste[cle];
+    const defaut = defaults[cle];
 
-  return {
-    ...defaults,
-    statutOccupant:
-      p.statutOccupant === "locataire" || p.statutOccupant === "proprietaire"
-        ? p.statutOccupant
-        : defaults.statutOccupant,
-    typeLogement:
-      p.typeLogement === "maison" || p.typeLogement === "appartement" ? p.typeLogement : defaults.typeLogement,
-    surfaceTotaleM2: nombreValide(p.surfaceTotaleM2, defaults.surfaceTotaleM2),
-    surfaceBureauM2: nombreValide(p.surfaceBureauM2, defaults.surfaceBureauM2),
-    toleranceSurfaceBureau:
-      typeof p.toleranceSurfaceBureau === "number" &&
-      Number.isFinite(p.toleranceSurfaceBureau) &&
-      p.toleranceSurfaceBureau >= 0 &&
-      p.toleranceSurfaceBureau <= 1
-        ? p.toleranceSurfaceBureau
-        : defaults.toleranceSurfaceBureau,
-    empruntEnCours: typeof p.empruntEnCours === "boolean" ? p.empruntEnCours : defaults.empruntEnCours,
-    ville: typeof p.ville === "string" && p.ville.length > 0 ? p.ville : defaults.ville,
-    loyerMarcheM2Mensuel: nombreValide(p.loyerMarcheM2Mensuel, defaults.loyerMarcheM2Mensuel),
-    loyerAutoDepuisPrixM2:
-      typeof p.loyerAutoDepuisPrixM2 === "boolean" ? p.loyerAutoDepuisPrixM2 : defaults.loyerAutoDepuisPrixM2,
-    chargeLines,
-    interetsEmpruntAnnuels: nombreValide(p.interetsEmpruntAnnuels, defaults.interetsEmpruntAnnuels),
-    assuranceEmpruntAnnuelle: nombreValide(p.assuranceEmpruntAnnuelle, defaults.assuranceEmpruntAnnuelle),
-  };
+    if (cle === "chargeLines") {
+      resultat.chargeLines = fusionnerParId(defaults.chargeLines, valeur, (p, c) => ({
+        montantAnnuel: nombreValide(p.montantAnnuel, c.montantAnnuel),
+        enabled: typeof p.enabled === "boolean" ? p.enabled : c.enabled,
+      }));
+      continue;
+    }
+    if (cle === "surfacesAnnexes") {
+      resultat.surfacesAnnexes = fusionnerParId(defaults.surfacesAnnexes, valeur, (p, c) => ({
+        surfaceM2: nombreValide(p.surfaceM2, c.surfaceM2),
+        coefficientPro:
+          typeof p.coefficientPro === "number" && Number.isFinite(p.coefficientPro)
+            ? Math.min(1, Math.max(0, p.coefficientPro))
+            : c.coefficientPro,
+        enabled: typeof p.enabled === "boolean" ? p.enabled : c.enabled,
+      }));
+      continue;
+    }
+
+    const admises = VALEURS_ADMISES[cle as keyof HomeOfficeDraft];
+    if (admises) {
+      if (typeof valeur === "string" && admises.includes(valeur)) {
+        (resultat as unknown as Record<string, unknown>)[cle] = valeur;
+      }
+      continue;
+    }
+    if (typeof defaut === "number") {
+      const nombre = nombreValide(valeur, defaut);
+      // Un taux hors [0, 1] est aussi absurde écrêté que brut : on préfère retomber sur le défaut.
+      const horsBornes = CHAMPS_TAUX.includes(cle as keyof HomeOfficeDraft) && nombre > 1;
+      (resultat as unknown as Record<string, unknown>)[cle] = horsBornes ? defaut : nombre;
+      continue;
+    }
+    if (typeof valeur === typeof defaut && (typeof defaut === "boolean" || typeof defaut === "string")) {
+      if (typeof defaut === "string" && (valeur as string).length === 0) continue;
+      (resultat as unknown as Record<string, unknown>)[cle] = valeur;
+    }
+  }
+
+  return resultat;
 }
 
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
@@ -309,6 +364,7 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     typeLogement,
     surfaceTotaleM2,
     surfaceBureauM2: 12,
+    surfacesAnnexes: DEFAULT_SURFACES_ANNEXES.map((a) => ({ ...a })),
     toleranceSurfaceBureau: TOLERANCE_SURFACE_BUREAU_DEFAUT,
     empruntEnCours: false,
     ville,
@@ -331,6 +387,10 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
 
 export interface HomeOfficeResults {
   quotePartSurface: number;
+  /** Fraction de surface retenue au titre des annexes d'usage mixte, en m². */
+  surfaceAnnexeRetenue: number;
+  /** Surface professionnelle totale servant de numérateur : bureau + annexes pondérées, en m². */
+  surfaceProfessionnelleTotale: number;
   /** Surface de bureau qui atteindrait exactement le seuil de tolérance retenu, en m². */
   surfaceBureauTolerance: number;
   /** Vrai si la quote-part dépasse le seuil de tolérance retenu. */
@@ -394,8 +454,14 @@ export interface HomeOfficeResults {
 }
 
 export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
+  // Surface professionnelle = pièce dédiée + fraction retenue des annexes d'usage mixte.
+  const surfaceAnnexeRetenue = inputs.surfacesAnnexes
+    .filter((a) => a.enabled)
+    .reduce((sum, a) => sum + Math.max(0, a.surfaceM2) * Math.min(1, Math.max(0, a.coefficientPro)), 0);
+  const surfaceProfessionnelleTotale = Math.max(0, inputs.surfaceBureauM2) + surfaceAnnexeRetenue;
+
   const quotePartSurface =
-    inputs.surfaceTotaleM2 > 0 ? Math.min(1, inputs.surfaceBureauM2 / inputs.surfaceTotaleM2) : 0;
+    inputs.surfaceTotaleM2 > 0 ? Math.min(1, surfaceProfessionnelleTotale / inputs.surfaceTotaleM2) : 0;
 
   // Le loyer de marché est déduit du prix au m² de la ville. On le porte sur le LOGEMENT ENTIER
   // (prix au m² × surface totale) et non sur le seul bureau : la ligne « loyer » est une charge du
@@ -538,6 +604,8 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
 
   return {
     quotePartSurface,
+    surfaceAnnexeRetenue,
+    surfaceProfessionnelleTotale,
     surfaceBureauTolerance,
     depasseToleranceSurface,
     chargeLinesEffectives,
