@@ -9,6 +9,14 @@ import {
 } from "../lib/homeOffice";
 import { LOYERS_VILLES, SOURCES_LOYERS, VILLE_AUTRE, prixM2Ville } from "../lib/loyersVille";
 import { findChargeReference, fourchetteReferenceCharge, montantReferenceCharge } from "../lib/logementCharges";
+import {
+  BANDES_SURFACE_BUREAU,
+  FORFAIT_TELETRAVAIL_MENSUEL_AVEC_ACCORD,
+  FORFAIT_TELETRAVAIL_MENSUEL_SANS_ACCORD,
+  LOYER_ANNUEL_M2_PRUDENT,
+  SOURCES_SEUIL_SURFACE,
+  bandeSurfaceBureau,
+} from "../lib/surfaceBureau";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
@@ -138,6 +146,7 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
 
   const surfaceRatio = results.quotePartSurface;
   const surfaceDepasseTolerance = results.depasseToleranceSurface;
+  const bande = bandeSurfaceBureau(results.quotePartSurface);
 
   /**
    * Porte la surface du bureau au maximum admis par le seuil de tolérance retenu. C'est le levier
@@ -295,7 +304,10 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             <div className="keyfigures__grid">
               <div className="keyfigure">
                 <span className="keyfigure__label">Quote-part du bureau</span>
-                <span className="keyfigure__value">{formatPercent(results.quotePartSurface)}</span>
+                <span className="keyfigure__value">
+                  {formatPercent(results.quotePartSurface)}
+                  <span className={`bande-chip bande-chip--${bande.ton}`}>{bande.label}</span>
+                </span>
                 <span className="keyfigure__sub">
                   {inputs.surfaceBureauM2} m² sur {inputs.surfaceTotaleM2} m²
                 </span>
@@ -371,6 +383,103 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
               la pièce).
             </p>
           )}
+          <details className="charge-line__ref">
+            <summary>
+              Quelle quote-part est légitime ? Repères chiffrés, bandes de lecture et sources
+            </summary>
+            <div className="seuil-doc">
+              <p>
+                <strong>Aucun texte ne fixe de pourcentage.</strong> Ni le CGI, ni le BOFiP, ni la jurisprudence ne
+                connaissent de « seuil des 30 % » : c'est une tolérance de pratique, largement reprise par les
+                experts-comptables, qui résume l'endroit où l'administration cesse de considérer la quote-part comme
+                allant de soi. Les vrais tests sont ailleurs, et ils sont qualitatifs.
+              </p>
+              <ol>
+                <li>
+                  <strong>La charge est-elle non excessive et engagée dans l'intérêt de l'exploitation</strong> (art.
+                  39-1-1° CGI) ? Une surface plus grande qu'utile rend la fraction excédentaire non déductible chez la
+                  société <em>et</em> imposable chez le dirigeant en revenus distribués (art. 109-1-2° CGI) — double
+                  sanction.
+                </li>
+                <li>
+                  <strong>L'activité peut-elle légalement s'exercer là</strong> (art. L631-7-3 CCH) ? Elle doit être
+                  exercée par les seuls occupants ayant leur résidence principale dans le logement,{" "}
+                  <strong>sans réception de clientèle ni de marchandises</strong>, et sans clause contraire du bail ou
+                  du règlement de copropriété. Si vous recevez des clients, la surface n'est plus le sujet : c'est un
+                  changement d'usage.
+                </li>
+                <li>
+                  <strong>La pièce sert-elle réellement à cela, et pouvez-vous le prouver ?</strong> Plan coté, photos,
+                  absence d'usage personnel de la pièce.
+                </li>
+              </ol>
+              <p>
+                Le pourcentage n'est donc qu'un indicateur de la <strong>charge de preuve</strong> à constituer : plus
+                il monte, plus la démonstration doit être solide. Il ne rend jamais licite ce qui ne l'est pas, ni
+                illicite ce qui est réellement justifié.
+              </p>
+
+              <table className="seuil-table">
+                <thead>
+                  <tr>
+                    <th>Quote-part</th>
+                    <th>Lecture</th>
+                    <th>Ce que cela suppose</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {BANDES_SURFACE_BUREAU.map((b, i) => {
+                    const min = i === 0 ? 0 : BANDES_SURFACE_BUREAU[i - 1].max;
+                    return (
+                      <tr key={b.id} className={b.id === bande.id ? "seuil-table__row--current" : undefined}>
+                        <td>
+                          {i === 0 ? "≤ " : `${formatPercent(min)} – `}
+                          {formatPercent(b.max)}
+                        </td>
+                        <td>
+                          <span className={`bande-chip bande-chip--${b.ton}`}>{b.label}</span>
+                          <br />
+                          {b.resume}
+                        </td>
+                        <td>{b.detail}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+
+              <p>
+                <strong>Votre situation :</strong> {inputs.surfaceBureauM2} m² sur {inputs.surfaceTotaleM2} m², soit{" "}
+                {formatPercent(results.quotePartSurface)} —{" "}
+                <span className={`bande-chip bande-chip--${bande.ton}`}>{bande.label}</span> {bande.resume}
+              </p>
+
+              <p>
+                <strong>La surface n'est pas le seul plafond.</strong> Le montant doit rester cohérent avec le marché
+                local : au-delà de ~{LOYER_ANNUEL_M2_PRUDENT} €/m²/an (soit ~
+                {formatEUR(LOYER_ANNUEL_M2_PRUDENT * 15)}/an pour 15 m²), un loyer appelle une justification
+                documentée, quelle que soit la quote-part. Autre repère utile, côté social : un salarié en télétravail
+                peut recevoir {formatEUR(FORFAIT_TELETRAVAIL_MENSUEL_SANS_ACCORD)}/mois{" "}
+                <em>sans aucun justificatif</em> ({formatEUR(FORFAIT_TELETRAVAIL_MENSUEL_AVEC_ACCORD)}/mois avec accord
+                collectif). Votre indemnité de {parPeriode(results.indemniteAnnuelleBrute)} se situe très au-dessus de
+                cet ordre de grandeur — ce qui est normal pour une indemnité d'occupation calculée au réel, mais
+                signifie que les justificatifs ne sont pas optionnels.
+              </p>
+
+              <p>Sources :</p>
+              <ul>
+                {SOURCES_SEUIL_SURFACE.map((s) => (
+                  <li key={s.url}>
+                    <a href={s.url} target="_blank" rel="noreferrer noopener">
+                      {s.label}
+                    </a>{" "}
+                    — {s.note}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </details>
+
           {inputs.toleranceSurfaceBureau > TOLERANCE_SURFACE_BUREAU_DEFAUT && (
             <p className="warning-block">
               ⚠️ Seuil relevé au-delà des {formatPercent(TOLERANCE_SURFACE_BUREAU_DEFAUT)} habituellement admis. Aucun

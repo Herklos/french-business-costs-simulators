@@ -25,6 +25,18 @@ body {
   color: var(--text);
 }
 
+/* Le bleu par défaut du navigateur est illisible sur ce fond sombre : aucune règle globale ne le
+   redéfinissait, si bien que tous les liens de source de l'application étaient à peine visibles. */
+a {
+  color: var(--accent-strong);
+  text-decoration-color: rgba(126, 161, 255, 0.45);
+  text-underline-offset: 2px;
+}
+
+a:hover {
+  text-decoration-color: currentcolor;
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -1492,4 +1504,98 @@ td {
   width: 3.6rem;
   padding: 0.1rem 0.3rem;
   font-size: 0.72rem;
+}
+
+/* Étiquette de lecture de la quote-part de surface (usuel / courant / à documenter / risqué). */
+.bande-chip {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.62rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
+.bande-chip--good {
+  color: var(--good);
+  background: rgba(52, 211, 153, 0.14);
+}
+
+.bande-chip--neutral {
+  color: var(--accent-strong);
+  background: rgba(91, 140, 255, 0.16);
+}
+
+.bande-chip--warn {
+  color: var(--warn);
+  background: rgba(251, 191, 36, 0.14);
+}
+
+.bande-chip--bad {
+  color: var(--bad);
+  background: rgba(248, 113, 113, 0.16);
+}
+
+/* Documentation dépliable du seuil de surface. */
+.seuil-doc {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.seuil-doc p {
+  margin: 0 0 0.6rem;
+}
+
+.seuil-doc ol,
+.seuil-doc ul {
+  margin: 0 0 0.7rem;
+  padding-left: 1.1rem;
+}
+
+.seuil-doc li {
+  margin-bottom: 0.35rem;
+}
+
+.seuil-doc strong {
+  color: var(--text);
+}
+
+.seuil-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 0.8rem;
+  font-size: 0.74rem;
+}
+
+.seuil-table th,
+.seuil-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.seuil-table th {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+.seuil-table td:first-child {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.seuil-table__row--current {
+  background: rgba(91, 140, 255, 0.09);
+}
+
+.seuil-table .bande-chip {
+  margin-left: 0;
+  margin-bottom: 0.2rem;
 }
