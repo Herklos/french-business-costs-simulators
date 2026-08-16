@@ -242,3 +242,22 @@ describe("buildUrssafJustification — robustesse", () => {
     expect(doc).toContain("…");
   });
 });
+
+describe("buildUrssafJustification — cohérence avec les autres déclarations", () => {
+  it("tire les conséquences de la surface professionnelle en matière de CFE", () => {
+    // Revendiquer une surface exclusivement professionnelle pour justifier l'indemnité sans en
+    // tenir compte pour la CFE serait une incohérence entre deux déclarations qui se lisent
+    // ensemble — exactement ce qu'un vérificateur relève.
+    const doc = buildUrssafJustification(inputs());
+    expect(doc).toContain("cotisation foncière des entreprises");
+    expect(doc).toContain("1647 D");
+    expect(doc).toContain("les deux déclarations sont cohérentes entre elles");
+  });
+
+  it("précise que le plafond du micro-foncier s'apprécie sur le foyer, tous biens confondus", () => {
+    const sousLePlafond = buildUrssafJustification(inputs());
+    expect(sousLePlafond).toContain("tous biens confondus");
+    const auDessus = buildUrssafJustification(inputs({ autresRevenusFonciersFoyer: 40000 }));
+    expect(auDessus).toContain("revenus fonciers bruts du foyer étant dépassé");
+  });
+});

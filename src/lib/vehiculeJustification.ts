@@ -274,6 +274,7 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
   const partCA = sim.chiffreAffairesPrevisionnel > 0 ? coutGlobalAnnuel / sim.chiffreAffairesPrevisionnel : 0;
   const partBenefice =
     sim.beneficeAvantChargePrevisionnel > 0 ? coutGlobalAnnuel / sim.beneficeAvantChargePrevisionnel : 0;
+  const beneficeResiduel = sim.beneficeAvantChargePrevisionnel - coutGlobalAnnuel;
   push(
     "PROPORTIONNALITÉ. Le caractère non excessif d'un avantage consenti au dirigeant s'apprécie au regard des ressources et de la situation financière de la société, et non dans l'absolu : aucun seuil de prix ne rend une dépense abusive par elle-même.",
   );
@@ -295,19 +296,24 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
       formatPercent(partBenefice),
     ),
   );
-  push(
-    ligne(
-      "Bénéfice résiduel après le véhicule",
-      formatEUR(sim.beneficeAvantChargePrevisionnel - coutGlobalAnnuel),
-      "",
-    ),
-  );
+  push(ligne("Bénéfice résiduel après le véhicule", formatEUR(beneficeResiduel), ""));
   push("");
-  push(
-    partBenefice > 0.5
-      ? "Ce rapport est élevé : la dépense absorbe plus de la moitié du bénéfice disponible. Elle appelle une justification renforcée par la trésorerie et la rentabilité de la société, et le maintien d'un bénéfice résiduel après sa prise en charge."
-      : "La société conserve un bénéfice après prise en charge du véhicule : elle n'est pas privée de ses ressources au profit de son dirigeant, ce qui constitue l'élément central de l'appréciation de l'intérêt social.",
-  );
+  // Trois situations, et non deux : le cas où la dépense excède le bénéfice disponible était
+  // jusqu'ici traité comme un simple « rapport élevé », alors qu'il change la nature de la
+  // discussion — la société ne se prive plus d'une part de son résultat, elle le supprime.
+  if (beneficeResiduel < 0) {
+    push(
+      `La dépense excède le bénéfice disponible : sa prise en charge creuse un déficit de ${formatEUR(-beneficeResiduel)}. C'est la configuration la plus exposée, et l'argument tiré du maintien d'un bénéfice résiduel n'est pas disponible. Elle ne rend pas l'opération irrégulière — aucun texte n'interdit à une société d'être déficitaire — mais impose de la justifier autrement : par la trésorerie disponible, par le caractère non récurrent de l'exercice, ou par un prévisionnel documenté montrant que la charge est soutenable. À défaut, la rémunération globale du dirigeant, avantage compris, s'expose à être jugée excessive au regard des ressources de la société.`,
+    );
+  } else if (partBenefice > 0.5) {
+    push(
+      "Ce rapport est élevé : la dépense absorbe plus de la moitié du bénéfice disponible. Elle appelle une justification renforcée par la trésorerie et la rentabilité de la société, le bénéfice résiduel restant toutefois positif.",
+    );
+  } else {
+    push(
+      "La société conserve un bénéfice après prise en charge du véhicule : elle n'est pas privée de ses ressources au profit de son dirigeant, ce qui constitue l'élément central de l'appréciation de l'intérêt social.",
+    );
+  }
   push("");
 
   push("— 7. Justificatifs tenus à disposition —");

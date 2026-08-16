@@ -213,7 +213,7 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
     `Côté société : charge déductible du résultat, engagée dans l'intérêt de l'exploitation. Coût net après économie d'impôt : ${formatEUR(r.coutNetSociete)}/an.`,
   );
   push(
-    `Côté bénéficiaire : revenu foncier déclaré au régime ${r.regimeEffectif === "micro" ? "micro-foncier (abattement forfaitaire de 30 %)" : "réel (charges effectives déduites)"}${!r.eligibleMicroFoncier ? ", le plafond de 15 000 € de revenus fonciers bruts étant dépassé" : ""}.`,
+    `Côté bénéficiaire : revenu foncier déclaré au régime ${r.regimeEffectif === "micro" ? "micro-foncier (abattement forfaitaire de 30 %)" : "réel (charges effectives déduites)"}${!r.eligibleMicroFoncier ? ", le plafond de 15 000 € de revenus fonciers bruts du foyer étant dépassé" : ", le plafond de 15 000 € de revenus fonciers bruts du foyer — tous biens confondus, et non pour ce seul bien — n'étant pas atteint"}.`,
   );
   push(
     `Base imposable : ${formatEUR(r.baseImposableFonciere)} · Impôt sur le revenu : ${formatEUR(r.irDu)} · Prélèvements sociaux (17,2 %) : ${formatEUR(r.prelevementsSociaux)}.`,
@@ -230,6 +230,12 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
   }
   push(
     "Les deux composantes sont versées par virement du compte de la société vers le compte personnel du bénéficiaire, sur une périodicité régulière, et comptabilisées distinctement.",
+  );
+  // Une note qui revendique une surface exclusivement professionnelle sans en tirer les
+  // conséquences en matière de CFE se contredit elle-même : les deux déclarations se lisent
+  // ensemble, et l'incohérence est précisément ce qu'un vérificateur relève.
+  push(
+    "La société est par ailleurs redevable de la cotisation foncière des entreprises au titre de l'établissement déclaré à cette adresse (art. 1447 et 1647 D CGI). La surface professionnelle retenue au § 3 est celle déclarée à ce titre : les deux déclarations sont cohérentes entre elles.",
   );
   push("");
 

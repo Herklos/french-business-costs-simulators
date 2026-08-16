@@ -1073,6 +1073,28 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
         </Section>
 
         <Section title="Fiscalité de l'indemnité (revenus fonciers du dirigeant)">
+          <details className="details-block">
+            <summary>Un effet de bord à budgéter : la cotisation foncière des entreprises</summary>
+            <p>
+              Domicilier la société chez soi et se verser une indemnité pour une pièce dédiée revient à déclarer un
+              établissement à cette adresse : la <strong>CFE y est due</strong>, en plus de la taxe foncière déjà
+              supportée. Le simulateur ne la chiffre pas — son taux et sa base sont votés commune par commune — mais
+              elle n'a pas à être une surprise.
+            </p>
+            <p>
+              C'est surtout une question de <strong>cohérence</strong>. On ne peut pas soutenir qu'une pièce est
+              exclusivement professionnelle pour justifier l'indemnité, et n'en tenir aucun compte pour la CFE : les
+              deux déclarations se lisent ensemble. Déclarer correctement la surface professionnelle renforce au
+              contraire la réalité de l'affectation invoquée.
+            </p>
+            <p>
+              L'enjeu reste modeste : pour une pièce dans un logement, c'est la cotisation minimum qui s'applique,
+              assise sur le chiffre d'affaires de l'avant-dernière année. S'y ajoutent une exonération totale l'année
+              de création et une base réduite de moitié l'année suivante.
+            </p>
+            <RuleNote ruleId="domicile-cfe-surface-professionnelle" />
+          </details>
+
           <div className="grid grid--2">
             <Field label="Régime foncier">
               <select

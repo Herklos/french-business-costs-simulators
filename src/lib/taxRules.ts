@@ -603,6 +603,25 @@ export const TAX_RULES: TaxRule[] = [
       "Révisé chaque trimestre par la Banque de France. Le dépasser constitue un délit d'usure (jusqu'à 2 ans d'emprisonnement et 300 000 € d'amende pour le prêteur). Le simulateur plafonne automatiquement le TAEG saisi pour le mode « Crédit » à ce seuil (tranche >6 000€, la plus fréquente pour un crédit auto) et affiche une alerte en cas de dépassement.",
   },
   {
+    id: "domicile-cfe-surface-professionnelle",
+    category: "revenus_fonciers",
+    label: "Cotisation foncière des entreprises due sur la partie du logement affectée à l'activité",
+    value: "Base = valeur locative des locaux professionnels, avec une cotisation minimum assise sur le chiffre d'affaires N-2",
+    legalReference: "Art. 1447, 1467 et 1647 D CGI",
+    sourceLabel: "economie.gouv.fr",
+    sourceUrl:
+      "https://www.economie.gouv.fr/entreprises/gerer-sa-fiscalite-et-ses-impots/autres-impots-et-taxes/tout-savoir-sur-la-cotisation-fonciere-des-entreprises-cfe",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "CONSÉQUENCE RAREMENT ANTICIPÉE de l'indemnité d'occupation. Domicilier la société chez son dirigeant et lui verser une indemnité pour une pièce dédiée revient à déclarer un établissement à cette adresse : la CFE y est due, en plus de la taxe foncière déjà supportée par le propriétaire.\n\n" +
+      "C'est surtout une question de COHÉRENCE. On ne peut pas soutenir devant un vérificateur qu'une pièce est exclusivement professionnelle pour justifier l'indemnité, et n'en tenir aucun compte pour la CFE : les deux déclarations se lisent ensemble. À l'inverse, un dirigeant qui déclare correctement sa surface professionnelle renforce, par cette cohérence même, la réalité de l'affectation qu'il invoque.\n\n" +
+      "EN PRATIQUE, l'enjeu financier reste modeste. Lorsque la valeur locative de la fraction professionnelle est faible — ce qui est le cas d'une pièce dans un logement —, c'est la COTISATION MINIMUM de l'art. 1647 D CGI qui s'applique : son barème 2026 est assis sur le chiffre d'affaires de l'avant-dernière année, chaque commune votant un montant dans la fourchette légale (247 à 589 € pour un CA ≤ 10 000 €, 247 à 2 477 € entre 32 601 et 100 000 €, 247 à 7 669 € au-delà de 500 000 €).\n\n" +
+      "ALLÉGEMENTS : exonération totale l'année de création de l'établissement, base réduite de moitié l'année suivante, et exonération permanente si le chiffre d'affaires de l'avant-dernière année n'excède pas 5 000 €.\n\n" +
+      "NON CHIFFRÉ PAR LE SIMULATEUR : le montant dépend d'un taux et d'une base votés commune par commune, qu'aucune source nationale ne permet de reconstituer. Il est signalé pour être intégré au budget, pas estimé.\n\n" +
+      "POINT VOISIN, hors du champ de ce simulateur : la fraction du bien affectée à l'activité peut, sous conditions, échapper à l'impôt sur la fortune immobilière au titre des biens professionnels (art. 975 CGI). Cela ne concerne que les patrimoines immobiliers taxables, au-delà de 1,3 M€.",
+  },
+  {
     id: "domicile-annexes-usage-mixte",
     category: "revenus_fonciers",
     label: "Annexes d'usage mixte : couloir, entrée et sanitaires comptés pour une fraction",

@@ -338,3 +338,32 @@ describe("buildVehiculeJustification — robustesse", () => {
     }
   });
 });
+
+describe("buildVehiculeJustification — proportionnalité quand la dépense excède le bénéfice", () => {
+  it("nomme le déficit créé plutôt que de parler d'un simple rapport élevé", () => {
+    // Bénéfice volontairement inférieur au coût du véhicule : la société ne se prive plus d'une
+    // part de son résultat, elle le supprime. Le document doit le dire.
+    const sim = loaElectrique({ beneficeAvantChargePrevisionnel: 3000 });
+    const r = computeSimulation(sim);
+    expect(r.coutNetSociete).toBeGreaterThan(3000);
+    const doc = buildVehiculeJustification(sim);
+    expect(doc).toContain("excède le bénéfice disponible");
+    expect(doc).toContain("creuse un déficit");
+    expect(doc).not.toContain("La société conserve un bénéfice");
+  });
+
+  it("rappelle qu'un déficit ne rend pas l'opération irrégulière, mais déplace la justification", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ beneficeAvantChargePrevisionnel: 3000 }));
+    expect(doc).toContain("ne rend pas l'opération irrégulière");
+    expect(doc).toContain("trésorerie disponible");
+  });
+
+  it("les trois situations s'excluent deux à deux", () => {
+    const phrases = ["excède le bénéfice disponible", "absorbe plus de la moitié", "conserve un bénéfice"];
+    for (const benefice of [3000, 12000, 200000]) {
+      const doc = buildVehiculeJustification(loaElectrique({ beneficeAvantChargePrevisionnel: benefice }));
+      const presentes = phrases.filter((p) => doc.includes(p));
+      expect(presentes, `bénéfice ${benefice} : ${presentes.join(" + ")}`).toHaveLength(1);
+    }
+  });
+});
