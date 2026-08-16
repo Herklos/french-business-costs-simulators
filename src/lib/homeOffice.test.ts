@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   type HomeOfficeInputs,
   LOGEMENT_PROFILE_FIELDS,
+  PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL,
   TOLERANCE_SURFACE_BUREAU_DEFAUT,
   applyLogementProfile,
   chargeLinesDeReference,
@@ -406,6 +407,7 @@ describe("computeHomeOffice — intérêts d'emprunt (art. 31, I-1°-d CGI)", ()
     ...createDefaultHomeOfficeInputs(),
     surfaceTotaleM2: 80,
     surfaceBureauM2: 20, // quote-part de 25 %, calcul lisible
+    empruntEnCours: true,
     interetsEmpruntAnnuels: 6000,
   };
 
@@ -553,15 +555,15 @@ describe("computeHomeOffice — comparaison micro-foncier / réel", () => {
   });
 
   it("un emprunt important fait basculer l'optimum vers le réel", () => {
-    const sansEmprunt = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 0 });
-    const avecEmprunt = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 40000 });
+    const sansEmprunt = computeHomeOffice({ ...base, empruntEnCours: true, interetsEmpruntAnnuels: 0 });
+    const avecEmprunt = computeHomeOffice({ ...base, empruntEnCours: true, interetsEmpruntAnnuels: 40000 });
     expect(sansEmprunt.regimeOptimal).toBe("micro");
     expect(avecEmprunt.regimeOptimal).toBe("reel");
     expect(avecEmprunt.chargesDeductiblesReel).toBeGreaterThan(sansEmprunt.chargesDeductiblesReel);
   });
 
   it("l'écart annoncé est bien la différence entre les deux coûts fiscaux", () => {
-    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 40000 });
+    const r = computeHomeOffice({ ...base, empruntEnCours: true, interetsEmpruntAnnuels: 40000 });
     expect(r.gainRegimeOptimal).toBeCloseTo(Math.abs(r.coutFiscalMicro - r.coutFiscalReel), 6);
   });
 
@@ -635,6 +637,7 @@ describe("computeHomeOffice — assurance emprunteur", () => {
     surfaceTotaleM2: 80,
     surfaceBureauM2: 20, // quote-part de 25 %
     regimeFoncier: "reel",
+    empruntEnCours: true,
   };
 
   it("est déduite au réel comme les intérêts, au prorata de la surface professionnelle", () => {
@@ -657,6 +660,137 @@ describe("computeHomeOffice — assurance emprunteur", () => {
   it("une valeur négative est neutralisée", () => {
     const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 4000, assuranceEmpruntAnnuelle: -5000 });
     expect(r.interetsEmpruntDeduits).toBeCloseTo(4000 * 0.25, 6);
+  });
+});
+
+describe("computeHomeOffice — emprunt en cours", () => {
+  const base: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 20,
+    regimeFoncier: "reel",
+    interetsEmpruntAnnuels: 8000,
+    assuranceEmpruntAnnuelle: 800,
+  };
+
+  it("sans emprunt déclaré, les montants saisis sont ignorés", () => {
+    const r = computeHomeOffice({ ...base, empruntEnCours: false });
+    expect(r.interetsEmpruntDeduits).toBe(0);
+  });
+
+  it("déclarer l'emprunt active la déduction", () => {
+    const r = computeHomeOffice({ ...base, empruntEnCours: true });
+    expect(r.interetsEmpruntDeduits).toBeCloseTo((8000 + 800) * 0.25, 6);
+  });
+
+  it("un locataire ne déduit rien, même en cochant l'emprunt", () => {
+    const r = computeHomeOffice({ ...base, empruntEnCours: true, statutOccupant: "locataire" });
+    expect(r.interetsEmpruntDeduits).toBe(0);
+  });
+
+  it("l'emprunt ne change jamais l'indemnité ni le coût pour la société", () => {
+    const avec = computeHomeOffice({ ...base, empruntEnCours: true });
+    const sans = computeHomeOffice({ ...base, empruntEnCours: false });
+    expect(avec.indemniteAnnuelleBrute).toBeCloseTo(sans.indemniteAnnuelleBrute, 6);
+    expect(avec.coutNetSociete).toBeCloseTo(sans.coutNetSociete, 6);
+  });
+});
+
+describe("computeHomeOffice — déficit foncier (art. 156, I-3° CGI)", () => {
+  // Configuration volontairement déficitaire : loyer désactivé, donc une indemnité faible en regard
+  // des charges et de l'emprunt.
+  const base: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 40, // quote-part de 50 %
+    regimeFoncier: "reel",
+    empruntEnCours: true,
+    autresRevenusFonciersFoyer: 0,
+  };
+
+  it("sans déficit, tous les indicateurs restent à zéro", () => {
+    const r = computeHomeOffice({ ...base, empruntEnCours: false, interetsEmpruntAnnuels: 0 });
+    expect(r.deficitFoncierTotal).toBe(0);
+    expect(r.deficitImputableRevenuGlobal).toBe(0);
+    expect(r.deficitReportableFoncier).toBe(0);
+    expect(r.economieIRDeficitFoncier).toBe(0);
+  });
+
+  it("le déficit total est l'excédent des charges déductibles sur l'indemnité", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 60000 });
+    expect(r.deficitFoncierTotal).toBeCloseTo(r.chargesDeductiblesReel - r.indemniteAnnuelleBrute, 6);
+    expect(r.baseImposableFonciere).toBe(0);
+  });
+
+  it("un déficit dû AUX SEULS INTÉRÊTS n'est jamais imputable sur le revenu global", () => {
+    // Intérêts colossaux : ils absorbent l'indemnité à eux seuls, et le reste des charges aussi.
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 1000000 });
+    const chargesHorsEmprunt = r.chargesDeductiblesReel - r.interetsEmpruntDeduits;
+    // Tout ce qui dépasse vient des intérêts : l'imputation immédiate est bornée aux autres charges.
+    expect(r.deficitImputableRevenuGlobal).toBeLessThanOrEqual(chargesHorsEmprunt + 1e-6);
+    expect(r.deficitReportableFoncier).toBeGreaterThan(0);
+  });
+
+  it("l'imputation immédiate est plafonnée à 10 700 €/an", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 500000 });
+    expect(r.deficitImputableRevenuGlobal).toBeLessThanOrEqual(PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL);
+  });
+
+  it("imputable + reportable = déficit total, sans perte", () => {
+    for (const interets of [0, 5000, 50000, 500000]) {
+      const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: interets });
+      expect(r.deficitImputableRevenuGlobal + r.deficitReportableFoncier, String(interets)).toBeCloseTo(
+        r.deficitFoncierTotal,
+        6,
+      );
+    }
+  });
+
+  it("l'économie d'IR porte sur la seule fraction imputable, au taux marginal", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 60000 });
+    expect(r.economieIRDeficitFoncier).toBeCloseTo(r.deficitImputableRevenuGlobal * r.tauxIRUtilise, 6);
+  });
+
+  it("le déficit ne procure aucune économie au micro-foncier", () => {
+    // Bureau réduit pour rester sous le plafond micro tout en gardant un emprunt déficitaire.
+    const sousPlafond = { ...base, surfaceBureauM2: 25, interetsEmpruntAnnuels: 60000 };
+    const enMicro = computeHomeOffice({ ...sousPlafond, regimeFoncier: "micro" });
+    expect(enMicro.eligibleMicroFoncier).toBe(true);
+    expect(enMicro.deficitFoncierTotal).toBeGreaterThan(0);
+    expect(enMicro.economieIRDeficitFoncier).toBe(0);
+    // ...alors que le même dossier au réel en profite.
+    expect(computeHomeOffice({ ...sousPlafond, regimeFoncier: "reel" }).economieIRDeficitFoncier).toBeGreaterThan(0);
+  });
+
+  it("le déficit réduit le coût fiscal du dirigeant, qui peut devenir négatif (gain net)", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 60000 });
+    expect(r.irDu).toBe(0);
+    expect(r.prelevementsSociaux).toBe(0);
+    expect(r.coutFiscalGerant).toBeCloseTo(-r.economieIRDeficitFoncier, 6);
+    expect(r.gainNetGerant).toBeGreaterThan(r.indemniteAnnuelleBrute);
+  });
+
+  it("l'ordre d'imputation est bien intérêts d'abord : au-delà, ils n'alimentent que le report", () => {
+    // Dès que les intérêts absorbent toute l'indemnité, l'imputation immédiate est figée sur les
+    // autres charges : les intérêts supplémentaires ne font grossir QUE la part reportable.
+    const gros = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 200000 });
+    const enorme = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 500000 });
+    expect(gros.deficitImputableRevenuGlobal).toBeGreaterThan(0);
+    expect(enorme.deficitImputableRevenuGlobal).toBeCloseTo(gros.deficitImputableRevenuGlobal, 6);
+    expect(enorme.deficitReportableFoncier).toBeGreaterThan(gros.deficitReportableFoncier);
+  });
+
+  it("des intérêts modérés, absorbés par l'indemnité, ne créent aucun déficit", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 20000 });
+    expect(r.deficitFoncierTotal).toBe(0);
+    expect(r.baseImposableFonciere).toBeGreaterThan(0);
+  });
+
+  it("les identités comptables tiennent malgré le déficit", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 60000 });
+    expect(r.gainNetGerant).toBeCloseTo(r.indemniteAnnuelleBrute - r.coutFiscalGerant, 6);
+    expect(r.coutNetGlobal).toBeCloseTo(r.coutFiscalGerant - r.economieImpotSociete, 6);
+    expect(r.coutNetGlobal).toBeCloseTo(r.coutNetSociete - r.gainNetGerant, 6);
   });
 });
 

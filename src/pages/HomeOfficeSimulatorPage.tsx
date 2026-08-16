@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type ChargeLine,
   type HomeOfficeInputs,
+  PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL,
   TOLERANCE_SURFACE_BUREAU_DEFAUT,
   applyLogementProfile,
   chargeLinesDeReference,
@@ -83,9 +84,14 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   push(
     `Charges déductibles au réel : ${formatEUR(r.chargesDeductiblesReel)}/an · Abattement micro (30 %) : ${formatEUR(r.seuilBasculeReel)}/an`,
   );
-  if (sim.interetsEmpruntAnnuels > 0 || sim.assuranceEmpruntAnnuelle > 0) {
+  if (sim.empruntEnCours) {
     push(
-      `Emprunt : ${formatEUR(sim.interetsEmpruntAnnuels)}/an d'intérêts et ${formatEUR(sim.assuranceEmpruntAnnuelle)}/an d'assurance emprunteur, dont ${formatEUR(r.interetsEmpruntDeduits)} de quote-part professionnelle déduite (régime réel uniquement)`,
+      `Emprunt en cours : ${formatEUR(sim.interetsEmpruntAnnuels)}/an d'intérêts et frais, ${formatEUR(sim.assuranceEmpruntAnnuelle)}/an d'assurance emprunteur, dont ${formatEUR(r.interetsEmpruntDeduits)} de quote-part professionnelle déduite (régime réel uniquement)`,
+    );
+  }
+  if (r.deficitFoncierTotal > 0) {
+    push(
+      `Déficit foncier : ${formatEUR(r.deficitFoncierTotal)}/an, dont ${formatEUR(r.deficitImputableRevenuGlobal)} imputables sur le revenu global (économie d'IR ${formatEUR(r.economieIRDeficitFoncier)}) et ${formatEUR(r.deficitReportableFoncier)} seulement reportables 10 ans sur les revenus fonciers`,
     );
   }
   push("");
@@ -865,10 +871,28 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             </Field>
           </div>
           {inputs.statutOccupant === "proprietaire" && (
+            <div className="field">
+              <span className="field__label">Emprunt immobilier</span>
+              <label className="charge-line__toggle">
+                <input
+                  type="checkbox"
+                  checked={inputs.empruntEnCours}
+                  onChange={(e) => update("empruntEnCours", e.target.checked)}
+                />
+                <span>Le logement fait l'objet d'un emprunt non encore soldé</span>
+              </label>
+              <span className="field__hint">
+                Seuls les intérêts, l'assurance et les frais d'emprunt comptent — jamais le capital remboursé, qui
+                n'est pas une charge mais la reconstitution de votre patrimoine.
+              </span>
+            </div>
+          )}
+
+          {inputs.statutOccupant === "proprietaire" && inputs.empruntEnCours && (
             <div className="grid grid--2">
               <Field
-                label="Intérêts annuels de l'emprunt immobilier (€/an)"
-                hint="Déductibles du revenu foncier au régime réel uniquement, au prorata de la surface professionnelle. Ils ne s'ajoutent pas à l'indemnité : le loyer de marché rémunère déjà la mise à disposition du bien."
+                label="Intérêts et frais annuels de l'emprunt (€/an)"
+                hint="Intérêts, mais aussi frais de dossier, frais de garantie ou de caution et inscription hypothécaire : l'art. 31 CGI les assimile aux intérêts. Déductibles au régime réel uniquement, au prorata de la surface professionnelle. Ils ne s'ajoutent jamais à l'indemnité : le loyer de marché rémunère déjà la mise à disposition du bien."
               >
                 <NumberInput
                   value={inputs.interetsEmpruntAnnuels}
@@ -959,6 +983,15 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                 : `en dessous, donc l'abattement forfaitaire est plus généreux que vos charges réelles (il manque ${formatEUR(results.seuilBasculeReel - results.chargesDeductiblesReel)}).`}{" "}
               L'écart se creuse surtout avec un emprunt en cours : intérêts et assurance emprunteur ne sont
               déductibles qu'au réel, et l'abattement de 30 % les absorbe.
+              {results.deficitFoncierTotal > 0 && inputs.regimeFoncier === "micro" && (
+                <>
+                  {" "}
+                  Ici vos charges dépasseraient même l'indemnité : le réel dégagerait un déficit foncier de{" "}
+                  <strong>{formatEUR(results.deficitFoncierTotal)}</strong>, dont{" "}
+                  {formatEUR(results.deficitImputableRevenuGlobal)} imputables sur votre revenu global. Le
+                  micro-foncier, lui, ignore vos charges : ce déficit n'existe pas pour lui.
+                </>
+              )}
             </p>
           )}
 
@@ -972,9 +1005,52 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
 
           {results.interetsEmpruntDeduits > 0 && (
             <p className="hint-block">
-              Quote-part professionnelle des intérêts et de l'assurance emprunteur déduite du revenu foncier :{" "}
+              Quote-part professionnelle des intérêts, frais et assurance emprunteur déduite du revenu foncier :{" "}
               <strong>{formatEUR(results.interetsEmpruntDeduits)}</strong>/an.
             </p>
+          )}
+
+          {/* Déficit foncier : l'ordre d'imputation change tout, et la part « emprunt » ne procure
+              aucune économie immédiate. La montrer évite de croire à un gain qui n'existe pas. */}
+          {results.deficitFoncierTotal > 0 && (
+            <div className="keyfigures">
+              <div className="keyfigures__head">
+                <span className="keyfigures__title">
+                  Déficit foncier de {parPeriode(results.deficitFoncierTotal)} — comment il s'impute
+                </span>
+              </div>
+              <div className="keyfigures__grid">
+                <div className="keyfigure keyfigure--accent">
+                  <span className="keyfigure__label">Imputable sur votre revenu global</span>
+                  <span className="keyfigure__value">{parPeriode(results.deficitImputableRevenuGlobal)}</span>
+                  <span className="keyfigure__sub">
+                    plafonné à {formatEUR(PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL)}/an · économie d'IR immédiate{" "}
+                    {formatEUR(results.economieIRDeficitFoncier)}
+                  </span>
+                </div>
+                <div className="keyfigure">
+                  <span className="keyfigure__label">Seulement reportable</span>
+                  <span className="keyfigure__value">{parPeriode(results.deficitReportableFoncier)}</span>
+                  <span className="keyfigure__sub">
+                    10 ans, sur vos seuls revenus fonciers futurs · aucune économie cette année
+                  </span>
+                </div>
+              </div>
+              <p className="field__hint" style={{ marginTop: "0.6rem" }}>
+                Les intérêts et frais d'emprunt s'imputent <strong>en premier</strong> sur le revenu foncier brut, et
+                le déficit qu'ils créent n'est jamais imputable sur le revenu global : il attend d'éventuels revenus
+                fonciers futurs. Seul le déficit provenant des <strong>autres</strong> charges ouvre l'imputation
+                immédiate, dans la limite de {formatEUR(PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL)}. Le simulateur ne
+                compte donc que la fraction réellement imputable — le report est un avantage futur et conditionnel.
+              </p>
+              {results.deficitImputableRevenuGlobal > 0 && (
+                <p className="warning-block">
+                  ⚠️ L'imputation sur le revenu global suppose de maintenir le bien loué pendant les 3 années
+                  suivantes. Une remise à disposition gratuite ou l'arrêt de la convention avant ce terme entraîne la
+                  reprise de l'avantage.
+                </p>
+              )}
+            </div>
           )}
           {results.chargeLinesEffectives.some((c) => c.enabled && c.id === "taxeOrduresMenageres") && (
             <p className="hint-block">

@@ -19,6 +19,13 @@ export const ABATTEMENT_MICRO_FONCIER = 0.3;
 export const PLAFOND_MICRO_FONCIER = 15000;
 
 /**
+ * Plafond annuel d'imputation du déficit foncier sur le REVENU GLOBAL du foyer (art. 156, I-3° CGI).
+ * Au-delà, et pour la fraction provenant des intérêts d'emprunt, le déficit n'est pas perdu mais
+ * seulement reportable sur les revenus fonciers des 10 années suivantes.
+ */
+export const PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL = 10700;
+
+/**
  * Part de la surface totale au-delà de laquelle un bureau à domicile appelle une justification
  * renforcée. Ce n'est PAS un plafond légal — aucun texte ne fixe de seuil — mais la tolérance
  * pratique généralement admise. Elle est paramétrable dans le simulateur : au-delà de 30 %, il
@@ -106,6 +113,14 @@ export interface HomeOfficeInputs {
   /** Seuil d'alerte sur la quote-part de surface, en fraction de la surface totale (0,3 = 30 %). */
   toleranceSurfaceBureau: number;
 
+  /**
+   * Le logement fait-il l'objet d'un emprunt immobilier non soldé ? Uniquement pertinent pour un
+   * propriétaire. Ce n'est pas un simple affichage : les intérêts, l'assurance et les frais
+   * d'emprunt ne sont déductibles qu'au régime réel, et le déficit qu'ils engendrent obéit à des
+   * règles d'imputation distinctes de celles des autres charges (art. 156, I-3° CGI).
+   */
+  empruntEnCours: boolean;
+
   /** Ville du logement (cf. LOYERS_VILLES), ou VILLE_AUTRE pour saisir le prix au m² à la main. */
   ville: string;
   /** Loyer de marché retenu, en €/m²/mois hors charges. */
@@ -187,6 +202,7 @@ export const LOGEMENT_PROFILE_FIELDS = [
   "surfaceTotaleM2",
   "surfaceBureauM2",
   "toleranceSurfaceBureau",
+  "empruntEnCours",
   "ville",
   "loyerMarcheM2Mensuel",
   "loyerAutoDepuisPrixM2",
@@ -205,6 +221,7 @@ export function extractLogementProfile(inputs: HomeOfficeInputs): LogementProfil
     surfaceTotaleM2: inputs.surfaceTotaleM2,
     surfaceBureauM2: inputs.surfaceBureauM2,
     toleranceSurfaceBureau: inputs.toleranceSurfaceBureau,
+    empruntEnCours: inputs.empruntEnCours,
     ville: inputs.ville,
     loyerMarcheM2Mensuel: inputs.loyerMarcheM2Mensuel,
     loyerAutoDepuisPrixM2: inputs.loyerAutoDepuisPrixM2,
@@ -262,6 +279,7 @@ export function applyLogementProfile(defaults: HomeOfficeInputs, profil: unknown
       p.toleranceSurfaceBureau <= 1
         ? p.toleranceSurfaceBureau
         : defaults.toleranceSurfaceBureau,
+    empruntEnCours: typeof p.empruntEnCours === "boolean" ? p.empruntEnCours : defaults.empruntEnCours,
     ville: typeof p.ville === "string" && p.ville.length > 0 ? p.ville : defaults.ville,
     loyerMarcheM2Mensuel: nombreValide(p.loyerMarcheM2Mensuel, defaults.loyerMarcheM2Mensuel),
     loyerAutoDepuisPrixM2:
@@ -292,6 +310,7 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     surfaceTotaleM2,
     surfaceBureauM2: 12,
     toleranceSurfaceBureau: TOLERANCE_SURFACE_BUREAU_DEFAUT,
+    empruntEnCours: false,
     ville,
     loyerMarcheM2Mensuel: prixM2Ville(ville),
     loyerAutoDepuisPrixM2: true,
@@ -346,6 +365,16 @@ export interface HomeOfficeResults {
   gainRegimeOptimal: number;
   /** Montant de charges déductibles à partir duquel le réel devient plus favorable (= abattement). */
   seuilBasculeReel: number;
+
+  // --- Déficit foncier (régime réel), art. 156, I-3° CGI ---
+  /** Déficit total constaté au régime réel : charges déductibles au-delà de l'indemnité. */
+  deficitFoncierTotal: number;
+  /** Fraction imputable sur le revenu global du foyer, plafonnée à 10 700 €/an. */
+  deficitImputableRevenuGlobal: number;
+  /** Reste, reportable 10 ans sur les seuls revenus fonciers (dont toute la part « emprunt »). */
+  deficitReportableFoncier: number;
+  /** Économie d'IR procurée par la fraction imputable — nulle hors régime réel. */
+  economieIRDeficitFoncier: number;
   /** Quote-part professionnelle des intérêts d'emprunt déduite — nulle hors régime réel. */
   interetsEmpruntDeduits: number;
 
@@ -406,14 +435,33 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   const chargesHorsLoyerDeductibles = chargeLinesEffectives
     .filter((c) => c.enabled && c.id !== "loyer" && !CHARGES_NON_DEDUCTIBLES_FONCIER.has(c.id))
     .reduce((sum, c) => sum + c.montantAnnuel, 0);
-  // Les intérêts et l'assurance emprunteur ne sont pas dans l'assiette de l'indemnité (cf.
-  // `interetsEmpruntAnnuels`) mais sont déductibles au réel, au prorata de la surface pro.
+  // Les intérêts, l'assurance et les frais d'emprunt ne sont pas dans l'assiette de l'indemnité (cf.
+  // `interetsEmpruntAnnuels`) mais sont déductibles au réel, au prorata de la surface pro. Ils ne
+  // comptent que si un emprunt est effectivement en cours et que le dirigeant est propriétaire.
   const empruntDeductible =
-    (Math.max(0, inputs.interetsEmpruntAnnuels) + Math.max(0, inputs.assuranceEmpruntAnnuelle)) * quotePartSurface;
-  const chargesDeductiblesReel = chargesHorsLoyerDeductibles * quotePartSurface + empruntDeductible;
+    inputs.empruntEnCours && inputs.statutOccupant === "proprietaire"
+      ? (Math.max(0, inputs.interetsEmpruntAnnuels) + Math.max(0, inputs.assuranceEmpruntAnnuelle)) * quotePartSurface
+      : 0;
+  const autresChargesDeductibles = chargesHorsLoyerDeductibles * quotePartSurface;
+  const chargesDeductiblesReel = autresChargesDeductibles + empruntDeductible;
 
   const baseMicro = Math.max(0, indemniteAnnuelleBrute - abattementMicro);
-  const baseReel = Math.max(0, indemniteAnnuelleBrute - chargesDeductiblesReel);
+
+  // Déficit foncier (art. 156, I-3° CGI) : l'ordre d'imputation n'est pas neutre. Les intérêts et
+  // frais d'emprunt s'imputent D'ABORD sur le revenu foncier brut ; le déficit qu'ils créent n'est
+  // reportable que sur les revenus fonciers des 10 années suivantes. Le déficit provenant des
+  // AUTRES charges s'impute, lui, sur le revenu global du foyer, dans la limite de 10 700 €/an.
+  // Sans cette distinction, un gros emprunt donnerait une économie d'impôt immédiate qu'il ne
+  // procure pas en réalité.
+  const apresEmprunt = indemniteAnnuelleBrute - empruntDeductible;
+  const deficitEmprunt = Math.max(0, -apresEmprunt);
+  const resultatReel = Math.max(0, apresEmprunt) - autresChargesDeductibles;
+  const deficitAutresCharges = Math.max(0, -resultatReel);
+  const baseReel = Math.max(0, resultatReel);
+
+  const deficitFoncierTotal = deficitEmprunt + deficitAutresCharges;
+  const deficitImputableRevenuGlobal = Math.min(deficitAutresCharges, PLAFOND_DEFICIT_FONCIER_REVENU_GLOBAL);
+  const deficitReportableFoncier = deficitFoncierTotal - deficitImputableRevenuGlobal;
 
   const baseImposableFonciere = regimeEffectif === "micro" ? baseMicro : baseReel;
   const abattementApplique = regimeEffectif === "micro" ? abattementMicro : chargesDeductiblesReel;
@@ -430,16 +478,23 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   );
   const tauxIRUtilise = resolvedTax.tauxUtilise;
 
+  // Le déficit imputé sur le revenu global fait baisser l'IR du foyer au taux marginal. Il n'ouvre
+  // en revanche aucune économie de prélèvements sociaux : ceux-ci ne frappent qu'un revenu positif.
+  // Le déficit seulement REPORTABLE n'est pas compté : c'est un avantage futur et conditionnel,
+  // comme le déficit reportable d'IS côté société.
+  const economieIRDeficitFoncier = deficitImputableRevenuGlobal * tauxIRUtilise;
+  const economieIRDeficitFoncierAppliquee = regimeEffectif === "reel" ? economieIRDeficitFoncier : 0;
+
   const irDu = baseImposableFonciere * tauxIRUtilise;
   const prelevementsSociaux = baseImposableFonciere * PRELEVEMENTS_SOCIAUX_FONCIER;
-  const coutFiscalGerant = irDu + prelevementsSociaux;
+  const coutFiscalGerant = irDu + prelevementsSociaux - economieIRDeficitFoncierAppliquee;
 
   // Comparaison des deux régimes à situation identique, pour recommander le plus favorable. Le taux
   // d'imposition étant le même dans les deux cas, comparer les bases suffirait ; on chiffre quand
   // même le coût fiscal, plus parlant qu'un écart d'assiette.
   const tauxImpositionFoncier = tauxIRUtilise + PRELEVEMENTS_SOCIAUX_FONCIER;
   const coutFiscalMicro = baseMicro * tauxImpositionFoncier;
-  const coutFiscalReel = baseReel * tauxImpositionFoncier;
+  const coutFiscalReel = baseReel * tauxImpositionFoncier - economieIRDeficitFoncier;
   // Le micro n'est ouvert que sous le plafond : hors plafond, le réel n'est pas un choix.
   const regimeOptimal: RegimeFoncier =
     eligibleMicroFoncier && coutFiscalMicro <= coutFiscalReel ? "micro" : "reel";
@@ -502,6 +557,10 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
     regimeOptimal,
     gainRegimeOptimal,
     seuilBasculeReel,
+    deficitFoncierTotal,
+    deficitImputableRevenuGlobal,
+    deficitReportableFoncier,
+    economieIRDeficitFoncier: economieIRDeficitFoncierAppliquee,
     interetsEmpruntDeduits,
     tauxIRUtilise,
     irDu,
