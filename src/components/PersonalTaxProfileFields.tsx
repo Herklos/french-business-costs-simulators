@@ -154,8 +154,10 @@ function CreditsImpotFields({
   return (
     <details className="details-block">
       <summary>
-        Crédits d'impôt du foyer — emploi à domicile, garde d'enfants
-        {r.creditsImpotTotal > 0 ? ` (${formatEUR(r.creditsImpotTotal)})` : ""}
+        Crédits et réductions d'impôt du foyer — emploi à domicile, garde d'enfants
+        {r.creditsImpotTotal + r.reductionsImpotTotal > 0
+          ? ` (${formatEUR(r.creditsImpotTotal + r.reductionsImpotTotal)})`
+          : ""}
       </summary>
 
       <div className="grid grid--2">
@@ -205,19 +207,31 @@ function CreditsImpotFields({
         </Field>
       </div>
 
-      <Field
-        label="Autres crédits et réductions d'impôt (€/an)"
-        hint="Saisis ici en MONTANT de crédit, et non en dépense : dons, cotisations syndicales, investissements locatifs… les taux varient d'un dispositif à l'autre."
-      >
-        <NumberInput
-          value={profile.autresCreditsImpot}
-          onChange={(e) => update("autresCreditsImpot", Number(e.target.value))}
-        />
-      </Field>
+      <div className="grid grid--2">
+        <Field
+          label="Autres CRÉDITS d'impôt (€/an)"
+          hint="Montant du crédit, non la dépense : dons, cotisations syndicales… L'excédent est remboursé."
+        >
+          <NumberInput
+            value={profile.autresCreditsImpot}
+            onChange={(e) => update("autresCreditsImpot", Number(e.target.value))}
+          />
+        </Field>
+        <Field
+          label="RÉDUCTIONS d'impôt (€/an)"
+          hint="Pinel, FIP/FCPI, Malraux… L'excédent est perdu, jamais remboursé : la distinction n'est pas cosmétique."
+        >
+          <NumberInput
+            value={profile.autresReductionsImpot}
+            onChange={(e) => update("autresReductionsImpot", Number(e.target.value))}
+          />
+        </Field>
+      </div>
 
-      {r.creditsImpotTotal > 0 && (
+      {r.creditsImpotTotal + r.reductionsImpotTotal > 0 && (
         <p className="hint-block">
           Crédit total : <strong>{formatEUR(r.creditsImpotTotal)}</strong>
+          {r.reductionsImpotTotal > 0 && <> · réductions {formatEUR(r.reductionsImpotTotal)}</>}
           {r.creditServicesPersonne > 0 && (
             <>
               {" "}
@@ -233,7 +247,7 @@ function CreditsImpotFields({
               {formatEUR(Math.min(profile.depensesGardeEnfantsHorsDomicile, r.plafondGardeEnfants))} retenus)
             </>
           )}
-          . Impôt du foyer : {formatEUR(r.impotApresDecote)} avant crédits,{" "}
+          . Impôt du foyer : {formatEUR(r.impotApresDecote)} avant imputation,{" "}
           <strong>{formatEUR(r.impotApresCreditsImpot)}</strong> après
           {r.restitutionAttendue > 0 && (
             <>
@@ -268,11 +282,31 @@ function CreditsImpotFields({
       )}
 
       <p>
-        <strong>Ces crédits ne changent aucun résultat de simulation, et c'est normal.</strong> Un crédit d'impôt
-        s'impute sur l'impôt <em>dû</em>, pas sur le revenu imposable : il ne déplace aucune tranche. Un euro de
-        rémunération, d'avantage en nature ou d'indemnité d'occupation supplémentaire reste donc taxé au même taux
-        marginal, que le foyer ait ou non des crédits. Ils sont renseignés ici pour situer l'impôt réellement payé —
-        pas pour rendre un euro marginal moins cher.
+        <strong>Un crédit d'impôt ne modifie pas le taux marginal, et donc pas le coût d'un euro supplémentaire.</strong>{" "}
+        Il s'impute sur l'impôt <em>dû</em>, pas sur le revenu imposable : il ne déplace aucune tranche. Et lorsqu'il
+        excède l'impôt, l'excédent est remboursé — un revenu supplémentaire ne fait alors que réduire ce remboursement
+        d'autant, pour un coût net identique. Les simulations sont donc inchangées, ce qui est le comportement correct.
+      </p>
+      <p>
+        <strong>Une réduction d'impôt non imputée, en revanche, change bel et bien la donne.</strong> Son excédent
+        n'est pas remboursé : il est perdu. Tant qu'il subsiste, chaque euro d'impôt supplémentaire ne fait que
+        l'absorber, si bien que le revenu qui le génère ne coûte rien.
+        {r.reductionPerdue > 0 ? (
+          <>
+            {" "}
+            C'est votre cas : <strong>{formatEUR(r.reductionPerdue)}</strong> de réduction sont aujourd'hui perdus. Les{" "}
+            <strong>{formatEUR(r.revenuAbsorbeParReductionPerdue)}</strong> premiers euros de revenu imposable
+            supplémentaire — rémunération, avantage en nature, indemnité d'occupation — n'engendreraient donc aucun
+            impôt réel. Au-delà, le taux marginal de {formatPercent(r.tauxMarginalEffectif)} reprend ses droits. Les
+            simulateurs ne tiennent pas compte de cette franchise : ils retiennent le taux marginal sur la totalité,
+            et surestiment donc d'autant le coût de la première tranche de revenu.
+          </>
+        ) : (
+          <>
+            {" "}
+            Ce n'est pas votre cas ici : vos réductions s'imputent intégralement sur l'impôt dû, sans excédent perdu.
+          </>
+        )}
       </p>
       <RuleNote ruleId="credit-impot-services-a-la-personne" />
       <RuleNote ruleId="credit-impot-garde-jeunes-enfants" />

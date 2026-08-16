@@ -127,7 +127,13 @@ export interface PersonalTaxProfile {
   depensesGardeEnfantsHorsDomicile: number; // crèche, halte-garderie, assistante maternelle agréée (enfants de moins de 6 ans)
   nombreEnfantsGardeHorsDomicile: number; // nombre d'enfants concernés — le plafond s'apprécie par enfant
   foyerInvalidite: boolean; // relève le plafond de l'emploi à domicile et supprime ses majorations
-  autresCreditsImpot: number; // saisi ici en MONTANT DE CRÉDIT, les taux variant d'un dispositif à l'autre
+  // Deux natures à ne pas confondre, saisies en MONTANT et non en dépense, les taux variant d'un
+  // dispositif à l'autre. Un CRÉDIT dont le montant excède l'impôt est remboursé ; une RÉDUCTION,
+  // elle, ne peut que ramener l'impôt à zéro — son excédent est définitivement perdu. Cette
+  // différence est la seule par laquelle un avantage fiscal peut modifier le coût réel d'un euro
+  // de revenu supplémentaire, cf. `revenuAbsorbeParReductionPerdue`.
+  autresCreditsImpot: number;
+  autresReductionsImpot: number;
 }
 
 export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
@@ -144,6 +150,7 @@ export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
     nombreEnfantsGardeHorsDomicile: 0,
     foyerInvalidite: false,
     autresCreditsImpot: 0,
+    autresReductionsImpot: 0,
   };
 }
 
@@ -161,8 +168,16 @@ export interface ResolvedTaxProfile extends IRResult {
   creditGardeEnfants: number;
   plafondAtteintGardeEnfants: boolean;
   creditsImpotTotal: number;
-  impotApresCreditsImpot: number; // impôt réellement dû, 0 si les crédits l'absorbent
-  restitutionAttendue: number; // excédent remboursé par l'administration
+  reductionsImpotTotal: number;
+  impotApresCreditsImpot: number; // impôt réellement dû, 0 si crédits et réductions l'absorbent
+  restitutionAttendue: number; // excédent de CRÉDIT, remboursé par l'administration
+  reductionPerdue: number; // excédent de RÉDUCTION, définitivement perdu faute d'impôt à effacer
+  /**
+   * Montant de revenu imposable supplémentaire qui n'engendrerait aucun impôt réel, parce qu'il ne
+   * ferait qu'absorber une réduction aujourd'hui perdue. C'est le seul cas où un avantage fiscal
+   * déjà acquis rend gratuit un euro de rémunération, d'avantage en nature ou d'indemnité de plus.
+   */
+  revenuAbsorbeParReductionPerdue: number;
 }
 
 /**
@@ -213,6 +228,7 @@ export function computeCreditsImpot(profile: PersonalTaxProfile) {
     creditGardeEnfants,
     plafondAtteintGardeEnfants: depensesGarde > plafondGardeEnfants,
     creditsImpotTotal: creditServicesPersonne + creditGardeEnfants + Math.max(0, profile.autresCreditsImpot),
+    reductionsImpotTotal: Math.max(0, profile.autresReductionsImpot),
   };
 }
 
@@ -236,10 +252,15 @@ export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): Resolved
   // taxé au même taux marginal, que le foyer ait ou non des crédits — et c'est précisément la
   // confusion que la présence de ces champs risque d'induire, donc celle que l'interface corrige.
   const credits = computeCreditsImpot(profile);
-  const impotApresCreditsImpot = Math.max(0, impotApresDecote - credits.creditsImpotTotal);
-  // Les deux dispositifs modélisés sont de véritables CRÉDITS, non des réductions : leur excédent
-  // est remboursé par virement, il n'est pas perdu.
-  const restitutionAttendue = Math.max(0, credits.creditsImpotTotal - impotApresDecote);
+  // Ordre d'imputation : les réductions d'abord, plafonnées par l'impôt dû ; les crédits ensuite,
+  // qui peuvent le rendre négatif — c'est-à-dire donner lieu à restitution.
+  const impotApresReductions = Math.max(0, impotApresDecote - credits.reductionsImpotTotal);
+  const reductionPerdue = Math.max(0, credits.reductionsImpotTotal - impotApresDecote);
+  const impotApresCreditsImpot = Math.max(0, impotApresReductions - credits.creditsImpotTotal);
+  const restitutionAttendue = Math.max(0, credits.creditsImpotTotal - impotApresReductions);
+  // Tant qu'une réduction reste perdue, chaque euro d'impôt supplémentaire ne fait que l'absorber :
+  // le revenu qui le génère ne coûte donc rien. Au-delà, le taux marginal reprend ses droits.
+  const revenuAbsorbeParReductionPerdue = tauxMarginalEffectif > 0 ? reductionPerdue / tauxMarginalEffectif : 0;
 
   return {
     ...ir,
@@ -250,5 +271,7 @@ export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): Resolved
     ...credits,
     impotApresCreditsImpot,
     restitutionAttendue,
+    reductionPerdue,
+    revenuAbsorbeParReductionPerdue,
   };
 }

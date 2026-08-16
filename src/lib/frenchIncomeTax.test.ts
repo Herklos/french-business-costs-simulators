@@ -248,3 +248,74 @@ describe("crédits d'impôt — effet sur l'impôt, et absence d'effet sur le ta
     expect(r.creditsImpotTotal).toBeCloseTo(6000, 6);
   });
 });
+
+describe("réductions d'impôt — la seule voie par laquelle un avantage acquis change le coût d'un euro", () => {
+  function profil(patch: Partial<PersonalTaxProfile> = {}): PersonalTaxProfile {
+    return { ...createDefaultPersonalTaxProfile(), salaireNetImposableAnnuel: 40000, ...patch };
+  }
+
+  it("une réduction inférieure à l'impôt s'impute intégralement, sans perte", () => {
+    const r = resolvePersonalTaxProfile(profil({ autresReductionsImpot: 500 }));
+    expect(r.reductionPerdue).toBe(0);
+    expect(r.impotApresCreditsImpot).toBeCloseTo(r.impotApresDecote - 500, 6);
+    expect(r.revenuAbsorbeParReductionPerdue).toBe(0);
+  });
+
+  it("l'excédent d'une réduction est PERDU, là où celui d'un crédit est restitué", () => {
+    const base = profil({ salaireNetImposableAnnuel: 22000 });
+    const impot = resolvePersonalTaxProfile(base).impotApresDecote;
+    expect(impot).toBeGreaterThan(0);
+
+    const avecReduction = resolvePersonalTaxProfile({ ...base, autresReductionsImpot: impot + 1000 });
+    expect(avecReduction.impotApresCreditsImpot).toBe(0);
+    expect(avecReduction.reductionPerdue).toBeCloseTo(1000, 6);
+    expect(avecReduction.restitutionAttendue).toBe(0);
+
+    const avecCredit = resolvePersonalTaxProfile({ ...base, autresCreditsImpot: impot + 1000 });
+    expect(avecCredit.impotApresCreditsImpot).toBe(0);
+    expect(avecCredit.restitutionAttendue).toBeCloseTo(1000, 6);
+    expect(avecCredit.reductionPerdue).toBe(0);
+  });
+
+  it("les réductions s'imputent AVANT les crédits, faute de quoi une restitution serait perdue à tort", () => {
+    // Ordre inverse : la réduction absorberait ce que le crédit aurait fait restituer, et le foyer
+    // perdrait un remboursement auquel il a droit.
+    const base = profil({ salaireNetImposableAnnuel: 22000 });
+    const impot = resolvePersonalTaxProfile(base).impotApresDecote;
+    const r = resolvePersonalTaxProfile({ ...base, autresReductionsImpot: impot, autresCreditsImpot: 800 });
+    expect(r.impotApresCreditsImpot).toBe(0);
+    expect(r.restitutionAttendue).toBeCloseTo(800, 6);
+    expect(r.reductionPerdue).toBe(0);
+  });
+
+  it("chiffre le revenu supplémentaire qu'une réduction perdue rendrait gratuit", () => {
+    const base = profil({ salaireNetImposableAnnuel: 22000 });
+    const impot = resolvePersonalTaxProfile(base).impotApresDecote;
+    const r = resolvePersonalTaxProfile({ ...base, autresReductionsImpot: impot + 300 });
+    // 300 € de réduction perdue, absorbés au taux marginal effectif : le revenu correspondant ne
+    // coûte rien tant que la réduction n'est pas épuisée.
+    expect(r.revenuAbsorbeParReductionPerdue).toBeCloseTo(300 / r.tauxMarginalEffectif, 6);
+    expect(r.revenuAbsorbeParReductionPerdue).toBeGreaterThan(0);
+  });
+
+  it("une réduction ne modifie pas davantage le taux marginal qu'un crédit", () => {
+    // Le taux marginal reste celui du barème : l'effet passe par la franchise ci-dessus, pas par
+    // une modification du taux — c'est pourquoi les simulateurs ne peuvent pas l'absorber seuls.
+    const sans = resolvePersonalTaxProfile(profil());
+    const avec = resolvePersonalTaxProfile(profil({ autresReductionsImpot: 10000 }));
+    expect(avec.tauxUtilise).toBe(sans.tauxUtilise);
+    expect(avec.tmi).toBe(sans.tmi);
+  });
+
+  it("un foyer non imposable perd la totalité de sa réduction et conserve tout son crédit", () => {
+    const base = profil({ salaireNetImposableAnnuel: 12000 });
+    expect(resolvePersonalTaxProfile(base).impotApresDecote).toBe(0);
+    const r = resolvePersonalTaxProfile({ ...base, autresReductionsImpot: 2000, autresCreditsImpot: 1500 });
+    expect(r.reductionPerdue).toBeCloseTo(2000, 6);
+    expect(r.restitutionAttendue).toBeCloseTo(1500, 6);
+  });
+
+  it("une réduction négative saisie par erreur est ignorée", () => {
+    expect(resolvePersonalTaxProfile(profil({ autresReductionsImpot: -5000 })).reductionsImpotTotal).toBe(0);
+  });
+});

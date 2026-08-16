@@ -1098,6 +1098,13 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                     <strong>{formatEUR(results.quotientFamilial)}</strong> · TMI de la tranche :{" "}
                     <strong>{formatPercent(results.tmiCalcule)}</strong> · Impôt du foyer après décote :{" "}
                     <strong>{formatEUR(results.impotFoyerApresDecote)}</strong>
+                    {results.creditsImpotFoyer > 0 && (
+                      <>
+                        {" "}
+                        · après imputation de vos crédits et réductions :{" "}
+                        <strong>{formatEUR(results.impotFoyerApresCredits)}</strong>
+                      </>
+                    )}
                     {results.dansZoneDecote && (
                       <>
                         {" "}
