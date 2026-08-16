@@ -10,6 +10,8 @@ import {
   type ModeAcquisitionMateriel,
   SEUIL_CHARGE_IMMEDIATE_HT,
   compareMontagesMateriel,
+  normaliserModeAcquisition,
+  tauxImpliciteLoa,
   computeMateriel,
   createDefaultMaterielInputs,
 } from "./materiel";
@@ -100,18 +102,18 @@ describe("computeMateriel — cas limites", () => {
 
 describe("computeMateriel — LOA / leasing", () => {
   it("la charge annuelle = loyer mensuel × 12, jamais de charge immédiate en LOA", () => {
-    const r = computeMateriel(withPatch({ modeAcquisition: "loa", loaLoyerMensuel: 60, loaDureeMois: 36 }));
+    const r = computeMateriel(withPatch({ modeAcquisition: "loa_sans_option", loaLoyerMensuel: 60, loaDureeMois: 36 }));
     expect(r.eligibleChargeImmediate).toBe(false);
     expect(r.chargeAnnee1).toBeCloseTo(720, 6);
   });
 
   it("le coût net société sur la durée = coût net annuel × durée LOA en années", () => {
-    const r = computeMateriel(withPatch({ modeAcquisition: "loa", loaLoyerMensuel: 60, loaDureeMois: 36 }));
+    const r = computeMateriel(withPatch({ modeAcquisition: "loa_sans_option", loaLoyerMensuel: 60, loaDureeMois: 36 }));
     expect(r.coutNetSocieteTotalSurDuree).toBeCloseTo(r.coutNetSocieteAnnee1 * 3, 6);
   });
 
   it("un loyer LOA négatif saisi par erreur est ramené à zéro", () => {
-    const r = computeMateriel(withPatch({ modeAcquisition: "loa", loaLoyerMensuel: -10 }));
+    const r = computeMateriel(withPatch({ modeAcquisition: "loa_sans_option", loaLoyerMensuel: -10 }));
     expect(r.chargeAnnee1).toBe(0);
   });
 });
@@ -246,9 +248,9 @@ describe("computeMateriel — coût net global sur un cycle et sur l'horizon", (
 });
 
 describe("compareMontagesMateriel — comparatif de tous les montages", () => {
-  it("chiffre les quatre montages, sans doublon ni oubli", () => {
+  it("chiffre les cinq montages, sans doublon ni oubli", () => {
     const { montages } = compareMontagesMateriel(withPatch({}));
-    expect(montages).toHaveLength(4);
+    expect(montages).toHaveLength(5);
     expect(new Set(montages.map((m) => m.mode))).toEqual(new Set(MODES_ACQUISITION));
   });
 
@@ -294,7 +296,7 @@ describe("compareMontagesMateriel — comparatif de tous les montages", () => {
     const { meilleur } = compareMontagesMateriel(
       withPatch({ prixHT: 5000, dureeAmortissementAnnees: 3, loaLoyerMensuel: 30, loaDureeMois: 36, horizonRenouvellementAnnees: 3 }),
     );
-    expect(meilleur.mode).toBe("loa");
+    expect(meilleur.mode).toBe("loa_sans_option");
   });
 
   it("une LOA hors de prix perd contre l'achat", () => {
@@ -405,16 +407,24 @@ describe("compareMontagesMateriel — cas d'école calculables à la main", () =
 
   it("LOA à 100 €/mois sur 36 mois : 3 600 € de loyers, 2 520 € nets", () => {
     // 1 200 €/an de loyers, économie 360 €, coût net 840 €/an, sur 3 ans → 2 520 €.
-    const r = computeMateriel(casEcole({ modeAcquisition: "loa" }));
+    const r = computeMateriel(casEcole({ modeAcquisition: "loa_sans_option" }));
     expect(r.chargeAnnee1).toBeCloseTo(1200, 6);
     expect(r.coutNetGlobalSurHorizon).toBeCloseTo(2520, 6);
   });
 
   it("le classement complet de ce cas d'école est celui attendu, aux écarts près", () => {
-    const { montages } = compareMontagesMateriel(casEcole());
-    expect(montages.map((m) => m.mode)).toEqual(["societe", "personnel_rembourse", "loa", "personnel_non_rembourse"]);
-    expect(montages.map((m) => Math.round(m.coutHorizon))).toEqual([2100, 2100, 2520, 3000]);
-    expect(montages.map((m) => Math.round(m.ecartVsMeilleur))).toEqual([0, 0, 420, 900]);
+    const { montages } = compareMontagesMateriel(casEcole({ loaValeurOptionAchat: 0 }));
+    // Sans valeur d'option, lever l'option ne coûte rien de plus : les deux variantes de LOA
+    // coïncident, ce qui isole l'effet du seul prix de levée dans le test suivant.
+    expect(montages.map((m) => m.mode)).toEqual([
+      "societe",
+      "personnel_rembourse",
+      "loa_sans_option",
+      "loa_avec_option",
+      "personnel_non_rembourse",
+    ]);
+    expect(montages.map((m) => Math.round(m.coutHorizon))).toEqual([2100, 2100, 2520, 2520, 3000]);
+    expect(montages.map((m) => Math.round(m.ecartVsMeilleur))).toEqual([0, 0, 420, 420, 900]);
   });
 
   it("usage privé de 50 % : l'AEN ajoute son coût au montage société et peut renverser le classement", () => {
@@ -432,11 +442,157 @@ describe("compareMontagesMateriel — cas d'école calculables à la main", () =
 
 describe("MODES_ACQUISITION — registre des montages", () => {
   it("chaque mode du type a un libellé et un résumé", () => {
-    const modes: ModeAcquisitionMateriel[] = ["societe", "personnel_rembourse", "personnel_non_rembourse", "loa"];
+    const modes: ModeAcquisitionMateriel[] = [
+      "societe",
+      "personnel_rembourse",
+      "personnel_non_rembourse",
+      "loa_sans_option",
+      "loa_avec_option",
+    ];
     expect(MODES_ACQUISITION).toEqual(modes);
     for (const mode of modes) {
       expect(MODE_ACQUISITION_LABELS[mode]).toBeTruthy();
       expect(MODE_ACQUISITION_RESUMES[mode]).toBeTruthy();
     }
+  });
+});
+
+describe("computeMateriel — LOA sans levée vs LOA avec levée d'option", () => {
+  function loa(patch: Partial<MaterielInputs> = {}): MaterielInputs {
+    const defauts = createDefaultMaterielInputs();
+    return {
+      ...defauts,
+      impositionSociete: "IR",
+      personalTaxProfile: { ...defauts.personalTaxProfile, mode: "manuel", tauxManuel: 0.3 },
+      prixHT: 3000,
+      dureeAmortissementAnnees: 3,
+      loaLoyerMensuel: 80,
+      loaDureeMois: 36,
+      loaValeurOptionAchat: 900,
+      horizonRenouvellementAnnees: 6,
+      tauxInflationMateriel: 0,
+      usagePrivePercent: 0,
+      ...patch,
+    };
+  }
+
+  it("sans levée, le cycle s'arrête au terme du contrat", () => {
+    const r = computeMateriel(loa({ modeAcquisition: "loa_sans_option" }));
+    expect(r.dureeCycleAnnees).toBeCloseTo(3, 6);
+    expect(r.valeurOptionAchatRetenue).toBe(0);
+  });
+
+  it("avec levée, le cycle se prolonge de l'amortissement du prix de levée", () => {
+    // 3 ans de contrat, puis 3 ans d'amortissement de l'option : le matériel sert six ans avant
+    // qu'il faille le remplacer, là où la variante sans levée impose de relouer au bout de trois.
+    const r = computeMateriel(loa({ modeAcquisition: "loa_avec_option" }));
+    expect(r.dureeCycleAnnees).toBeCloseTo(6, 6);
+    expect(r.valeurOptionAchatRetenue).toBeCloseTo(900, 6);
+  });
+
+  it("le prix de levée s'ajoute au coût du cycle, net de son économie d'impôt", () => {
+    // Loyers : 960 €/an × 3 ans, nets de 30 % → 2 016 €. Option : 900 € amortis sur 3 ans, nets de
+    // 30 % → 630 €. Total du cycle : 2 646 €.
+    const r = computeMateriel(loa({ modeAcquisition: "loa_avec_option" }));
+    expect(r.coutNetSocieteTotalSurDuree).toBeCloseTo(2646, 6);
+    const sans = computeMateriel(loa({ modeAcquisition: "loa_sans_option" }));
+    expect(sans.coutNetSocieteTotalSurDuree).toBeCloseTo(2016, 6);
+    expect(r.coutNetSocieteTotalSurDuree - sans.coutNetSocieteTotalSurDuree).toBeCloseTo(630, 6);
+  });
+
+  it("un prix de levée sous le seuil du petit matériel se déduit immédiatement", () => {
+    const r = computeMateriel(loa({ modeAcquisition: "loa_avec_option", loaValeurOptionAchat: 300 }));
+    expect(r.optionEnChargeImmediate).toBe(true);
+    expect(r.dureeCycleAnnees).toBeCloseTo(4, 6); // 3 ans de contrat + 1 an
+  });
+
+  it("un prix de levée nul rend les deux variantes strictement identiques", () => {
+    const sans = computeMateriel(loa({ modeAcquisition: "loa_sans_option", loaValeurOptionAchat: 0 }));
+    const avec = computeMateriel(loa({ modeAcquisition: "loa_avec_option", loaValeurOptionAchat: 0 }));
+    expect(avec.dureeCycleAnnees).toBeCloseTo(sans.dureeCycleAnnees, 6);
+    expect(avec.coutNetSocieteTotalSurDuree).toBeCloseTo(sans.coutNetSocieteTotalSurDuree, 6);
+  });
+
+  it("lever l'option ne peut jamais coûter moins cher sur un cycle donné", () => {
+    for (const option of [0, 200, 900, 5000]) {
+      const sans = computeMateriel(loa({ modeAcquisition: "loa_sans_option", loaValeurOptionAchat: option }));
+      const avec = computeMateriel(loa({ modeAcquisition: "loa_avec_option", loaValeurOptionAchat: option }));
+      expect(avec.coutNetSocieteTotalSurDuree, `option ${option}`).toBeGreaterThanOrEqual(
+        sans.coutNetSocieteTotalSurDuree - 1e-9,
+      );
+    }
+  });
+
+  it("sur l'horizon, le cycle plus long de la levée compense son surcoût", () => {
+    // Sur six ans : sans levée il faut deux cycles de location (4 032 €), avec levée un seul
+    // cycle suffit (2 646 €). Le matériel conservé évite une seconde location.
+    const sans = computeMateriel(loa({ modeAcquisition: "loa_sans_option" }));
+    const avec = computeMateriel(loa({ modeAcquisition: "loa_avec_option" }));
+    expect(sans.nombreCycles).toBe(2);
+    expect(avec.nombreCycles).toBe(1);
+    expect(avec.coutNetGlobalSurHorizon).toBeLessThan(sans.coutNetGlobalSurHorizon);
+  });
+
+  it("l'ancien mode « loa » des simulations sauvegardées est lu comme une LOA sans levée", () => {
+    expect(normaliserModeAcquisition("loa")).toBe("loa_sans_option");
+    const legacy = computeMateriel({ ...loa(), modeAcquisition: "loa" as ModeAcquisitionMateriel });
+    const explicite = computeMateriel(loa({ modeAcquisition: "loa_sans_option" }));
+    expect(legacy.coutNetSocieteTotalSurDuree).toBeCloseTo(explicite.coutNetSocieteTotalSurDuree, 6);
+  });
+
+  it("un mode inconnu retombe sur l'achat société plutôt que de produire un résultat vide", () => {
+    expect(normaliserModeAcquisition("n_importe_quoi")).toBe("societe");
+  });
+});
+
+describe("tauxImpliciteLoa — le taux que l'offre ne dit pas", () => {
+  it("retrouve le taux d'un financement dont on connaît la réponse", () => {
+    // 10 000 € financés par 24 mensualités de 500 €, sans option : le taux mensuel qui annule la
+    // valeur actuelle nette est d'environ 1,513 %, soit 19,8 % par an.
+    const taux = tauxImpliciteLoa(10000, 500, 24, 0);
+    expect(taux).not.toBeNull();
+    expect(taux as number).toBeCloseTo(0.198, 2);
+  });
+
+  it("un prix de levée plus élevé renchérit le financement, à loyers égaux", () => {
+    // Loyers choisis pour que les deux cas soient bien des financements : 95 × 36 = 3 420 € couvre
+    // déjà les 3 000 € comptant, l'option venant s'y ajouter.
+    const petiteOption = tauxImpliciteLoa(3000, 95, 36, 100) as number;
+    const grosseOption = tauxImpliciteLoa(3000, 95, 36, 900) as number;
+    expect(grosseOption).toBeGreaterThan(petiteOption);
+  });
+
+  it("des loyers plus faibles à prix égal traduisent un financement moins cher", () => {
+    const cher = tauxImpliciteLoa(3000, 100, 36, 900) as number;
+    const bonMarche = tauxImpliciteLoa(3000, 70, 36, 900) as number;
+    expect(bonMarche).toBeLessThan(cher);
+  });
+
+  it("un total versé inférieur au prix comptant ne produit pas de taux, faute de sens", () => {
+    // La somme des loyers et de l'option est en deçà du prix : l'offre serait plus avantageuse que
+    // la gratuité, ce qui traduit une saisie incohérente et non un financement.
+    expect(tauxImpliciteLoa(3000, 10, 36, 0)).toBeNull();
+  });
+
+  it("des entrées absurdes ne produisent pas de valeur trompeuse", () => {
+    expect(tauxImpliciteLoa(0, 80, 36, 900)).toBeNull();
+    expect(tauxImpliciteLoa(3000, 80, 0, 900)).toBeNull();
+    expect(tauxImpliciteLoa(3000, -80, 36, 900)).toBeNull();
+  });
+
+  it("n'est calculé que lorsque l'option est levée : sans elle, rien n'est financé", () => {
+    const base = createDefaultMaterielInputs();
+    const sans = computeMateriel({ ...base, modeAcquisition: "loa_sans_option" });
+    expect(sans.tauxImpliciteLoaAnnuel).toBeNull();
+    const avec = computeMateriel({
+      ...base,
+      modeAcquisition: "loa_avec_option",
+      prixHT: 3000,
+      loaLoyerMensuel: 80,
+      loaDureeMois: 36,
+      loaValeurOptionAchat: 900,
+    });
+    expect(avec.tauxImpliciteLoaAnnuel).not.toBeNull();
+    expect(avec.tauxImpliciteLoaAnnuel as number).toBeGreaterThan(0);
   });
 });

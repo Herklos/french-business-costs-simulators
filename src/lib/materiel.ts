@@ -33,7 +33,29 @@ import type { ImpositionSociete } from "./companyTypes";
 export const SEUIL_CHARGE_IMMEDIATE_HT = 500; // art. 39-1 3° CGI — petit matériel, non revalorisé depuis des décennies
 
 export type CategorieMateriel = "informatique" | "mobilier" | "outillage" | "autre";
-export type ModeAcquisitionMateriel = "societe" | "personnel_rembourse" | "personnel_non_rembourse" | "loa";
+export type ModeAcquisitionMateriel =
+  | "societe"
+  | "personnel_rembourse"
+  | "personnel_non_rembourse"
+  | "loa_sans_option"
+  | "loa_avec_option";
+
+/** Vrai pour les deux variantes de LOA, qui partagent leur traitement pendant le contrat. */
+export function estLoa(mode: ModeAcquisitionMateriel): boolean {
+  return mode === "loa_sans_option" || mode === "loa_avec_option";
+}
+
+/**
+ * Ramène un mode relu d'une simulation sauvegardée ou d'un lien de partage à un mode connu.
+ * L'ancien mode unique « loa » ne disait pas si l'option était levée : il correspond donc au cas
+ * où elle ne l'est pas, seul comportement que le simulateur chiffrait alors.
+ */
+export function normaliserModeAcquisition(mode: string): ModeAcquisitionMateriel {
+  if (mode === "loa") return "loa_sans_option";
+  return (MODES_ACQUISITION as readonly string[]).includes(mode)
+    ? (mode as ModeAcquisitionMateriel)
+    : "societe";
+}
 
 export const DUREE_AMORTISSEMENT_PAR_CATEGORIE: Record<CategorieMateriel, number> = {
   informatique: 3, // matériel informatique/bureautique : usage 3 ans (doctrine BOFiP courante)
@@ -65,9 +87,10 @@ export interface MaterielInputs {
   dureeAmortissementAnnees: number; // pré-rempli selon la catégorie, éditable
   modeAcquisition: ModeAcquisitionMateriel;
 
-  // LOA / leasing (utilisé si modeAcquisition === "loa")
+  // LOA / leasing (utilisé si le mode retenu est l'une des deux variantes de LOA)
   loaLoyerMensuel: number;
   loaDureeMois: number;
+  loaValeurOptionAchat: number; // prix de levée de l'option au terme du contrat
 
   // Plan de renouvellement périodique — indépendant du montage retenu.
   horizonRenouvellementAnnees: number; // durée totale de projection (plusieurs cycles d'achat/LOA successifs)
@@ -96,6 +119,7 @@ export function createDefaultMaterielInputs(): MaterielInputs {
     modeAcquisition: "societe",
     loaLoyerMensuel: 55,
     loaDureeMois: 36,
+    loaValeurOptionAchat: 200,
     horizonRenouvellementAnnees: DUREE_AMORTISSEMENT_PAR_CATEGORIE.informatique,
     tauxInflationMateriel: 0,
     usagePrivePercent: 0,
@@ -115,7 +139,11 @@ export interface MaterielResults {
   economieVsNonRembourse: number; // gain total (société+dirigeant) à faire financer/rembourser le matériel par la société plutôt que de l'acheter sans remboursement
 
   // Plan de renouvellement périodique
-  dureeCycleAnnees: number; // durée d'un cycle (amortissement, LOA, ou simple durée d'usage si charge immédiate)
+  dureeCycleAnnees: number; // durée d'un cycle (amortissement, LOA — contrat puis amortissement de l'option — ou durée d'usage)
+  valeurOptionAchatRetenue: number; // prix de levée effectivement pris en compte (0 si l'option n'est pas levée)
+  optionEnChargeImmediate: boolean; // le prix de levée est-il sous le seuil du petit matériel ?
+  /** Taux annuel implicite du financement, quand la LOA en constitue un. `null` sinon. */
+  tauxImpliciteLoaAnnuel: number | null;
   nombreCycles: number; // nombre de cycles de renouvellement sur l'horizon choisi
   coutTotalSurHorizon: number; // coût net société cumulé sur l'horizon, cycles successifs avec inflation éventuelle
 
@@ -130,25 +158,82 @@ export interface MaterielResults {
   coutNetGlobalSurHorizon: number; // même périmètre, cumulé sur l'horizon de renouvellement (cycles successifs, inflation incluse)
 }
 
+/**
+ * Taux annuel implicite d'une LOA dont l'option est levée.
+ *
+ * C'est la réponse à une question naturelle : pourquoi aucun champ ne demande le taux d'intérêt de
+ * la LOA ? Parce qu'une offre de location ne s'exprime pas par un taux mais par des loyers, qui
+ * l'incorporent déjà. Le renseigner en plus serait redondant, et le renseigner à la place des
+ * loyers supposerait de reconstituer ceux-ci par une convention d'amortissement que le loueur ne
+ * publie pas. Le simulateur fait donc l'inverse : il DÉDUIT le taux des flux réellement contractés,
+ * ce qui permet de comparer l'offre à un crédit sur la seule dimension où les deux sont comparables.
+ *
+ * Le taux n'a de sens que si l'option est levée : la société acquiert alors le matériel en différé,
+ * et l'écart entre son prix comptant et la somme actualisée des loyers puis du prix de levée est le
+ * coût de ce différé. Sans levée d'option, rien n'est financé — c'est une location, et lui prêter
+ * un taux d'intérêt n'aurait pas de sens.
+ *
+ * Résolution par dichotomie sur le taux mensuel : la valeur actuelle nette décroît continûment avec
+ * le taux, une recherche par bissection converge donc sans risque d'osciller.
+ */
+export function tauxImpliciteLoa(prixHT: number, loyerMensuel: number, dureeMois: number, valeurOption: number): number | null {
+  const n = Math.round(dureeMois);
+  if (prixHT <= 0 || n <= 0 || loyerMensuel < 0) return null;
+  const van = (tauxMensuel: number) => {
+    let somme = 0;
+    for (let t = 1; t <= n; t++) somme += loyerMensuel / Math.pow(1 + tauxMensuel, t);
+    somme += valeurOption / Math.pow(1 + tauxMensuel, n);
+    return prixHT - somme;
+  };
+  // Un total versé inférieur au prix comptant signifierait un taux négatif : l'offre serait plus
+  // avantageuse que la gratuité, ce qui traduit une saisie incohérente plutôt qu'un financement.
+  if (van(0) >= 0) return null;
+  let bas = 0;
+  let haut = 1; // 100 %/mois : très au-delà de toute offre réelle, borne haute sûre
+  if (van(haut) < 0) return null;
+  for (let i = 0; i < 200; i++) {
+    const milieu = (bas + haut) / 2;
+    if (van(milieu) < 0) bas = milieu;
+    else haut = milieu;
+  }
+  const tauxMensuel = (bas + haut) / 2;
+  return Math.pow(1 + tauxMensuel, 12) - 1;
+}
+
 export function computeMateriel(inputs: MaterielInputs): MaterielResults {
   const resolvedTax = resolvePersonalTaxProfile(inputs.personalTaxProfile);
   const tauxIRUtilise = resolvedTax.tauxUtilise;
   const ctx: CompanyTaxContext = inputs;
 
-  const isLoa = inputs.modeAcquisition === "loa";
+  const mode = normaliserModeAcquisition(inputs.modeAcquisition);
+  const isLoa = estLoa(mode);
+  const leveeOption = mode === "loa_avec_option";
   const eligibleChargeImmediate = !isLoa && inputs.prixHT > 0 && inputs.prixHT <= SEUIL_CHARGE_IMMEDIATE_HT;
-  const dureeCycleAnnees = isLoa ? Math.max(1, inputs.loaDureeMois) / 12 : Math.max(1, inputs.dureeAmortissementAnnees);
 
+  const dureeContratAnnees = Math.max(1, inputs.loaDureeMois) / 12;
+  const dureeAmortissement = Math.max(1, inputs.dureeAmortissementAnnees);
+  const valeurOptionAchat = leveeOption ? Math.max(0, inputs.loaValeurOptionAchat) : 0;
+  // Le prix de levée n'est pas un loyer : c'est l'acquisition d'une immobilisation, qui s'amortit
+  // à son tour sur la durée d'usage résiduelle du matériel. Le cycle s'allonge d'autant — c'est
+  // précisément ce qui distingue les deux variantes de LOA : sans levée, il faut relouer au terme ;
+  // avec levée, le matériel continue de servir sans nouveau décaissement.
+  // Sous le seuil du petit matériel, l'option se déduit immédiatement plutôt que de s'amortir.
+  const optionEnChargeImmediate = valeurOptionAchat > 0 && valeurOptionAchat <= SEUIL_CHARGE_IMMEDIATE_HT;
+  const dureeAmortissementOption = valeurOptionAchat > 0 ? (optionEnChargeImmediate ? 1 : dureeAmortissement) : 0;
+
+  const dureeCycleAnnees = isLoa ? dureeContratAnnees + dureeAmortissementOption : dureeAmortissement;
+
+  const loyerAnnuel = Math.max(0, inputs.loaLoyerMensuel) * 12;
   const chargeAnnee1 = isLoa
-    ? Math.max(0, inputs.loaLoyerMensuel) * 12
+    ? loyerAnnuel
     : eligibleChargeImmediate
       ? inputs.prixHT
       : inputs.prixHT / dureeCycleAnnees;
   const annuiteAmortissement = eligibleChargeImmediate ? 0 : chargeAnnee1;
 
-  // Les montages "société", "personnel remboursé" et "loa" ont tous une charge déductible côté
-  // société — seul le montage "non remboursé" en diffère, cf. note de module.
-  const estFinanceParLaSociete = inputs.modeAcquisition !== "personnel_non_rembourse";
+  // Les montages "société", "personnel remboursé" et les deux LOA ont tous une charge déductible
+  // côté société — seul le montage "non remboursé" en diffère, cf. note de module.
+  const estFinanceParLaSociete = mode !== "personnel_non_rembourse";
 
   const economieImpotAnnee1 = estFinanceParLaSociete ? computeEconomieImpotSociete(ctx, chargeAnnee1, tauxIRUtilise) : 0;
   const coutNetSocieteAnnee1 = estFinanceParLaSociete ? chargeAnnee1 - economieImpotAnnee1 : 0;
@@ -157,6 +242,17 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
   if (estFinanceParLaSociete) {
     if (eligibleChargeImmediate) {
       coutNetSocieteTotalSurDuree = coutNetSocieteAnnee1;
+    } else if (isLoa) {
+      // Deux périodes successives, chacune avec sa propre charge annuelle : les loyers pendant le
+      // contrat, puis l'amortissement du prix de levée. Les additionner sur un seul rythme
+      // écraserait la différence entre les deux variantes.
+      const economieParAnnuiteLoyer = computeEconomieImpotSociete(ctx, loyerAnnuel, tauxIRUtilise);
+      coutNetSocieteTotalSurDuree = (loyerAnnuel - economieParAnnuiteLoyer) * dureeContratAnnees;
+      if (valeurOptionAchat > 0) {
+        const annuiteOption = valeurOptionAchat / dureeAmortissementOption;
+        const economieParAnnuiteOption = computeEconomieImpotSociete(ctx, annuiteOption, tauxIRUtilise);
+        coutNetSocieteTotalSurDuree += (annuiteOption - economieParAnnuiteOption) * dureeAmortissementOption;
+      }
     } else {
       // Même économie d'impôt sur chaque annuité (bénéfice prévisionnel supposé stable sur la durée) —
       // simplification raisonnable pour une projection indicative.
@@ -165,7 +261,7 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
     }
   }
 
-  const coutDirigeantNonRembourse = inputs.modeAcquisition === "personnel_non_rembourse" ? inputs.prixHT : 0;
+  const coutDirigeantNonRembourse = mode === "personnel_non_rembourse" ? inputs.prixHT : 0;
   // Gain, tous montants confondus, du montage retenu par rapport à un achat personnel jamais
   // remboursé (coût plein prixHT, sans aucune déduction) : nul par construction pour ce dernier
   // montage lui-même (comparé à lui-même), positif pour les deux autres.
@@ -218,6 +314,11 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
     coutDirigeantNonRembourse,
     economieVsNonRembourse,
     dureeCycleAnnees,
+    valeurOptionAchatRetenue: valeurOptionAchat,
+    optionEnChargeImmediate: valeurOptionAchat > 0 && optionEnChargeImmediate,
+    tauxImpliciteLoaAnnuel: leveeOption
+      ? tauxImpliciteLoa(inputs.prixHT, Math.max(0, inputs.loaLoyerMensuel), inputs.loaDureeMois, valeurOptionAchat)
+      : null,
     nombreCycles,
     coutTotalSurHorizon,
     aenAnnuelle,
@@ -234,7 +335,8 @@ export const MODE_ACQUISITION_LABELS: Record<ModeAcquisitionMateriel, string> = 
   societe: "Achat par la société",
   personnel_rembourse: "Achat personnel remboursé (note de frais)",
   personnel_non_rembourse: "Achat personnel non remboursé",
-  loa: "LOA / leasing par la société",
+  loa_sans_option: "LOA — option non levée (matériel restitué)",
+  loa_avec_option: "LOA — option levée (matériel conservé)",
 };
 
 export const MODE_ACQUISITION_RESUMES: Record<ModeAcquisitionMateriel, string> = {
@@ -243,14 +345,18 @@ export const MODE_ACQUISITION_RESUMES: Record<ModeAcquisitionMateriel, string> =
     "Le dirigeant avance l'achat, la société le rembourse sur note de frais. Fiscalement identique à l'achat société.",
   personnel_non_rembourse:
     "Le dirigeant paie de sa poche et ne se fait pas rembourser. Aucune charge déductible, aucun avantage fiscal.",
-  loa: "La société loue avec option d'achat. Loyers intégralement déductibles, aucun bien à l'actif.",
+  loa_sans_option:
+    "Loyers déductibles, rien à l'actif. Le matériel est restitué au terme : il faut le remplacer pour continuer.",
+  loa_avec_option:
+    "Loyers déductibles, puis rachat au terme. Le matériel reste acquis et le prix de l'option s'amortit à son tour.",
 };
 
 export const MODES_ACQUISITION: ModeAcquisitionMateriel[] = [
   "societe",
   "personnel_rembourse",
   "personnel_non_rembourse",
-  "loa",
+  "loa_sans_option",
+  "loa_avec_option",
 ];
 
 export interface MontageMateriel {

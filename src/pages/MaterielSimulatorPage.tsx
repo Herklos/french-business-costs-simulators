@@ -6,6 +6,7 @@ import {
   CATEGORIE_LABELS,
   DUREE_AMORTISSEMENT_PAR_CATEGORIE,
   MODE_ACQUISITION_LABELS,
+  estLoa,
   SEUIL_CHARGE_IMMEDIATE_HT,
   compareMontagesMateriel,
   computeMateriel,
@@ -23,7 +24,7 @@ import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
-import { formatEUR, formatEURPrecise } from "../lib/format";
+import { formatEUR, formatEURPrecise, formatPercent } from "../lib/format";
 
 const MODE_LABELS = MODE_ACQUISITION_LABELS;
 
@@ -98,9 +99,9 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
       <p className="page__intro">
         Ordinateur, mobilier de bureau, équipement professionnel : le simulateur chiffre la charge déductible
         (immédiate si le prix HT n'excède pas {formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)}, sinon amortie) et compare
-        d'emblée les <strong>quatre montages possibles</strong> — achat par la société, achat personnel remboursé sur
-        note de frais, achat personnel non remboursé, LOA. Vous n'avez pas à en choisir un pour en connaître le coût :
-        ils sont tous chiffrés, le choix vient après.
+        d'emblée les <strong>cinq montages possibles</strong> — achat par la société, achat personnel remboursé sur
+        note de frais, achat personnel non remboursé, LOA sans levée d'option et LOA avec levée. Vous n'avez pas à en
+        choisir un pour en connaître le coût : ils sont tous chiffrés, le choix vient après.
       </p>
 
       <div className="results-toolbar results-toolbar--top">
@@ -123,13 +124,13 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
                   ))}
                 </select>
               </Field>
-              <Field label="Prix HT (€)" hint={inputs.modeAcquisition === "loa" ? "Sans effet en LOA : indicatif seulement, cf. loyer LOA ci-dessous." : undefined}>
+              <Field label="Prix HT (€)" hint={estLoa(inputs.modeAcquisition) ? "Sans effet en LOA : indicatif seulement, cf. loyer LOA ci-dessous." : undefined}>
                 <NumberInput value={inputs.prixHT} onChange={(e) => update("prixHT", Number(e.target.value))} />
               </Field>
               <Field
                 label="Durée d'amortissement (années)"
                 hint={
-                  inputs.modeAcquisition === "loa"
+                  estLoa(inputs.modeAcquisition)
                     ? "Sans effet en LOA : cf. durée du contrat LOA ci-dessous."
                     : results.eligibleChargeImmediate
                       ? "Sans effet : déduction immédiate en charge."
@@ -137,14 +138,14 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
                 }
               >
                 <NumberInput
-                  disabled={results.eligibleChargeImmediate || inputs.modeAcquisition === "loa"}
+                  disabled={results.eligibleChargeImmediate || estLoa(inputs.modeAcquisition)}
                   value={inputs.dureeAmortissementAnnees}
                   onChange={(e) => update("dureeAmortissementAnnees", Number(e.target.value))}
                 />
               </Field>
             </div>
             <p className="hint-block">
-              {inputs.modeAcquisition === "loa"
+              {estLoa(inputs.modeAcquisition)
                 ? `LOA : loyers intégralement déductibles en charge, sans amortissement — annuité : ${formatEUR(results.chargeAnnee1)}/an.`
                 : results.eligibleChargeImmediate
                   ? `Prix ≤ ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT : déduction immédiate en charge, sans amortissement.`
@@ -157,19 +158,63 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
             title="Conditions de la LOA / du leasing"
             subtitle="Renseignées en permanence : la LOA est chiffrée d'office dans le comparatif, sans avoir à la sélectionner."
           >
-            <div className="grid grid--2">
+            <div className="grid grid--3">
               <Field label="Loyer mensuel LOA (€)">
                 <NumberInput value={inputs.loaLoyerMensuel} onChange={(e) => update("loaLoyerMensuel", Number(e.target.value))} />
               </Field>
               <Field label="Durée du contrat LOA (mois)">
                 <NumberInput value={inputs.loaDureeMois} onChange={(e) => update("loaDureeMois", Number(e.target.value))} />
               </Field>
+              <Field
+                label="Prix de levée de l'option (€)"
+                hint={
+                  results.optionEnChargeImmediate
+                    ? `Sous ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT : déduit immédiatement plutôt qu'amorti.`
+                    : "Montant à payer au terme pour conserver le matériel."
+                }
+              >
+                <NumberInput
+                  value={inputs.loaValeurOptionAchat}
+                  onChange={(e) => update("loaValeurOptionAchat", Number(e.target.value))}
+                />
+              </Field>
             </div>
             <p className="hint-block">
-              Loyers intégralement déductibles en charge, sans amortissement — aucun bien ne figure à l'actif et rien ne
-              reste acquis au terme, sauf à lever l'option (non chiffrée ici). Le prix HT et la durée d'amortissement
-              saisis plus haut ne concernent que les montages d'achat.
+              Les loyers sont intégralement déductibles en charge, sans amortissement, et rien ne figure à l'actif
+              pendant le contrat. Ce qui distingue les deux variantes comparées, c'est ce qui se passe au terme : sans
+              levée d'option le matériel est restitué et doit être reloué pour continuer à servir ; avec levée, le prix
+              de l'option acquiert le matériel, s'amortit à son tour, et le cycle s'allonge d'autant.
             </p>
+            <details className="details-block">
+              <summary>Pourquoi aucun champ ne demande le taux d'intérêt de la LOA</summary>
+              <p>
+                Parce qu'une offre de location ne s'exprime pas par un taux, mais par des loyers — qui l'incorporent
+                déjà. Le saisir en plus serait redondant ; le saisir à la place des loyers supposerait de reconstituer
+                ceux-ci par une convention d'amortissement que le loueur ne publie pas.
+              </p>
+              <p>
+                Le simulateur fait donc l'inverse : il <strong>déduit</strong> le taux des flux réellement contractés,
+                ce qui permet de comparer l'offre à un crédit sur la seule dimension où les deux sont comparables.
+                {results.tauxImpliciteLoaAnnuel !== null ? (
+                  <>
+                    {" "}
+                    Sur vos valeurs — {formatEUR(inputs.prixHT)} comptant contre{" "}
+                    {formatEUR(inputs.loaLoyerMensuel)}/mois pendant {inputs.loaDureeMois} mois puis{" "}
+                    {formatEUR(inputs.loaValeurOptionAchat)} de levée —, le taux annuel implicite ressort à{" "}
+                    <strong>{formatPercent(results.tauxImpliciteLoaAnnuel)}</strong>.
+                  </>
+                ) : (
+                  <>
+                    {" "}
+                    Ce taux n'a toutefois de sens que si l'option est levée : la société acquiert alors le matériel en
+                    différé, et l'écart entre son prix comptant et la somme actualisée des loyers puis du prix de levée
+                    est le coût de ce différé. Sans levée d'option, rien n'est financé — c'est une location, et lui
+                    prêter un taux d'intérêt n'aurait pas de sens. Sélectionnez la carte « option levée » pour le voir
+                    chiffré.
+                  </>
+                )}
+              </p>
+            </details>
           </Section>
 
           <Section
@@ -303,7 +348,8 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
             />
             <p className="hint-block">
               Achat société et achat personnel remboursé affichent le même montant : ils sont fiscalement identiques,
-              seul le circuit de paiement diffère. Cliquez une carte pour en détailler le calcul ci-dessous.
+              seul le circuit de paiement diffère. Les deux variantes de LOA se rejoignent de même tant qu'aucun prix
+              de levée n'est saisi. Cliquez une carte pour en détailler le calcul ci-dessous.
             </p>
           </Section>
 
@@ -313,8 +359,8 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
                 label="Charge déductible année 1"
                 value={formatEUR(results.chargeAnnee1)}
                 sub={
-                  inputs.modeAcquisition === "loa"
-                    ? `Loyers LOA · contrat de ${inputs.loaDureeMois} mois`
+                  estLoa(inputs.modeAcquisition)
+                    ? `Loyers LOA · contrat de ${inputs.loaDureeMois} mois${results.valeurOptionAchatRetenue > 0 ? `, puis ${formatEUR(results.valeurOptionAchatRetenue)} de levée` : ""}`
                     : results.eligibleChargeImmediate
                       ? `Déduction immédiate (≤ ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT)`
                       : `Annuité d'amortissement sur ${inputs.dureeAmortissementAnnees} ans`
