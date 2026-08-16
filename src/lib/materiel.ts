@@ -126,6 +126,8 @@ export interface MaterielResults {
   coutDirigeantAEN: number; // cotisations sociales + IR sur l'AEN, à la charge du dirigeant
 
   coutNetGlobalAnnee1: number; // coût net société + coût dirigeant (non remboursé et/ou AEN), année 1 — cf. calcul dans computeMateriel
+  coutNetGlobalSurDuree: number; // même périmètre, cumulé sur un cycle complet d'acquisition
+  coutNetGlobalSurHorizon: number; // même périmètre, cumulé sur l'horizon de renouvellement (cycles successifs, inflation incluse)
 }
 
 export function computeMateriel(inputs: MaterielInputs): MaterielResults {
@@ -193,6 +195,19 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
   // matériel est financé par la société, donc jamais en même temps qu'un achat non remboursé).
   const coutNetGlobalAnnee1 = coutNetSocieteAnnee1 + coutDirigeantNonRembourse + coutDirigeantAEN;
 
+  // Coût global d'un cycle complet, puis de l'horizon entier. C'est la seule base sur laquelle les
+  // quatre montages sont comparables entre eux : un achat amorti sur 3 ans et une LOA de 48 mois ne
+  // se comparent ni sur une annuité (les cycles n'ont pas la même longueur) ni sur un cycle (ils ne
+  // couvrent pas la même durée d'usage) — seul un horizon commun les met à égalité.
+  // L'achat non remboursé et l'AEN diffèrent de nature : le premier est décaissé une fois par cycle,
+  // le second se répète chaque année tant que le matériel est mis à disposition.
+  const coutNetGlobalSurDuree =
+    coutNetSocieteTotalSurDuree + coutDirigeantNonRembourse + coutDirigeantAEN * dureeCycleAnnees;
+  let coutNetGlobalSurHorizon = 0;
+  for (let cycle = 0; cycle < nombreCycles; cycle++) {
+    coutNetGlobalSurHorizon += coutNetGlobalSurDuree * Math.pow(1 + inputs.tauxInflationMateriel, cycle);
+  }
+
   return {
     eligibleChargeImmediate,
     chargeAnnee1,
@@ -210,5 +225,77 @@ export function computeMateriel(inputs: MaterielInputs): MaterielResults {
     irSurAEN,
     coutDirigeantAEN,
     coutNetGlobalAnnee1,
+    coutNetGlobalSurDuree,
+    coutNetGlobalSurHorizon,
   };
+}
+
+export const MODE_ACQUISITION_LABELS: Record<ModeAcquisitionMateriel, string> = {
+  societe: "Achat par la société",
+  personnel_rembourse: "Achat personnel remboursé (note de frais)",
+  personnel_non_rembourse: "Achat personnel non remboursé",
+  loa: "LOA / leasing par la société",
+};
+
+export const MODE_ACQUISITION_RESUMES: Record<ModeAcquisitionMateriel, string> = {
+  societe: "La société achète et immobilise le matériel. Charge ou amortissement déductibles, matériel à l'actif.",
+  personnel_rembourse:
+    "Le dirigeant avance l'achat, la société le rembourse sur note de frais. Fiscalement identique à l'achat société.",
+  personnel_non_rembourse:
+    "Le dirigeant paie de sa poche et ne se fait pas rembourser. Aucune charge déductible, aucun avantage fiscal.",
+  loa: "La société loue avec option d'achat. Loyers intégralement déductibles, aucun bien à l'actif.",
+};
+
+export const MODES_ACQUISITION: ModeAcquisitionMateriel[] = [
+  "societe",
+  "personnel_rembourse",
+  "personnel_non_rembourse",
+  "loa",
+];
+
+export interface MontageMateriel {
+  mode: ModeAcquisitionMateriel;
+  label: string;
+  resume: string;
+  results: MaterielResults;
+  /** Base de classement : coût net global (société + dirigeant) sur l'horizon de renouvellement. */
+  coutHorizon: number;
+  /** Surcoût par rapport au montage le moins cher — 0 pour le meilleur. */
+  ecartVsMeilleur: number;
+  /** Vrai pour le (ou les) montage(s) au coût le plus bas. */
+  meilleur: boolean;
+}
+
+/**
+ * Chiffre les quatre montages sur les mêmes hypothèses et les classe du moins cher au plus cher.
+ *
+ * L'utilisateur n'a plus à choisir un montage pour en connaître le coût : il les voit tous, et le
+ * choix devient une conclusion plutôt qu'un préalable. Le mode porté par `inputs` ne sert donc plus
+ * qu'à désigner celui dont le détail est affiché.
+ */
+export function compareMontagesMateriel(inputs: MaterielInputs): {
+  montages: MontageMateriel[];
+  meilleur: MontageMateriel;
+} {
+  const chiffres = MODES_ACQUISITION.map((mode) => {
+    const results = computeMateriel({ ...inputs, modeAcquisition: mode });
+    return {
+      mode,
+      label: MODE_ACQUISITION_LABELS[mode],
+      resume: MODE_ACQUISITION_RESUMES[mode],
+      results,
+      coutHorizon: results.coutNetGlobalSurHorizon,
+    };
+  }).sort((a, b) => a.coutHorizon - b.coutHorizon);
+
+  const coutMinimal = chiffres[0].coutHorizon;
+  const montages = chiffres.map((m) => ({
+    ...m,
+    ecartVsMeilleur: m.coutHorizon - coutMinimal,
+    // Égalité stricte plutôt qu'approchée : achat société et achat remboursé sont identiques au
+    // centime près par construction, et méritent tous deux le trophée.
+    meilleur: m.coutHorizon === coutMinimal,
+  }));
+
+  return { montages, meilleur: montages[0] };
 }

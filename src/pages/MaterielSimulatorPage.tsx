@@ -5,10 +5,13 @@ import {
   type ModeAcquisitionMateriel,
   CATEGORIE_LABELS,
   DUREE_AMORTISSEMENT_PAR_CATEGORIE,
+  MODE_ACQUISITION_LABELS,
   SEUIL_CHARGE_IMMEDIATE_HT,
+  compareMontagesMateriel,
   computeMateriel,
   createDefaultMaterielInputs,
 } from "../lib/materiel";
+import { MontageCards } from "../components/MontageCards";
 import { Field, NumberInput, ResetableNumberInput, Section, StatCard } from "../components/Field";
 import { DEFAULT_CORPORATE_TAX_RATE } from "../lib/simulator";
 import { RuleNote } from "../components/RuleNote";
@@ -22,12 +25,7 @@ import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { formatEUR, formatEURPrecise } from "../lib/format";
 
-const MODE_LABELS: Record<ModeAcquisitionMateriel, string> = {
-  societe: "Achat par la société",
-  personnel_rembourse: "Achat personnel remboursé (note de frais)",
-  personnel_non_rembourse: "Achat personnel non remboursé",
-  loa: "LOA / leasing par la société",
-};
+const MODE_LABELS = MODE_ACQUISITION_LABELS;
 
 /** Résumé texte complet d'une simulation matériel, destiné à être copié dans le presse-papier. */
 function buildMaterielExportText(sim: MaterielInputs): string {
@@ -55,6 +53,14 @@ function buildMaterielExportText(sim: MaterielInputs): string {
   push(
     `Plan de renouvellement — ${r.nombreCycles} cycle(s) sur ${sim.horizonRenouvellementAnnees} ans : coût net société total ${formatEUR(r.coutTotalSurHorizon)}`,
   );
+  push("");
+  push(`— Comparatif des montages (coût net global société + dirigeant sur ${sim.horizonRenouvellementAnnees} ans) —`);
+  const { montages, meilleur } = compareMontagesMateriel(sim);
+  for (const m of montages) {
+    const ecart = m.meilleur ? "le moins cher" : `+${formatEUR(m.ecartVsMeilleur)}`;
+    push(`${m.mode === sim.modeAcquisition ? "▸" : " "} ${m.label} : ${formatEUR(m.coutHorizon)} (${ecart})`);
+  }
+  push(`Montage le moins cher : ${meilleur.label}.`);
   if (sim.usagePrivePercent > 0) {
     push(
       `Usage mixte (${sim.usagePrivePercent}% privé) : AEN annuelle ${formatEUR(r.aenAnnuelle)} · coût dirigeant (cotisations + IR) ${formatEUR(r.coutDirigeantAEN)}`,
@@ -72,6 +78,7 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const results = useMemo(() => computeMateriel(inputs), [inputs]);
+  const comparatif = useMemo(() => compareMontagesMateriel(inputs), [inputs]);
 
   useEffect(() => {
     savePersonalTaxProfile(inputs.personalTaxProfile);
@@ -90,9 +97,10 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
       <h2>💻 Matériel professionnel — société, achat remboursé, ou personnel ?</h2>
       <p className="page__intro">
         Ordinateur, mobilier de bureau, équipement professionnel : le simulateur chiffre la charge déductible
-        (immédiate si le prix HT n'excède pas {formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)}, sinon amortie) selon que
-        l'achat est fait par la société, par le dirigeant puis remboursé (note de frais — fiscalement identique), ou
-        par le dirigeant sans remboursement (aucun avantage fiscal).
+        (immédiate si le prix HT n'excède pas {formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)}, sinon amortie) et compare
+        d'emblée les <strong>quatre montages possibles</strong> — achat par la société, achat personnel remboursé sur
+        note de frais, achat personnel non remboursé, LOA. Vous n'avez pas à en choisir un pour en connaître le coût :
+        ils sont tous chiffrés, le choix vient après.
       </p>
 
       <div className="results-toolbar results-toolbar--top">
@@ -146,37 +154,22 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
           </Section>
 
           <Section
-            title="Montage retenu"
-            subtitle="Achat société et achat personnel remboursé sont fiscalement identiques — seul le circuit de paiement diffère."
+            title="Conditions de la LOA / du leasing"
+            subtitle="Renseignées en permanence : la LOA est chiffrée d'office dans le comparatif, sans avoir à la sélectionner."
           >
-            <Field label="Qui achète ?">
-              <select
-                value={inputs.modeAcquisition}
-                onChange={(e) => update("modeAcquisition", e.target.value as ModeAcquisitionMateriel)}
-              >
-                {Object.entries(MODE_LABELS).map(([code, label]) => (
-                  <option key={code} value={code}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {inputs.modeAcquisition === "personnel_non_rembourse" && (
-              <p className="warning-block">
-                Aucune charge déductible pour la société dans ce montage : le dirigeant supporte le prix plein sur des
-                revenus déjà taxés, sans aucun avantage fiscal.
-              </p>
-            )}
-            {inputs.modeAcquisition === "loa" && (
-              <div className="grid grid--2">
-                <Field label="Loyer mensuel LOA (€)">
-                  <NumberInput value={inputs.loaLoyerMensuel} onChange={(e) => update("loaLoyerMensuel", Number(e.target.value))} />
-                </Field>
-                <Field label="Durée du contrat LOA (mois)">
-                  <NumberInput value={inputs.loaDureeMois} onChange={(e) => update("loaDureeMois", Number(e.target.value))} />
-                </Field>
-              </div>
-            )}
+            <div className="grid grid--2">
+              <Field label="Loyer mensuel LOA (€)">
+                <NumberInput value={inputs.loaLoyerMensuel} onChange={(e) => update("loaLoyerMensuel", Number(e.target.value))} />
+              </Field>
+              <Field label="Durée du contrat LOA (mois)">
+                <NumberInput value={inputs.loaDureeMois} onChange={(e) => update("loaDureeMois", Number(e.target.value))} />
+              </Field>
+            </div>
+            <p className="hint-block">
+              Loyers intégralement déductibles en charge, sans amortissement — aucun bien ne figure à l'actif et rien ne
+              reste acquis au terme, sauf à lever l'option (non chiffrée ici). Le prix HT et la durée d'amortissement
+              saisis plus haut ne concernent que les montages d'achat.
+            </p>
           </Section>
 
           <Section
@@ -291,33 +284,84 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
         </div>
 
         <div className="layout__results">
-          <div className="stat-grid">
-            <StatCard label="Charge déductible année 1" value={formatEUR(results.chargeAnnee1)} />
-            <StatCard label="Économie d'impôt année 1" value={formatEUR(results.economieImpotAnnee1)} tone="good" />
-            <StatCard label="Coût net société — année 1" value={formatEUR(results.coutNetSocieteAnnee1)} tone="bad" />
-            <StatCard label="Coût net société — sur la durée totale" value={formatEUR(results.coutNetSocieteTotalSurDuree)} tone="bad" />
-            {inputs.modeAcquisition === "personnel_non_rembourse" && (
-              <StatCard label="Coût dirigeant (non remboursé)" value={formatEUR(results.coutDirigeantNonRembourse)} tone="bad" />
-            )}
-            <StatCard
-              label="Économie vs achat personnel jamais remboursé"
-              value={formatEURPrecise(results.economieVsNonRembourse)}
-              tone={results.economieVsNonRembourse > 0 ? "good" : "neutral"}
+          <Section
+            title="Quel montage coûte le moins cher ?"
+            subtitle={`Coût net global — société et dirigeant réunis — sur ${inputs.horizonRenouvellementAnnees} ans, seule base sur laquelle des cycles de longueurs différentes se comparent.`}
+          >
+            <MontageCards
+              montages={comparatif.montages.map((m) => ({
+                id: m.mode,
+                label: m.label,
+                resume: m.resume,
+                cout: m.coutHorizon,
+                ecartVsMeilleur: m.ecartVsMeilleur,
+                meilleur: m.meilleur,
+              }))}
+              selectedId={inputs.modeAcquisition}
+              onSelect={(id) => update("modeAcquisition", id as ModeAcquisitionMateriel)}
+              legende={`sur ${inputs.horizonRenouvellementAnnees} ans`}
             />
-            <StatCard
-              label={`Coût net société sur ${inputs.horizonRenouvellementAnnees} ans (${results.nombreCycles} cycle${results.nombreCycles > 1 ? "s" : ""})`}
-              value={formatEUR(results.coutTotalSurHorizon)}
-              tone="bad"
-            />
-            {inputs.usagePrivePercent > 0 && (
+            <p className="hint-block">
+              Achat société et achat personnel remboursé affichent le même montant : ils sont fiscalement identiques,
+              seul le circuit de paiement diffère. Cliquez une carte pour en détailler le calcul ci-dessous.
+            </p>
+          </Section>
+
+          <Section title={`Détail — ${MODE_LABELS[inputs.modeAcquisition]}`}>
+            <div className="stat-grid">
               <StatCard
-                label="Coût dirigeant — avantage en nature (usage mixte)"
-                value={formatEUR(results.coutDirigeantAEN)}
-                sub={`AEN annuelle : ${formatEUR(results.aenAnnuelle)}`}
+                label="Charge déductible année 1"
+                value={formatEUR(results.chargeAnnee1)}
+                sub={
+                  inputs.modeAcquisition === "loa"
+                    ? `Loyers LOA · contrat de ${inputs.loaDureeMois} mois`
+                    : results.eligibleChargeImmediate
+                      ? `Déduction immédiate (≤ ${formatEUR(SEUIL_CHARGE_IMMEDIATE_HT)} HT)`
+                      : `Annuité d'amortissement sur ${inputs.dureeAmortissementAnnees} ans`
+                }
+              />
+              <StatCard
+                label="Économie d'impôt année 1"
+                value={formatEUR(results.economieImpotAnnee1)}
+                sub={`Économie vs achat non remboursé : ${formatEURPrecise(results.economieVsNonRembourse)}`}
+                tone="good"
+              />
+              <StatCard
+                label="Coût net société — année 1"
+                value={formatEUR(results.coutNetSocieteAnnee1)}
+                sub={`Sur un cycle de ${results.dureeCycleAnnees.toFixed(1)} an${results.dureeCycleAnnees >= 2 ? "s" : ""} : ${formatEUR(results.coutNetSocieteTotalSurDuree)}`}
                 tone="bad"
               />
+              <StatCard
+                label={`Coût global sur ${inputs.horizonRenouvellementAnnees} ans`}
+                value={formatEUR(results.coutNetGlobalSurHorizon)}
+                sub={`${results.nombreCycles} cycle${results.nombreCycles > 1 ? "s" : ""} · dont société : ${formatEUR(results.coutTotalSurHorizon)}`}
+                tone="bad"
+              />
+              {inputs.modeAcquisition === "personnel_non_rembourse" && (
+                <StatCard
+                  label="Coût dirigeant (non remboursé)"
+                  value={formatEUR(results.coutDirigeantNonRembourse)}
+                  sub="Payé sur des revenus déjà taxés, sans aucune charge déductible"
+                  tone="bad"
+                />
+              )}
+              {inputs.usagePrivePercent > 0 && (
+                <StatCard
+                  label="Coût dirigeant — avantage en nature"
+                  value={formatEUR(results.coutDirigeantAEN)}
+                  sub={`AEN annuelle : ${formatEUR(results.aenAnnuelle)} (${inputs.usagePrivePercent}% d'usage privé)`}
+                  tone="bad"
+                />
+              )}
+            </div>
+            {inputs.modeAcquisition === "personnel_non_rembourse" && (
+              <p className="warning-block">
+                Aucune charge déductible pour la société dans ce montage : le dirigeant supporte le prix plein sur des
+                revenus déjà taxés, sans aucun avantage fiscal.
+              </p>
             )}
-          </div>
+          </Section>
 
           <Section title="Sauvegarde & comparaison">
             <SavedSimulationsPanel
@@ -331,9 +375,9 @@ export function MaterielSimulatorPage({ initialShareData }: { initialShareData?:
               metricsFor={(sim) => {
                 const r = computeMateriel(sim);
                 return [
+                  { label: "Montage", value: MODE_LABELS[sim.modeAcquisition] },
                   { label: "Charge déductible année 1", value: formatEUR(r.chargeAnnee1) },
-                  { label: "Coût net société — sur la durée", value: formatEUR(r.coutNetSocieteTotalSurDuree) },
-                  { label: "Coût dirigeant (non remboursé)", value: formatEUR(r.coutDirigeantNonRembourse) },
+                  { label: `Coût global sur ${sim.horizonRenouvellementAnnees} ans`, value: formatEUR(r.coutNetGlobalSurHorizon) },
                   { label: "Économie vs non remboursé", value: formatEURPrecise(r.economieVsNonRembourse) },
                 ];
               }}

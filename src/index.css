@@ -523,6 +523,135 @@ select:focus {
   color: var(--bad);
 }
 
+/* Repli documentaire pouvant contenir des champs de saisie : contrairement à .charge-line__ref, il
+   garde la taille de texte courante et se démarque du fond pour rester repérable une fois ouvert. */
+.details-block {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.8rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.details-block > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.details-block > summary::-webkit-details-marker {
+  display: none;
+}
+
+.details-block > summary::before {
+  content: "▸ ";
+}
+
+.details-block[open] > summary::before {
+  content: "▾ ";
+}
+
+.details-block[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+.details-block .field {
+  margin-top: 0.5rem;
+}
+
+/* Comparatif de montages : une carte par montage, classées du moins cher au plus cher. */
+.montage-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.montage-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+}
+
+.montage-card:hover {
+  border-color: var(--accent);
+}
+
+.montage-card--best {
+  background: rgba(52, 211, 153, 0.09);
+}
+
+.montage-card--selected {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.montage-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.montage-card__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.montage-card__cout {
+  font-size: 1.15rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.montage-card__bar {
+  display: block;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.montage-card__bar > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.montage-card--best .montage-card__bar > span {
+  background: var(--good);
+}
+
+.montage-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.montage-card__ecart--best {
+  color: var(--good);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.montage-card__resume {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
 /* Stat cards */
 .stat-grid {
   display: grid;
