@@ -327,7 +327,9 @@ export interface SimulationResults {
 
   amortRate: number;
   amortAnnual: number;
-  aenBaseAnnualCosts: number; // base réelle retenue pour l'AEN (amortissement si acheté, 30% du loyer si loué) + assurance + entretien
+  aenBaseAnnualCosts: number; // base réelle retenue pour l'AEN : amortissement si acheté / coût global de location si loué, + assurance + entretien
+  aenBaseAvantPlafond: number; // même base avant le plafonnement propre aux véhicules loués
+  aenPlafonneParEquivalentAchat: boolean; // vrai si le plafond « équivalent achat » a mordu (location courte et chère)
   aenBrut: number;
   abattement: number;
   aenNetBeforeParticipation: number;
@@ -488,22 +490,53 @@ function getResidualValueAnnualized(inputs: SimulationInputs, mode: FinancingMod
   return getResidualValue(inputs, mode) / dureeAnnees;
 }
 
-/** Base annuelle réelle retenue pour l'AEN : amortissement si le véhicule est acheté par la société,
- * 30% du coût de location si le véhicule est loué (LOA/LLD) — cf. BOI-RSA-BASE-30-50-30.
+/**
+ * Base annuelle retenue pour l'AEN évalué d'après les DÉPENSES RÉELLEMENT ENGAGÉES.
+ *
+ * Véhicule acheté : amortissement (20 % du prix TTC, 10 % au-delà de cinq ans) + assurance +
+ * entretien. Véhicule loué : le coût global annuel TTC de la location se substitue à
+ * l'amortissement, auquel s'ajoutent assurance et entretien.
+ *
+ * Cette base est ensuite proratisée par le pourcentage de kilométrage privé, dans `computeScenario`.
+ * Aucun coefficient ne s'y applique : les 30 % (50 % depuis le 1er février 2025) souvent associés
+ * aux véhicules loués relèvent de la méthode FORFAITAIRE, qui s'applique au coût global annuel sans
+ * proratisation ultérieure. Les combiner reviendrait à réduire deux fois la même assiette pour le
+ * même motif — l'usage privé — et diviserait l'avantage par plus de trois.
+ *
  * En LOA, si l'option d'achat est levée, sa valeur n'est PAS un loyer (c'est un versement
- * d'acquisition de capital) : elle est exclue de cette base, cf. `loyerAnnuelMoyen`. */
+ * d'acquisition de capital) : elle est exclue de cette base, cf. `loyerAnnuelMoyen`.
+ */
 function computeAenBase(inputs: SimulationInputs, mode: FinancingMode, loyerAnnuelMoyen: number) {
   // En LLD « tout compris », entretien et assurance sont déjà dans le loyer : les rajouter ici
   // gonflerait la base de l'AEN d'un doublon.
   const { annualInsurance, annualMaintenance } = chargesHorsFinancement(inputs, mode);
+  const amortRate = inputs.vehicleOverFiveYears ? 0.1 : 0.2;
   const isOwned = mode === "comptant" || mode === "credit";
   if (isOwned) {
-    const amortRate = inputs.vehicleOverFiveYears ? 0.1 : 0.2;
     const amortAnnual = inputs.vehiclePrice * amortRate;
-    return { amortRate, amortAnnual, aenBaseAnnualCosts: amortAnnual + annualInsurance + annualMaintenance };
+    return {
+      amortRate,
+      amortAnnual,
+      aenBaseAnnualCosts: amortAnnual + annualInsurance + annualMaintenance,
+      aenBaseAvantPlafond: amortAnnual + annualInsurance + annualMaintenance,
+      aenPlafonneParEquivalentAchat: false,
+    };
   }
-  const aenBaseAnnualCosts = (loyerAnnuelMoyen + annualInsurance + annualMaintenance) * 0.3;
-  return { amortRate: 0, amortAnnual: 0, aenBaseAnnualCosts };
+  const aenBaseAvantPlafond = loyerAnnuelMoyen + annualInsurance + annualMaintenance;
+  // Plafonnement propre aux véhicules loués, pour ceux mis à disposition depuis le 1er février 2025 :
+  // l'avantage ne peut excéder celui qui aurait été évalué si la société avait acheté le véhicule.
+  // Le prix de référence est le prix d'achat TTC du véhicule par le loueur ; à défaut de le
+  // connaître, le prix du véhicule saisi en tient lieu. Le plafond mord sur les locations courtes et
+  // chères, dont le loyer annuel dépasse l'annuité d'amortissement qu'aurait produite un achat.
+  const basePlafondEquivalentAchat = inputs.vehiclePrice * amortRate + annualInsurance + annualMaintenance;
+  const aenBaseAnnualCosts = Math.min(aenBaseAvantPlafond, basePlafondEquivalentAchat);
+  return {
+    amortRate: 0,
+    amortAnnual: 0,
+    aenBaseAnnualCosts,
+    aenBaseAvantPlafond,
+    aenPlafonneParEquivalentAchat: aenBaseAnnualCosts < aenBaseAvantPlafond - 1e-9,
+  };
 }
 
 /**
@@ -596,7 +629,8 @@ function computeSocieteForMode(
   // POUR CE SEUL MODE — les champs de saisie sont communs aux quatre modes et restent indispensables
   // en comptant/crédit/LOA, où ces charges sont bien supportées en plus du financement.
   const { annualInsurance, annualMaintenance } = chargesHorsFinancement(inputs, mode);
-  const { amortRate, amortAnnual, aenBaseAnnualCosts } = computeAenBase(inputs, mode, loyerAnnuelMoyen);
+  const { amortRate, amortAnnual, aenBaseAnnualCosts, aenBaseAvantPlafond, aenPlafonneParEquivalentAchat } =
+    computeAenBase(inputs, mode, loyerAnnuelMoyen);
 
   const ratio = Math.min(Math.max(privateUsePercent, 0), 100) / 100;
   const aenBrutFromBase = aenBaseAnnualCosts * ratio;
@@ -750,6 +784,8 @@ function computeSocieteForMode(
     amortRate,
     amortAnnual,
     aenBaseAnnualCosts,
+    aenBaseAvantPlafond,
+    aenPlafonneParEquivalentAchat,
     aenBrut,
     abattement,
     aenNetBeforeParticipation,

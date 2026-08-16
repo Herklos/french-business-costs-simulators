@@ -55,26 +55,44 @@ export const TAX_RULES: TaxRule[] = [
     id: "aen-vehicule-loue-taux",
     category: "aen_vehicule",
     label: "Base AEN pour un véhicule loué (LOA/LLD, méthode réelle)",
-    value: "30 % du (coût global annuel de location + assurance + entretien)",
-    legalReference: "BOI-RSA-BASE-30-50-30, § véhicule loué",
-    sourceLabel: "BOFiP-Impôts",
-    sourceUrl: "https://bofip.impots.gouv.fr/bofip/1512-PGP.html",
+    value: "Coût global annuel TTC de la location + assurance + entretien, proratisé par le kilométrage privé",
+    legalReference: "BOI-RSA-BASE-30-50-30 ; arrêté du 25 février 2025, art. 3",
+    sourceLabel: "URSSAF — les avantages en nature",
+    sourceUrl: "https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html",
     validFrom: "2020-01-01",
     validUntil: null,
     notes:
-      "Remplace le calcul par amortissement (20 %/10 %) lorsque le véhicule n'est pas acheté par la société : le loyer annuel (LOA ou LLD) se substitue au prix d'achat.",
+      "Le coût global annuel de la location se substitue à l'amortissement (20 %/10 %) lorsque le véhicule n'est pas acheté par la société. Il est retenu POUR SON MONTANT INTÉGRAL, puis proratisé par la part de kilométrage privé.\n\n" +
+      "Attention à une confusion très répandue : les 30 % (portés à 50 % pour les véhicules mis à disposition depuis le 1er février 2025) que l'on lit partout à propos des véhicules loués relèvent de la méthode FORFAITAIRE. Ce taux s'applique au coût global annuel et représente à lui seul l'usage privé présumé : il n'est jamais suivi d'une proratisation kilométrique. Combiner les deux — appliquer 30 % puis la part d'usage privé — réduirait deux fois la même assiette pour le même motif et diviserait l'avantage par plus de trois. Les deux méthodes s'excluent : soit le forfait, soit le réel.",
+  },
+  {
+    id: "aen-vehicule-loue-plafond-equivalent-achat",
+    category: "aen_vehicule",
+    label: "Plafonnement de l'AEN d'un véhicule loué au niveau d'un véhicule acheté",
+    value: "L'avantage retenu ne peut excéder celui qui aurait été évalué si l'employeur avait acheté le véhicule",
+    legalReference: "Arrêté du 25 février 2025, art. 3",
+    sourceLabel: "Légifrance",
+    sourceUrl: "https://www.legifrance.gouv.fr/jorf/article_jo/JORFARTI000051254043",
+    validFrom: "2025-02-01",
+    validUntil: null,
+    notes:
+      "Nouveauté applicable aux véhicules mis à disposition à compter du 1er février 2025. Le prix de référence est le prix d'achat TTC du véhicule par le loueur, rabais compris dans la limite de 30 % du prix conseillé par le constructeur au jour du début du contrat ; les loueurs et crédit-bailleurs sont tenus de communiquer cet élément à l'entreprise locataire. À défaut de le connaître, le simulateur retient le prix du véhicule saisi.\n\n" +
+      "Le plafond ne mord que sur les locations courtes et chères, dont le loyer annuel dépasse l'annuité d'amortissement qu'aurait produite un achat (20 % du prix, 10 % au-delà de cinq ans) : une LOA à 500 €/mois sur un véhicule de 45 000 € en reste très loin, une LOA à 900 €/mois sur le même véhicule le franchit.",
   },
   {
     id: "aen-methode-reelle-obligatoire-tns",
     category: "aen_vehicule",
     label: "Méthode d'évaluation obligatoire pour les gérants majoritaires TNS",
-    value: "Frais réels uniquement (barème forfaitaire URSSAF exclu)",
-    legalReference: "Art. L311-3 et R242-1 CSS ; BOI-RSA-BASE-30-50",
-    sourceLabel: "BOFiP-Impôts / URSSAF",
+    value: "Valeur réelle uniquement (barème forfaitaire exclu)",
+    legalReference: "Art. 62 CGI ; BOI-RSA-GER-20 ; arrêté du 25 février 2025 (champ : salariés et assimilés)",
+    sourceLabel: "BOFiP-Impôts (BOI-RSA-GER-20)",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/6347-PGP.html",
     validFrom: "2020-01-01",
     validUntil: null,
     notes:
-      "Confirmé par plusieurs sources professionnelles 2026 (Dougs, LégiSocial, Archipel Lyon...) : l'interdiction du barème forfaitaire s'applique aussi à l'abattement électrique associé — un TNS ne peut donc jamais bénéficier de l'abattement forfaitaire renforcé de 70% (plafond 4 641,60€), réservé aux dirigeants assimilés salariés en méthode forfaitaire. Seul l'abattement réel de 50% (plafond 2 026,30€, cf. règle dédiée) s'applique à un TNS, quelle que soit la valeur du véhicule.",
+      "Deux fondements convergents, l'un fiscal et l'autre social. Fiscalement, le BOFiP énonce que les avantages en nature concédés au dirigeant relevant de l'article 62 du CGI — dont le gérant majoritaire de SARL/EURL — sont TOUJOURS à évaluer selon leur valeur réelle, et qu'il n'existe pas de modalités forfaitaires d'évaluation comme pour les rémunérations allouées aux salariés (BOI-RSA-GER-20). Socialement, l'arrêté du 25 février 2025 qui fixe les barèmes forfaitaires vise expressément « les salariés affiliés au régime général et les salariés affiliés au régime agricole » : un TNS est hors de son champ.\n\n" +
+      "Conséquence pratique souvent mal comprise : l'abattement renforcé de 70 % (plafond 4 641,60 € en 2026) pour véhicule électrique éligible est indissociable de la méthode forfaitaire, donc inaccessible à un gérant majoritaire. Seul l'abattement réel de 50 % (plafond 2 026,30 €, cf. règle dédiée) lui est ouvert, quelle que soit la valeur du véhicule.\n\n" +
+      "À ne pas confondre avec la tolérance dont bénéficient les dirigeants ASSIMILÉS SALARIÉS (président de SAS/SASU, gérant minoritaire ou égalitaire) : ceux-là relèvent du régime général et peuvent, eux, opter pour le forfait. C'est la confusion la plus fréquente sur ce sujet, et elle change le coût du montage du simple au triple.",
   },
   {
     id: "aen-abattement-vehicule-electrique-taux",
@@ -453,13 +471,16 @@ export const TAX_RULES: TaxRule[] = [
     id: "aen-forfaitaire-assimile-salarie",
     category: "aen_vehicule",
     label: "Méthode forfaitaire — alternative disponible pour les dirigeants assimilés salariés",
-    value: "15%/20% (acheté) ou 50%/67% (loué) du prix ou du coût annuel, ou 30%/40% avec carburant payé par l'employeur",
+    value:
+      "Acheté : 15 % du prix TTC (10 % si > 5 ans), 20 % si l'employeur paie le carburant. Loué : 50 % du coût global annuel, 67 % avec le carburant.",
     legalReference: "Arrêté du 25 février 2025 (barèmes forfaitaires AEN véhicule)",
     sourceLabel: "URSSAF",
+    sourceUrl: "https://www.urssaf.fr/accueil/employeur/cotisations/avantages-en-nature.html",
     validFrom: "2025-02-01",
-    validUntil: "2026-12-31",
+    validUntil: "2027-12-31",
     notes:
-      "Contrairement aux gérants TNS (méthode réelle obligatoire), un président de SASU/SAS assimilé salarié peut légalement opter pour le barème forfaitaire, parfois plus favorable. Le simulateur applique uniformément la méthode réelle pour les deux statuts par souci de cohérence ; comparer manuellement avec ce barème forfaitaire si le statut est « assimilé salarié ».",
+      "Taux relevés par l'arrêté du 25 février 2025 pour les véhicules mis à disposition à compter du 1er février 2025 : les anciens taux (9 %/12 % à l'achat, 30 %/40 % en location) restent applicables aux véhicules mis à disposition avant cette date. Un barème encore largement cité comme s'il était en vigueur.\n\n" +
+      "Le forfait s'applique au coût global annuel SANS proratisation kilométrique : il représente à lui seul l'usage privé présumé. Il n'est ouvert qu'aux dirigeants relevant du régime général — président de SAS/SASU, gérant minoritaire ou égalitaire — et jamais à un gérant majoritaire TNS (cf. règle dédiée). Le simulateur applique uniformément la méthode réelle ; comparer manuellement avec ce barème si le statut est « assimilé salarié », le forfait étant souvent plus favorable dès que l'usage privé dépasse la moitié du kilométrage.",
   },
   {
     id: "domicile-formalisation-bail-vs-indemnite",

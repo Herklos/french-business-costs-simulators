@@ -398,6 +398,37 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
             </div>
             <RuleNote ruleId="aen-amortissement-taux" />
             <RuleNote ruleId="aen-vehicule-loue-taux" />
+            <details className="details-block">
+              <summary>Comment l'avantage en nature est évalué ici — et l'erreur à ne pas commettre</summary>
+              <p>
+                Deux méthodes existent, et elles <strong>s'excluent</strong>.
+              </p>
+              <p>
+                La méthode <strong>forfaitaire</strong> applique un pourcentage au coût du véhicule — 50 % du coût
+                global annuel pour une location, 15 % du prix d'achat pour un véhicule acheté, depuis l'arrêté du
+                25 février 2025. Ce pourcentage <em>représente à lui seul l'usage privé présumé</em> : il n'est jamais
+                suivi d'une proratisation kilométrique. Elle n'est ouverte qu'aux dirigeants relevant du régime général.
+              </p>
+              <p>
+                La méthode <strong>réelle</strong>, seule applicable à un gérant majoritaire TNS, part des dépenses
+                effectivement engagées — coût global annuel de la location, ou amortissement de 20 % du prix si le
+                véhicule est acheté, plus assurance et entretien — et leur applique la part de kilométrage privé
+                réellement parcourue. C'est la méthode retenue par ce simulateur.
+              </p>
+              <p className="warning-block">
+                L'erreur la plus fréquente consiste à <strong>combiner les deux</strong> : appliquer les 30 % ou 50 %
+                d'un véhicule loué, <em>puis</em> proratiser par l'usage privé. C'est réduire deux fois la même assiette
+                pour le même motif, et diviser l'avantage déclaré par plus de trois. Le taux que vous lisez sur un
+                véhicule loué appartient au forfait ; si vous proratisez, vous êtes au réel et ce taux n'a pas à
+                intervenir.
+              </p>
+              <p>
+                Second piège, en sens inverse : l'abattement pour véhicule électrique éligible n'est pas le même selon
+                la méthode — 70 % plafonnés à 4 641,60 € au forfait, mais 50 % plafonnés à 2 026,30 € au réel. Un
+                gérant majoritaire, cantonné au réel, ne peut donc jamais prétendre au premier.
+              </p>
+              <RuleNote ruleId="aen-vehicule-loue-plafond-equivalent-achat" />
+            </details>
             <RuleNote ruleId="malus-ecologique" />
             <RuleNote ruleId="bonus-ecologique" />
             {inputs.isElectric && (
@@ -667,9 +698,15 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                             (
                             {inputs.financingMode === "comptant" || inputs.financingMode === "credit"
                               ? "amortissement + assurance + entretien"
-                              : "30 % du coût de location + assurance + entretien"}
+                              : "coût global annuel de la location + assurance + entretien"}
                             )
                           </li>
+                          {results.aenPlafonneParEquivalentAchat && (
+                            <li>
+                              plafonné : la location revenait à {formatEUR(results.aenBaseAvantPlafond)}, ramenés au
+                              niveau d'un véhicule acheté au même prix
+                            </li>
+                          )}
                           <li>
                             × {inputs.privateUsePercent} % d'usage privé → AEN brut :{" "}
                             <strong>{formatEUR(results.aenBrut)}</strong>

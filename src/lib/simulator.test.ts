@@ -134,7 +134,11 @@ describe("computeSimulation — méthode réelle AEN selon le montage", () => {
     };
     const r = computeSimulation(inputs);
     const loyerAnnuel = inputs.financing.lld.loyerMensuel * 12;
-    expect(r.aenBaseAnnualCosts).toBeCloseTo((loyerAnnuel + inputs.annualInsurance + inputs.annualMaintenance) * 0.3, 6);
+    // Coût global de la location retenu POUR SON MONTANT INTÉGRAL : les 30 %/50 % que l'on associe
+    // aux véhicules loués relèvent de la méthode forfaitaire, qui exclut toute proratisation
+    // kilométrique. Les cumuler réduirait deux fois la même assiette pour le même motif.
+    expect(r.aenBaseAnnualCosts).toBeCloseTo(loyerAnnuel + inputs.annualInsurance + inputs.annualMaintenance, 6);
+    expect(r.aenPlafonneParEquivalentAchat).toBe(false);
   });
 
   it("véhicule loué (LLD « tout compris ») : assurance et entretien sortent de la base AEN", () => {
@@ -155,10 +159,10 @@ describe("computeSimulation — méthode réelle AEN selon le montage", () => {
       financing: { ...commun.financing, lld: { ...commun.financing.lld, toutComprisEntretienAssurance: true } },
     });
     const loyerAnnuel = commun.financing.lld.loyerMensuel * 12;
-    expect(toutCompris.aenBaseAnnualCosts).toBeCloseTo(loyerAnnuel * 0.3, 6);
+    expect(toutCompris.aenBaseAnnualCosts).toBeCloseTo(loyerAnnuel, 6);
     // Écart = la part d'AEN qui provenait du double comptage des charges déjà incluses dans le loyer.
     expect(nu.aenBaseAnnualCosts - toutCompris.aenBaseAnnualCosts).toBeCloseTo(
-      (commun.annualInsurance + commun.annualMaintenance) * 0.3,
+      commun.annualInsurance + commun.annualMaintenance,
       6,
     );
   });
@@ -1007,7 +1011,10 @@ describe("computeSimulation — modalités de versement de la participation", ()
   it("seul le coût du dirigeant change, et donc le coût global", () => {
     const nette = socOf(avecMode("retenue_nette"));
     const brute = socOf(avecMode("retenue_brute"));
-    expect(brute.partDirigeant).toBeLessThan(nette.partDirigeant);
+    // Les deux modalités ne coûtent pas la même chose au dirigeant — laquelle l'emporte dépend du
+    // rapport entre la participation et l'AEN, cf. le test suivant : rien à asserter ici sur le sens
+    // de l'écart, seulement sur le fait qu'il se répercute intégralement sur le coût global.
+    expect(brute.partDirigeant).not.toBeCloseTo(nette.partDirigeant, 2);
     expect(nette.globalCostAnnual - brute.globalCostAnnual).toBeCloseTo(
       nette.partDirigeant - brute.partDirigeant,
       6,
@@ -1219,11 +1226,178 @@ describe("computeSimulation — point de vue « poche du dirigeant »", () => {
     expect(r.bestOptionPocheDirigeant.coutPocheDirigeant).toBeCloseTo(minimum, 6);
   });
 
-  it("renverse effectivement le classement sur un usage privé élevé", () => {
-    // Cas documenté dans l'interface : à 90 % d'usage privé, l'achat personnel gagne au coût
-    // consolidé, mais l'option société l'emporte une fois le coût de sortie pris en compte.
-    const r = computeSimulation(base());
+  it("renverse effectivement le classement quand la sortie du résultat coûte cher", () => {
+    // L'achat personnel gagne au coût consolidé, mais l'option société l'emporte une fois le coût de
+    // sortie pris en compte : c'est tout l'objet de ce point de vue, et l'avertissement affiché dans
+    // l'interface n'aurait aucun sens si le cas ne se produisait jamais.
+    // Le renversement demande un usage privé modéré et une sortie coûteuse — plus l'usage privé est
+    // élevé, plus l'AEN alourdit l'option société des deux côtés à la fois, et plus il faut d'écart
+    // de valorisation pour la rattraper.
+    const r = computeSimulation(base({ privateUsePercent: 60, tauxExtractionResultat: 0.45 }));
     expect(r.allOptions[0].owner).toBe("personnel");
     expect(r.bestOptionPocheDirigeant.owner).toBe("societe");
+  });
+
+  it("à usage privé très majoritaire, l'AEN pèse trop pour que le point de vue renverse le classement", () => {
+    // Contre-épreuve du test précédent : le renversement n'est pas systématique.
+    const r = computeSimulation(base({ privateUsePercent: 90 }));
+    expect(r.allOptions[0].owner).toBe("personnel");
+    expect(r.bestOptionPocheDirigeant.owner).toBe("personnel");
+  });
+});
+
+describe("computeSimulation — AEN au réel d'un véhicule loué : pas de cumul forfait/réel", () => {
+  /** LOA calquée sur une offre réelle : Tesla Model Y à 45 000 €, 491 €/mois sur 48 mois,
+   *  premier loyer de 250 €, option d'achat de 20 722 €, usage privé de 90 %. */
+  function tesla(patch: Partial<SimulationInputs> = {}): SimulationInputs {
+    const base = createDefaultInputs();
+    return {
+      ...base,
+      financingMode: "loa",
+      vehiclePrice: 45000,
+      isElectric: true,
+      isEcoScoreEligible: false,
+      privateUsePercent: 90,
+      annualInsurance: 0,
+      annualMaintenance: 0,
+      annualFuelPrivateCost: 0,
+      monthlyParticipation: 0,
+      financing: {
+        ...base.financing,
+        loa: {
+          ...base.financing.loa,
+          premierLoyerMajore: 250,
+          loyerMensuel: 491,
+          dureeMois: 48,
+          valeurOptionAchat: 20722,
+          leveeOption: false,
+        },
+      },
+      ...patch,
+    };
+  }
+
+  it("la base retenue est le coût annuel de la location, premier loyer étalé sur la durée", () => {
+    // (250 + 491 × 48) / 4 ans = 5 954,50 €/an.
+    const r = computeSimulation(tesla());
+    expect(r.aenBaseAnnualCosts).toBeCloseTo(5954.5, 2);
+  });
+
+  it("l'avantage brut est cette base proratisée par l'usage privé, sans autre coefficient", () => {
+    // 5 954,50 × 90 % = 5 359,05 €/an, soit environ 447 €/mois.
+    const r = computeSimulation(tesla());
+    expect(r.aenBrut).toBeCloseTo(5359.05, 2);
+    expect(r.aenBrut / 12).toBeCloseTo(446.59, 1);
+  });
+
+  it("assurance et entretien s'ajoutent à la base avant proratisation", () => {
+    // (5 954,50 + 1 000) × 90 % = 6 259,05 €/an, soit environ 522 €/mois.
+    const r = computeSimulation(tesla({ annualInsurance: 700, annualMaintenance: 300 }));
+    expect(r.aenBaseAnnualCosts).toBeCloseTo(6954.5, 2);
+    expect(r.aenBrut).toBeCloseTo(6259.05, 2);
+  });
+
+  it("le taux forfaitaire du véhicule loué ne s'applique JAMAIS en plus de l'usage privé", () => {
+    // Garde-fou contre la confusion la plus répandue : appliquer 30 % (ancien taux) ou 50 % (taux
+    // depuis le 1er février 2025) au coût de location, PUIS proratiser par l'usage privé. Le
+    // résultat serait divisé par plus de trois, pour un motif — l'usage privé — déjà compté une fois.
+    const r = computeSimulation(tesla());
+    const coutAnnuelLocation = 5954.5;
+    expect(r.aenBrut).not.toBeCloseTo(coutAnnuelLocation * 0.3 * 0.9, 1);
+    expect(r.aenBrut).not.toBeCloseTo(coutAnnuelLocation * 0.5 * 0.9, 1);
+  });
+
+  it("un usage 100 % privé fait porter l'avantage sur la totalité du coût de location", () => {
+    const r = computeSimulation(tesla({ privateUsePercent: 100 }));
+    expect(r.aenBrut).toBeCloseTo(r.aenBaseAnnualCosts, 6);
+  });
+
+  it("un usage 100 % professionnel n'engendre aucun avantage", () => {
+    expect(computeSimulation(tesla({ privateUsePercent: 0 })).aenBrut).toBe(0);
+  });
+
+  it("l'électricité rechargée n'entre pas dans la base, qu'elle soit payée par le dirigeant ou non", () => {
+    const sans = computeSimulation(tesla({ annualFuelPrivateCost: 0 }));
+    const avec = computeSimulation(tesla({ annualFuelPrivateCost: 1200 }));
+    expect(avec.aenBrut).toBeCloseTo(sans.aenBrut, 6);
+  });
+
+  it("un véhicule thermique, lui, ajoute le carburant privé pris en charge", () => {
+    const sans = computeSimulation(tesla({ isElectric: false, annualFuelPrivateCost: 0 }));
+    const avec = computeSimulation(tesla({ isElectric: false, annualFuelPrivateCost: 1200 }));
+    expect(avec.aenBrut - sans.aenBrut).toBeCloseTo(1200, 6);
+  });
+
+  it("l'abattement électrique appliqué est celui de la méthode réelle, pas celui du forfait", () => {
+    // 50 % plafonnés à 2 026,30 € au réel, et non 70 % plafonnés à 4 641,60 € — ce dernier est
+    // indissociable de la méthode forfaitaire, fermée à un gérant majoritaire TNS.
+    const r = computeSimulation(tesla({ isEcoScoreEligible: true }));
+    expect(r.abattement).toBeCloseTo(Math.min(0.5 * r.aenBrut, 2026.3), 2);
+    expect(r.abattement).toBeLessThan(0.7 * r.aenBrut);
+  });
+});
+
+describe("computeSimulation — plafonnement de l'AEN d'un véhicule loué", () => {
+  function loue(loyerMensuel: number, patch: Partial<SimulationInputs> = {}): SimulationInputs {
+    const base = createDefaultInputs();
+    return {
+      ...base,
+      financingMode: "loa",
+      vehiclePrice: 45000,
+      vehicleOverFiveYears: false,
+      privateUsePercent: 100,
+      annualInsurance: 0,
+      annualMaintenance: 0,
+      annualFuelPrivateCost: 0,
+      monthlyParticipation: 0,
+      isElectric: true,
+      isEcoScoreEligible: false,
+      financing: {
+        ...base.financing,
+        loa: { ...base.financing.loa, premierLoyerMajore: 0, loyerMensuel, dureeMois: 48, leveeOption: false },
+      },
+      ...patch,
+    };
+  }
+
+  it("une location ordinaire reste en deçà du plafond : rien n'est écrêté", () => {
+    // 491 €/mois = 5 892 €/an, contre 20 % × 45 000 = 9 000 € pour un achat.
+    const r = computeSimulation(loue(491));
+    expect(r.aenPlafonneParEquivalentAchat).toBe(false);
+    expect(r.aenBaseAnnualCosts).toBeCloseTo(r.aenBaseAvantPlafond, 6);
+  });
+
+  it("une location courte et chère est ramenée au niveau d'un véhicule acheté", () => {
+    // 900 €/mois = 10 800 €/an, au-dessus des 9 000 € d'annuité d'amortissement.
+    const r = computeSimulation(loue(900));
+    expect(r.aenPlafonneParEquivalentAchat).toBe(true);
+    expect(r.aenBaseAvantPlafond).toBeCloseTo(10800, 6);
+    expect(r.aenBaseAnnualCosts).toBeCloseTo(9000, 6);
+  });
+
+  it("le plafond suit l'âge du véhicule, comme l'amortissement qui le détermine", () => {
+    const r = computeSimulation(loue(900, { vehicleOverFiveYears: true }));
+    expect(r.aenBaseAnnualCosts).toBeCloseTo(4500, 6); // 10 % × 45 000
+  });
+
+  it("assurance et entretien figurent des deux côtés du plafond, donc ne le déclenchent pas", () => {
+    const sans = computeSimulation(loue(900));
+    const avec = computeSimulation(loue(900, { annualInsurance: 700, annualMaintenance: 300 }));
+    expect(avec.aenBaseAnnualCosts - sans.aenBaseAnnualCosts).toBeCloseTo(1000, 6);
+  });
+
+  it("un véhicule acheté n'est jamais plafonné : il EST la référence", () => {
+    for (const mode of ["comptant", "credit"] as const) {
+      const r = computeSimulation(loue(900, { financingMode: mode }));
+      expect(r.aenPlafonneParEquivalentAchat, mode).toBe(false);
+      expect(r.aenBaseAnnualCosts, mode).toBeCloseTo(9000, 6);
+    }
+  });
+
+  it("le plafond ne peut que réduire l'avantage, jamais l'augmenter", () => {
+    for (const loyer of [100, 400, 750, 900, 2000]) {
+      const r = computeSimulation(loue(loyer));
+      expect(r.aenBaseAnnualCosts, `${loyer} €/mois`).toBeLessThanOrEqual(r.aenBaseAvantPlafond + 1e-9);
+    }
   });
 });
