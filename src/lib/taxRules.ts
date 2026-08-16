@@ -189,6 +189,37 @@ export const TAX_RULES: TaxRule[] = [
     notes: "Barème 2026 reconduit à l'identique de 2025. Majoration de 20 % pour les véhicules électriques.",
   },
   {
+    id: "credit-impot-services-a-la-personne",
+    category: "impot_revenu",
+    label: "Crédit d'impôt pour l'emploi d'un salarié à domicile",
+    value: "50 % des dépenses, plafond 12 000 € majoré de 1 500 € par enfant à charge (maximum 15 000 €), ou 20 000 € en cas d'invalidité",
+    legalReference: "Art. 199 sexdecies CGI",
+    sourceLabel: "Légifrance / economie.gouv.fr",
+    sourceUrl: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000054251333",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Couvre le ménage, la garde d'enfants AU DOMICILE, le jardinage, le petit bricolage et le soutien scolaire, que le salarié soit employé directement ou par un organisme agréé.\n\n" +
+      "C'EST LE PLAFOND, PAS LE TAUX, QUI DÉCIDE. Le taux de 50 % est connu de tous ; le plafond l'est beaucoup moins. Il s'établit à 12 000 € de dépenses, majoré de 1 500 € par enfant à charge et par membre du foyer de plus de 65 ans, sans pouvoir dépasser 15 000 €. Une situation d'invalidité dans le foyer — carte mobilité inclusion « invalidité », pension de 3e catégorie, complément d'AEEH — le porte à 20 000 €, mais supprime en contrepartie toute majoration.\n\n" +
+      "VÉRITABLE CRÉDIT, non simple réduction : si son montant excède l'impôt dû, l'excédent est remboursé par virement plutôt que perdu.\n\n" +
+      "SANS EFFET SUR LES SIMULATIONS, et c'est le point que le simulateur tient à rendre explicite : un crédit d'impôt s'impute sur l'impôt DÛ, pas sur le revenu imposable. Il ne déplace aucune tranche et ne modifie donc pas le taux marginal appliqué à un euro de rémunération, d'avantage en nature ou d'indemnité d'occupation supplémentaire.",
+  },
+  {
+    id: "credit-impot-garde-jeunes-enfants",
+    category: "impot_revenu",
+    label: "Crédit d'impôt pour frais de garde des jeunes enfants hors du domicile",
+    value: "50 % des dépenses, plafond 3 500 € par enfant de moins de 6 ans (moitié en garde alternée)",
+    legalReference: "Art. 200 quater B CGI",
+    sourceLabel: "Légifrance / BOI-IR-RICI-300",
+    sourceUrl: "https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000051213135",
+    validFrom: "2026-01-01",
+    validUntil: "2026-12-31",
+    notes:
+      "Vise la garde HORS DU DOMICILE : crèche, halte-garderie, garderie périscolaire, assistante maternelle agréée. La garde au domicile relève de l'autre dispositif (art. 199 sexdecies), avec son propre plafond — les deux ne se cumulent pas sur une même dépense.\n\n" +
+      "Le plafond de 3 500 € s'apprécie PAR ENFANT de moins de six ans au 1er janvier de l'année d'imposition, et non globalement : le crédit maximal atteint donc 1 750 € par enfant. Il est réduit de moitié lorsque l'enfant est réputé à charge égale de ses deux parents.\n\n" +
+      "Les dépenses retenues sont nettes des aides perçues, notamment le complément de libre choix du mode de garde. Comme le précédent, c'est un véritable crédit : l'excédent est restitué. Et comme lui, il ne modifie pas le taux marginal d'imposition du foyer.",
+  },
+  {
     id: "coworking-deplacement-professionnel-vs-trajet-habituel",
     category: "fiscalite_vehicule_societe",
     label: "Trajet vers un espace de coworking : déplacement professionnel ou trajet domicile-travail ?",

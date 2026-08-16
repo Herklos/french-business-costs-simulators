@@ -1,7 +1,16 @@
 import type { ReactNode } from "react";
-import { type PersonalTaxProfile } from "../lib/frenchIncomeTax";
+import {
+  type PersonalTaxProfile,
+  PLAFOND_GARDE_ENFANTS_PAR_ENFANT,
+  PLAFOND_SERVICES_PERSONNE_INVALIDITE,
+  PLAFOND_SERVICES_PERSONNE_MAJORE_MAX,
+  TAUX_CREDIT_GARDE_ENFANTS,
+  TAUX_CREDIT_SERVICES_PERSONNE,
+  resolvePersonalTaxProfile,
+} from "../lib/frenchIncomeTax";
 import { Field, NumberInput, ResetableNumberInput } from "./Field";
-import { formatPercent } from "../lib/format";
+import { RuleNote } from "./RuleNote";
+import { formatEUR, formatPercent } from "../lib/format";
 
 interface PersonalTaxProfileFieldsProps {
   profile: PersonalTaxProfile;
@@ -117,7 +126,156 @@ export function PersonalTaxProfileFields({
           {footerWhenCalcule}
         </>
       )}
+      <CreditsImpotFields profile={profile} onChange={onChange} />
       {footerAlways}
     </>
+  );
+}
+
+/**
+ * Crédits d'impôt du foyer — emploi à domicile, garde d'enfants, autres dispositifs.
+ *
+ * Bloc replié par défaut : il ne change aucun résultat de simulation, et c'est précisément ce que
+ * la plupart des utilisateurs ignorent. Un crédit d'impôt s'impute sur l'impôt DÛ, pas sur le revenu
+ * imposable : il ne déplace aucune tranche, et un euro de revenu supplémentaire reste taxé au même
+ * taux marginal. Le bloc le dit en toutes lettres plutôt que de laisser croire à un effet de levier.
+ */
+function CreditsImpotFields({
+  profile,
+  onChange,
+}: {
+  profile: PersonalTaxProfile;
+  onChange: (profile: PersonalTaxProfile) => void;
+}) {
+  const r = resolvePersonalTaxProfile(profile);
+  const update = <K extends keyof PersonalTaxProfile>(key: K, value: PersonalTaxProfile[K]) =>
+    onChange({ ...profile, [key]: value });
+
+  return (
+    <details className="details-block">
+      <summary>
+        Crédits d'impôt du foyer — emploi à domicile, garde d'enfants
+        {r.creditsImpotTotal > 0 ? ` (${formatEUR(r.creditsImpotTotal)})` : ""}
+      </summary>
+
+      <div className="grid grid--2">
+        <Field
+          label="Dépenses d'emploi à domicile (€/an)"
+          hint="Ménage, garde d'enfants à votre domicile, jardinage, petit bricolage, soutien scolaire — salarié direct ou organisme agréé."
+        >
+          <NumberInput
+            value={profile.depensesServicesPersonne}
+            onChange={(e) => update("depensesServicesPersonne", Number(e.target.value))}
+          />
+        </Field>
+        <div className="field">
+          <span className="field__label">Invalidité dans le foyer ?</span>
+          <select
+            value={profile.foyerInvalidite ? "oui" : "non"}
+            onChange={(e) => update("foyerInvalidite", e.target.value === "oui")}
+          >
+            <option value="non">Non</option>
+            <option value="oui">Oui — carte mobilité inclusion « invalidité » ou pension 3e catégorie</option>
+          </select>
+          <span className="field__hint">
+            Porte le plafond à {formatEUR(PLAFOND_SERVICES_PERSONNE_INVALIDITE)}, sans majoration possible.
+          </span>
+        </div>
+      </div>
+
+      <div className="grid grid--2">
+        <Field
+          label="Dépenses de garde hors domicile (€/an)"
+          hint="Crèche, halte-garderie, assistante maternelle agréée — enfants de moins de 6 ans uniquement."
+        >
+          <NumberInput
+            value={profile.depensesGardeEnfantsHorsDomicile}
+            onChange={(e) => update("depensesGardeEnfantsHorsDomicile", Number(e.target.value))}
+          />
+        </Field>
+        <Field
+          label="Nombre d'enfants de moins de 6 ans gardés"
+          hint={`Le plafond s'apprécie par enfant : ${formatEUR(PLAFOND_GARDE_ENFANTS_PAR_ENFANT)} de dépenses chacun.`}
+        >
+          <NumberInput
+            min={0}
+            value={profile.nombreEnfantsGardeHorsDomicile}
+            onChange={(e) => update("nombreEnfantsGardeHorsDomicile", Number(e.target.value))}
+          />
+        </Field>
+      </div>
+
+      <Field
+        label="Autres crédits et réductions d'impôt (€/an)"
+        hint="Saisis ici en MONTANT de crédit, et non en dépense : dons, cotisations syndicales, investissements locatifs… les taux varient d'un dispositif à l'autre."
+      >
+        <NumberInput
+          value={profile.autresCreditsImpot}
+          onChange={(e) => update("autresCreditsImpot", Number(e.target.value))}
+        />
+      </Field>
+
+      {r.creditsImpotTotal > 0 && (
+        <p className="hint-block">
+          Crédit total : <strong>{formatEUR(r.creditsImpotTotal)}</strong>
+          {r.creditServicesPersonne > 0 && (
+            <>
+              {" "}
+              · emploi à domicile {formatEUR(r.creditServicesPersonne)} ({formatPercent(TAUX_CREDIT_SERVICES_PERSONNE)}{" "}
+              de {formatEUR(Math.min(profile.depensesServicesPersonne, r.plafondServicesPersonne))} retenus, plafond{" "}
+              {formatEUR(r.plafondServicesPersonne)})
+            </>
+          )}
+          {r.creditGardeEnfants > 0 && (
+            <>
+              {" "}
+              · garde hors domicile {formatEUR(r.creditGardeEnfants)} ({formatPercent(TAUX_CREDIT_GARDE_ENFANTS)} de{" "}
+              {formatEUR(Math.min(profile.depensesGardeEnfantsHorsDomicile, r.plafondGardeEnfants))} retenus)
+            </>
+          )}
+          . Impôt du foyer : {formatEUR(r.impotApresDecote)} avant crédits,{" "}
+          <strong>{formatEUR(r.impotApresCreditsImpot)}</strong> après
+          {r.restitutionAttendue > 0 && (
+            <>
+              {" "}
+              — et {formatEUR(r.restitutionAttendue)} restitués par virement, l'excédent d'un véritable crédit
+              n'étant pas perdu
+            </>
+          )}
+          .
+        </p>
+      )}
+
+      {(r.plafondAtteintServicesPersonne || r.plafondAtteintGardeEnfants) && (
+        <p className="warning-block">
+          {r.plafondAtteintServicesPersonne && (
+            <>
+              Vos dépenses d'emploi à domicile dépassent le plafond de {formatEUR(r.plafondServicesPersonne)} :
+              l'excédent n'ouvre aucun crédit.{" "}
+              {!profile.foyerInvalidite && r.plafondServicesPersonne < PLAFOND_SERVICES_PERSONNE_MAJORE_MAX && (
+                <>Chaque enfant à charge relève ce plafond de 1 500 €, dans la limite de {formatEUR(PLAFOND_SERVICES_PERSONNE_MAJORE_MAX)}. </>
+              )}
+            </>
+          )}
+          {r.plafondAtteintGardeEnfants && (
+            <>
+              Vos dépenses de garde hors domicile dépassent le plafond de {formatEUR(r.plafondGardeEnfants)} pour{" "}
+              {profile.nombreEnfantsGardeHorsDomicile} enfant
+              {profile.nombreEnfantsGardeHorsDomicile > 1 ? "s" : ""}.
+            </>
+          )}
+        </p>
+      )}
+
+      <p>
+        <strong>Ces crédits ne changent aucun résultat de simulation, et c'est normal.</strong> Un crédit d'impôt
+        s'impute sur l'impôt <em>dû</em>, pas sur le revenu imposable : il ne déplace aucune tranche. Un euro de
+        rémunération, d'avantage en nature ou d'indemnité d'occupation supplémentaire reste donc taxé au même taux
+        marginal, que le foyer ait ou non des crédits. Ils sont renseignés ici pour situer l'impôt réellement payé —
+        pas pour rendre un euro marginal moins cher.
+      </p>
+      <RuleNote ruleId="credit-impot-services-a-la-personne" />
+      <RuleNote ruleId="credit-impot-garde-jeunes-enfants" />
+    </details>
   );
 }

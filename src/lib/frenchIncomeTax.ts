@@ -118,6 +118,16 @@ export interface PersonalTaxProfile {
   salaireNetImposableAnnuel: number; // salaire du gérant (hors AEN), avant abattement 10%
   conjointSalaireNetImposableAnnuel: number; // salaire du conjoint (si couple), avant abattement 10% — 0 sinon
   autresRevenusImposablesFoyer: number; // autres revenus du foyer (revenus fonciers, dividendes, etc.), déjà nets imposables
+
+  // Crédits d'impôt du foyer. Ils interviennent APRÈS le calcul de l'impôt — ils n'entrent pas dans
+  // le revenu imposable et ne modifient donc NI la tranche, NI le taux marginal appliqué par les
+  // simulateurs. Ils sont saisis en DÉPENSES engagées, pas en montant de crédit : c'est le plafond
+  // applicable, souvent mal connu, qui fait la différence entre les deux.
+  depensesServicesPersonne: number; // emploi à domicile : ménage, garde d'enfants au domicile, jardinage, soutien scolaire...
+  depensesGardeEnfantsHorsDomicile: number; // crèche, halte-garderie, assistante maternelle agréée (enfants de moins de 6 ans)
+  nombreEnfantsGardeHorsDomicile: number; // nombre d'enfants concernés — le plafond s'apprécie par enfant
+  foyerInvalidite: boolean; // relève le plafond de l'emploi à domicile et supprime ses majorations
+  autresCreditsImpot: number; // saisi ici en MONTANT DE CRÉDIT, les taux variant d'un dispositif à l'autre
 }
 
 export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
@@ -129,14 +139,30 @@ export function createDefaultPersonalTaxProfile(): PersonalTaxProfile {
     salaireNetImposableAnnuel: 30000,
     conjointSalaireNetImposableAnnuel: 0,
     autresRevenusImposablesFoyer: 0,
+    depensesServicesPersonne: 0,
+    depensesGardeEnfantsHorsDomicile: 0,
+    nombreEnfantsGardeHorsDomicile: 0,
+    foyerInvalidite: false,
+    autresCreditsImpot: 0,
   };
 }
 
 export interface ResolvedTaxProfile extends IRResult {
   tauxUtilise: number; // taux marginal effectivement appliqué à l'AEN (manuel, ou calculé + effet décote)
-  impotApresDecote: number; // impôt total du foyer après décote (hors AEN)
+  impotApresDecote: number; // impôt total du foyer après décote (hors AEN), AVANT crédits d'impôt
   tauxMarginalEffectif: number; // tmi × 1,4525 si le foyer est dans la zone de décote, sinon tmi
   dansZoneDecote: boolean;
+
+  // Crédits d'impôt — calculés à titre informatif, sans effet sur `tauxUtilise` (cf. note ci-dessous).
+  plafondServicesPersonne: number;
+  creditServicesPersonne: number;
+  plafondAtteintServicesPersonne: boolean;
+  plafondGardeEnfants: number;
+  creditGardeEnfants: number;
+  plafondAtteintGardeEnfants: boolean;
+  creditsImpotTotal: number;
+  impotApresCreditsImpot: number; // impôt réellement dû, 0 si les crédits l'absorbent
+  restitutionAttendue: number; // excédent remboursé par l'administration
 }
 
 /**
@@ -145,6 +171,51 @@ export interface ResolvedTaxProfile extends IRResult {
  * computeEffectiveMarginalRate) : un euro d'AEN supplémentaire coûte plus cher en IR pour un foyer
  * situé dans la zone de décote que ne le suggère le seul taux de la tranche.
  */
+export const TAUX_CREDIT_SERVICES_PERSONNE = 0.5; // art. 199 sexdecies CGI
+export const PLAFOND_SERVICES_PERSONNE_BASE = 12000;
+export const MAJORATION_SERVICES_PERSONNE_PAR_ENFANT = 1500;
+export const PLAFOND_SERVICES_PERSONNE_MAJORE_MAX = 15000;
+export const PLAFOND_SERVICES_PERSONNE_INVALIDITE = 20000; // sans majoration possible
+
+export const TAUX_CREDIT_GARDE_ENFANTS = 0.5; // art. 200 quater B CGI
+export const PLAFOND_GARDE_ENFANTS_PAR_ENFANT = 3500;
+
+/**
+ * Crédits d'impôt du foyer, à partir des dépenses engagées.
+ *
+ * Le plafond de l'emploi à domicile est majoré de 1 500 € par enfant à charge, sans pouvoir excéder
+ * 15 000 € — sauf situation d'invalidité, qui le porte à 20 000 € et supprime en contrepartie toute
+ * majoration. C'est ce plafond, bien plus que le taux de 50 %, qui détermine l'avantage réel.
+ */
+export function computeCreditsImpot(profile: PersonalTaxProfile) {
+  const enfants = Math.max(0, Math.floor(profile.nombreEnfants));
+  const plafondServicesPersonne = profile.foyerInvalidite
+    ? PLAFOND_SERVICES_PERSONNE_INVALIDITE
+    : Math.min(
+        PLAFOND_SERVICES_PERSONNE_BASE + MAJORATION_SERVICES_PERSONNE_PAR_ENFANT * enfants,
+        PLAFOND_SERVICES_PERSONNE_MAJORE_MAX,
+      );
+  const depensesSAP = Math.max(0, profile.depensesServicesPersonne);
+  const retenuSAP = Math.min(depensesSAP, plafondServicesPersonne);
+
+  const enfantsGardes = Math.max(0, Math.floor(profile.nombreEnfantsGardeHorsDomicile));
+  const plafondGardeEnfants = PLAFOND_GARDE_ENFANTS_PAR_ENFANT * enfantsGardes;
+  const depensesGarde = Math.max(0, profile.depensesGardeEnfantsHorsDomicile);
+  const retenuGarde = Math.min(depensesGarde, plafondGardeEnfants);
+
+  const creditServicesPersonne = retenuSAP * TAUX_CREDIT_SERVICES_PERSONNE;
+  const creditGardeEnfants = retenuGarde * TAUX_CREDIT_GARDE_ENFANTS;
+  return {
+    plafondServicesPersonne,
+    creditServicesPersonne,
+    plafondAtteintServicesPersonne: depensesSAP > plafondServicesPersonne,
+    plafondGardeEnfants,
+    creditGardeEnfants,
+    plafondAtteintGardeEnfants: depensesGarde > plafondGardeEnfants,
+    creditsImpotTotal: creditServicesPersonne + creditGardeEnfants + Math.max(0, profile.autresCreditsImpot),
+  };
+}
+
 export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): ResolvedTaxProfile {
   const parts = computeParts(profile.situationFamiliale, profile.nombreEnfants);
   const salaireApresAbattement = applyAbattement10(profile.salaireNetImposableAnnuel);
@@ -160,5 +231,24 @@ export function resolvePersonalTaxProfile(profile: PersonalTaxProfile): Resolved
 
   const tauxUtilise = profile.mode === "manuel" ? profile.tauxManuel : tauxMarginalEffectif;
 
-  return { ...ir, tauxUtilise, impotApresDecote, tauxMarginalEffectif, dansZoneDecote };
+  // Les crédits d'impôt s'imputent sur l'impôt DÛ, pas sur le revenu imposable : ils ne déplacent
+  // aucune tranche et ne modifient donc pas `tauxUtilise`. Un euro de revenu supplémentaire reste
+  // taxé au même taux marginal, que le foyer ait ou non des crédits — et c'est précisément la
+  // confusion que la présence de ces champs risque d'induire, donc celle que l'interface corrige.
+  const credits = computeCreditsImpot(profile);
+  const impotApresCreditsImpot = Math.max(0, impotApresDecote - credits.creditsImpotTotal);
+  // Les deux dispositifs modélisés sont de véritables CRÉDITS, non des réductions : leur excédent
+  // est remboursé par virement, il n'est pas perdu.
+  const restitutionAttendue = Math.max(0, credits.creditsImpotTotal - impotApresDecote);
+
+  return {
+    ...ir,
+    tauxUtilise,
+    impotApresDecote,
+    tauxMarginalEffectif,
+    dansZoneDecote,
+    ...credits,
+    impotApresCreditsImpot,
+    restitutionAttendue,
+  };
 }
