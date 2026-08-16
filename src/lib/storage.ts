@@ -98,6 +98,8 @@ export function withPersistedPersonalTaxProfile<T extends { personalTaxProfile: 
 // Brouillon du simulateur bureau à domicile : TOUT ce que l'utilisateur y saisit, hors identité de
 // la simulation et hors profil fiscal du foyer (persisté à part, car transversal aux simulateurs).
 // Rechargé automatiquement à l'ouverture de la page, sans action explicite.
+const VEHICLE_DRAFT_KEY = "fbcs_vehicle_draft_v1";
+
 const HOME_OFFICE_DRAFT_KEY = "fbcs_home_office_draft_v1";
 
 /** Ancienne clé, limitée à la description du logement. Relue une dernière fois pour ne rien perdre. */
@@ -135,5 +137,27 @@ export function clearHomeOfficeDraft() {
     localStorage.removeItem(HOME_OFFICE_DRAFT_LEGACY_KEY);
   } catch {
     // idem : l'absence de stockage n'est pas une erreur fonctionnelle.
+  }
+}
+
+/** Brouillon du formulaire véhicule, retourné brut : la validation revient à l'appelant. */
+export function loadVehicleDraft(): unknown {
+  return lireJson(VEHICLE_DRAFT_KEY);
+}
+
+export function saveVehicleDraft(draft: unknown) {
+  try {
+    localStorage.setItem(VEHICLE_DRAFT_KEY, JSON.stringify(draft));
+  } catch {
+    // idem : le pré-remplissage est un confort, jamais une condition d'usage du simulateur.
+  }
+}
+
+/** Oublie le brouillon — utile après un changement de véhicule, pour repartir des valeurs par défaut. */
+export function clearVehicleDraft() {
+  try {
+    localStorage.removeItem(VEHICLE_DRAFT_KEY);
+  } catch {
+    // idem.
   }
 }

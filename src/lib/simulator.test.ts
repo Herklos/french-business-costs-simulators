@@ -5,6 +5,9 @@ import {
   applyVehicleModel,
   computeSimulation,
   createDefaultInputs,
+  CHAMPS_VEHICULE_NON_PERSISTES,
+  applyVehicleDraft,
+  extractVehicleDraft,
 } from "./simulator";
 
 function withFinancingLoa(inputs: SimulationInputs, patch: Partial<SimulationInputs["financing"]["loa"]>): SimulationInputs {
@@ -1442,5 +1445,211 @@ describe("computeSimulation — l'usage privé ne crée aucun seuil de légalit�
     expect(r.aenBrut).toBeGreaterThan(0);
     expect(r.quotePartProfessionnelleDeductible).toBe(0);
     expect(Number.isFinite(r.coutNetSociete)).toBe(true);
+  });
+});
+
+describe("brouillon véhicule — ce qui est mémorisé, et ce qui ne l'est pas", () => {
+  it("mémorise tout le formulaire par soustraction, sans liste à maintenir", () => {
+    const inputs = createDefaultInputs();
+    const draft = extractVehicleDraft(inputs) as Record<string, unknown>;
+    const exclus = new Set<string>(CHAMPS_VEHICULE_NON_PERSISTES);
+    // Toute clé du formulaire est persistée, sauf les exclusions déclarées. Un champ ajouté demain
+    // à SimulationInputs sera donc mémorisé sans intervention — c'est l'objet de ce test.
+    for (const cle of Object.keys(inputs)) {
+      expect(cle in draft, `${cle} devrait être ${exclus.has(cle) ? "exclu" : "persisté"}`).toBe(!exclus.has(cle));
+    }
+  });
+
+  it("n'emporte ni les identifiants techniques, ni le nom, ni le profil fiscal transversal", () => {
+    const draft = extractVehicleDraft(createDefaultInputs()) as Record<string, unknown>;
+    for (const cle of ["id", "name", "createdAt", "personalTaxProfile"]) {
+      expect(draft[cle], cle).toBeUndefined();
+    }
+  });
+
+  it("un aller-retour complet restitue exactement la saisie", () => {
+    const base = createDefaultInputs();
+    const saisi: SimulationInputs = {
+      ...base,
+      vehiclePrice: 45000,
+      isElectric: true,
+      privateUsePercent: 90,
+      totalKmAnnual: 10000,
+      tnsContributionRate: 0.41,
+      corporateTaxRate: 0.15,
+      beneficeAvantChargePrevisionnel: 20000,
+      chiffreAffairesPrevisionnel: 50000,
+      eligibleTauxReduitPME: false,
+      monthlyParticipation: 150,
+      modeVersementParticipation: "retenue_brute",
+      financingMode: "loa",
+      personalFinancingMode: "lld",
+      nomDirigeant: "Camille Martin",
+      annualVehicleTaxOverride: 320,
+      vehicleModelId: "tesla-model-y-berlin",
+      financing: { ...base.financing, loa: { ...base.financing.loa, loyerMensuel: 491, dureeMois: 48 } },
+    };
+    const relu = applyVehicleDraft(createDefaultInputs(), extractVehicleDraft(saisi));
+    for (const cle of Object.keys(saisi) as (keyof SimulationInputs)[]) {
+      if ((CHAMPS_VEHICULE_NON_PERSISTES as readonly string[]).includes(cle)) continue;
+      expect(relu[cle], cle).toEqual(saisi[cle]);
+    }
+  });
+
+  it("restitue en particulier la section « Cotisations & fiscalité »", () => {
+    const saisi = {
+      ...createDefaultInputs(),
+      tnsContributionRate: 0.38,
+      corporateTaxRate: 0.15,
+      beneficeAvantChargePrevisionnel: 12345,
+      chiffreAffairesPrevisionnel: 67890,
+      eligibleTauxReduitPME: false,
+      ikRatePerKm: 0.72,
+      monthlyParticipation: 200,
+      tauxTVA: 0.055,
+      tauxExtractionResultat: 0.45,
+    };
+    const relu = applyVehicleDraft(createDefaultInputs(), extractVehicleDraft(saisi));
+    expect(relu.tnsContributionRate).toBe(0.38);
+    expect(relu.corporateTaxRate).toBe(0.15);
+    expect(relu.beneficeAvantChargePrevisionnel).toBe(12345);
+    expect(relu.chiffreAffairesPrevisionnel).toBe(67890);
+    expect(relu.eligibleTauxReduitPME).toBe(false);
+    expect(relu.ikRatePerKm).toBe(0.72);
+    expect(relu.monthlyParticipation).toBe(200);
+    expect(relu.tauxTVA).toBe(0.055);
+    expect(relu.tauxExtractionResultat).toBe(0.45);
+  });
+
+  it("restitue les paramètres de financement imbriqués, mode par mode", () => {
+    const base = createDefaultInputs();
+    const saisi: SimulationInputs = {
+      ...base,
+      financing: {
+        ...base.financing,
+        credit: { ...base.financing.credit, tauxAnnuel: 0.059, dureeMois: 72, apport: 5000 },
+        loa: { ...base.financing.loa, premierLoyerMajore: 250, loyerMensuel: 491, valeurOptionAchat: 20722 },
+        lld: { ...base.financing.lld, loyerMensuel: 620, kmInclusAnnuel: 12000 },
+      },
+    };
+    const relu = applyVehicleDraft(createDefaultInputs(), extractVehicleDraft(saisi));
+    expect(relu.financing.credit.tauxAnnuel).toBe(0.059);
+    expect(relu.financing.credit.dureeMois).toBe(72);
+    expect(relu.financing.loa.loyerMensuel).toBe(491);
+    expect(relu.financing.loa.valeurOptionAchat).toBe(20722);
+    expect(relu.financing.lld.kmInclusAnnuel).toBe(12000);
+  });
+
+  it("les deux absences légitimes — pas de surcharge de taxe, pas de modèle — sont restituées", () => {
+    const saisi = { ...createDefaultInputs(), annualVehicleTaxOverride: null, vehicleModelId: null };
+    const relu = applyVehicleDraft(
+      { ...createDefaultInputs(), annualVehicleTaxOverride: 400, vehicleModelId: "tesla-model-3" },
+      extractVehicleDraft(saisi),
+    );
+    expect(relu.annualVehicleTaxOverride).toBeNull();
+    expect(relu.vehicleModelId).toBeNull();
+  });
+});
+
+describe("brouillon véhicule — robustesse à une donnée abîmée", () => {
+  const defauts = createDefaultInputs();
+
+  it("un brouillon absent, vide ou d'un autre type laisse les défauts intacts", () => {
+    for (const draft of [null, undefined, 42, "texte", [], true]) {
+      expect(applyVehicleDraft(defauts, draft), String(draft)).toEqual(defauts);
+    }
+  });
+
+  it("un champ invalide retombe sur son défaut sans emporter les champs voisins", () => {
+    const relu = applyVehicleDraft(defauts, {
+      vehiclePrice: "quarante mille",
+      privateUsePercent: 90,
+      corporateTaxRate: Number.NaN,
+      totalKmAnnual: 12000,
+    });
+    expect(relu.vehiclePrice).toBe(defauts.vehiclePrice);
+    expect(relu.corporateTaxRate).toBe(defauts.corporateTaxRate);
+    // Les champs valides voisins survivent : c'est tout l'intérêt d'une validation champ par champ.
+    expect(relu.privateUsePercent).toBe(90);
+    expect(relu.totalKmAnnual).toBe(12000);
+  });
+
+  it("un taux saisi en pourcentage plutôt qu'en fraction est rejeté, pas écrêté", () => {
+    // 43 relu là où l'on attend 0,43 multiplierait les cotisations par cent. L'écrêter à 1 serait
+    // tout aussi faux : on repart du défaut, qui est au moins plausible.
+    const relu = applyVehicleDraft(defauts, { tnsContributionRate: 43, corporateTaxRate: 25 });
+    expect(relu.tnsContributionRate).toBe(defauts.tnsContributionRate);
+    expect(relu.corporateTaxRate).toBe(defauts.corporateTaxRate);
+  });
+
+  it("un montant négatif est rejeté", () => {
+    expect(applyVehicleDraft(defauts, { vehiclePrice: -5000 }).vehiclePrice).toBe(defauts.vehiclePrice);
+  });
+
+  it("une valeur hors des choix admis est rejetée", () => {
+    const relu = applyVehicleDraft(defauts, {
+      financingMode: "troc",
+      impositionSociete: "IS",
+      modeVersementParticipation: "virement_occulte",
+    });
+    expect(relu.financingMode).toBe(defauts.financingMode);
+    expect(relu.modeVersementParticipation).toBe(defauts.modeVersementParticipation);
+    expect(relu.impositionSociete).toBe("IS");
+  });
+
+  it("une clé inconnue du code est ignorée sans faire échouer la relecture", () => {
+    const relu = applyVehicleDraft(defauts, { champInvente: 1, privateUsePercent: 70 });
+    expect((relu as unknown as Record<string, unknown>).champInvente).toBeUndefined();
+    expect(relu.privateUsePercent).toBe(70);
+  });
+
+  it("un sous-objet de financement abîmé n'emporte pas les autres modes", () => {
+    const relu = applyVehicleDraft(defauts, {
+      financing: { loa: { loyerMensuel: "cher" }, lld: { loyerMensuel: 620 } },
+    });
+    expect(relu.financing.loa.loyerMensuel).toBe(defauts.financing.loa.loyerMensuel);
+    expect(relu.financing.lld.loyerMensuel).toBe(620);
+    expect(relu.financing.credit).toEqual(defauts.financing.credit);
+  });
+
+  it("le profil fiscal n'est jamais relu depuis ce brouillon, même s'il y figure", () => {
+    const relu = applyVehicleDraft(defauts, {
+      personalTaxProfile: { mode: "manuel", tauxManuel: 0.45 },
+    });
+    expect(relu.personalTaxProfile).toEqual(defauts.personalTaxProfile);
+  });
+
+  it("le brouillon relu produit toujours une simulation calculable", () => {
+    const abime = { vehiclePrice: -1, privateUsePercent: "beaucoup", financing: null, tauxTVA: 99 };
+    const r = computeSimulation(applyVehicleDraft(defauts, abime));
+    expect(Number.isFinite(r.coutNetSociete)).toBe(true);
+    expect(Number.isFinite(r.aenBrut)).toBe(true);
+  });
+});
+
+describe("brouillon véhicule — champs nullables", () => {
+  const defauts = createDefaultInputs();
+
+  it("une valeur numérique est restituée même quand le défaut du champ est null", () => {
+    // Régression : un champ dont le défaut vaut `null` ne permet pas de déduire le type attendu.
+    // La validation générique par comparaison de types le rejetait donc systématiquement, et la
+    // surcharge manuelle de taxe annuelle ne survivait jamais à un rechargement.
+    expect(defauts.annualVehicleTaxOverride).toBeNull();
+    expect(applyVehicleDraft(defauts, { annualVehicleTaxOverride: 320 }).annualVehicleTaxOverride).toBe(320);
+  });
+
+  it("un identifiant de modèle est restitué s'il existe encore dans le registre, ignoré sinon", () => {
+    expect(applyVehicleDraft(defauts, { vehicleModelId: "tesla-model-y-berlin" }).vehicleModelId).toBe(
+      "tesla-model-y-berlin",
+    );
+    // Modèle retiré du code depuis la dernière visite : le sélecteur ne saurait pas l'afficher.
+    expect(applyVehicleDraft(defauts, { vehicleModelId: "modele-disparu" }).vehicleModelId).toBe(
+      defauts.vehicleModelId,
+    );
+  });
+
+  it("une surcharge de taxe négative ou non numérique est rejetée", () => {
+    expect(applyVehicleDraft(defauts, { annualVehicleTaxOverride: -50 }).annualVehicleTaxOverride).toBeNull();
+    expect(applyVehicleDraft(defauts, { annualVehicleTaxOverride: "beaucoup" }).annualVehicleTaxOverride).toBeNull();
   });
 });

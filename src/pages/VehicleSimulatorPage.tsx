@@ -10,6 +10,8 @@ import {
   DEFAULT_TNS_RATE,
   DEFAULT_TVA_RATE,
   applyVehicleModel,
+  applyVehicleDraft,
+  extractVehicleDraft,
   computeSimulation,
   createDefaultInputs,
 } from "../lib/simulator";
@@ -32,7 +34,13 @@ import {
   OptionsComparison,
 } from "../components/OptionsComparison";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
-import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import {
+  clearVehicleDraft,
+  loadVehicleDraft,
+  savePersonalTaxProfile,
+  saveVehicleDraft,
+  withPersistedPersonalTaxProfile,
+} from "../lib/storage";
 import { CopyButton } from "../components/CopyButton";
 import { ShareButton } from "../components/ShareButton";
 import { PrintableReport } from "../components/PrintableReport";
@@ -193,8 +201,14 @@ function buildVehicleExportText(sim: SimulationInputs): string {
 const PERIOD_SUFFIX: Record<CostPeriod, string> = { annuel: "/an", mensuel: "/mois" };
 
 export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: string }) {
-  const [inputs, setInputs] = useState<SimulationInputs>(
-    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultInputs()), initialShareData),
+  // Ordre d'application, du plus général au plus spécifique : valeurs par défaut, puis brouillon
+  // mémorisé sur cet appareil, puis profil fiscal transversal, puis — s'il y en a un — le lien de
+  // partage, qui décrit une simulation précise et doit donc l'emporter sur les préférences locales.
+  const [inputs, setInputs] = useState<SimulationInputs>(() =>
+    mergeSharedInputs(
+      withPersistedPersonalTaxProfile(applyVehicleDraft(createDefaultInputs(), loadVehicleDraft())),
+      initialShareData,
+    ),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
@@ -215,6 +229,21 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
     window.print();
   }, [impression]);
 
+  /**
+   * Repart des valeurs par défaut — après un changement de véhicule, par exemple. Le profil fiscal
+   * du foyer est conservé : il est transversal aux simulateurs et n'a rien à voir avec le véhicule.
+   */
+  function oublierVehiculeMemorise() {
+    clearVehicleDraft();
+    setInputs((prev) => ({
+      ...createDefaultInputs(),
+      id: prev.id,
+      name: prev.name,
+      createdAt: prev.createdAt,
+      personalTaxProfile: prev.personalTaxProfile,
+    }));
+  }
+
   function updateBorne<K extends keyof BorneRechargeInputs>(key: K, value: BorneRechargeInputs[K]) {
     setBorneInputs((prev) => ({ ...prev, [key]: value }));
   }
@@ -225,6 +254,12 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
   useEffect(() => {
     savePersonalTaxProfile(inputs.personalTaxProfile);
   }, [inputs.personalTaxProfile]);
+
+  // Tout le reste du formulaire — véhicule, usage, charges, taux de cotisations et d'impôt,
+  // financement, optimisations — est mémorisé sur cet appareil et rechargé à la visite suivante.
+  useEffect(() => {
+    saveVehicleDraft(extractVehicleDraft(inputs));
+  }, [inputs]);
 
   function toPeriod(annualValue: number): number {
     return costPeriod === "mensuel" ? annualValue / 12 : annualValue;
@@ -361,6 +396,16 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
 
       <div className="layout">
         <div className="layout__form">
+          <p className="charges-toolbar">
+            <span className="charges-toolbar__context">
+              💾 Véhicule, usage, charges, taux de cotisations et d'impôt, financement et optimisations sont mémorisés
+              sur cet appareil et rechargés à votre prochaine visite. Rien n'est envoyé ailleurs.
+            </span>
+            <button type="button" className="charge-line__apply" onClick={oublierVehiculeMemorise}>
+              Oublier ce véhicule
+            </button>
+          </p>
+
           <Section title="Juridiction & structure" subtitle="Détermine le statut du dirigeant et le régime applicable.">
             <CompanyTypeFields
               country={inputs.country}

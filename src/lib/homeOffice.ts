@@ -10,6 +10,7 @@
 
 import type { ImpositionSociete } from "./companyTypes";
 import { type PersonalTaxProfile, createDefaultPersonalTaxProfile, resolvePersonalTaxProfile } from "./frenchIncomeTax";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 import { computeEconomieImpotIS } from "./corporateTax";
 import { loyerAnnuelLogement, prixM2Ville } from "./loyersVille";
 import { montantReferenceCharge } from "./logementCharges";
@@ -250,107 +251,46 @@ export const CHAMPS_NON_PERSISTES = ["id", "createdAt", "personalTaxProfile"] as
 
 export type HomeOfficeDraft = Omit<HomeOfficeInputs, (typeof CHAMPS_NON_PERSISTES)[number]>;
 
-/** Extrait du formulaire tout ce que l'utilisateur a pu modifier, hors champs exclus ci-dessus. */
-export function extractHomeOfficeDraft(inputs: HomeOfficeInputs): HomeOfficeDraft {
-  // Déstructuration plutôt qu'une liste à maintenir : un champ ajouté à HomeOfficeInputs est
-  // automatiquement persisté, sans qu'on ait à y penser.
-  const { id: _id, createdAt: _createdAt, personalTaxProfile: _profile, ...draft } = inputs;
-  return draft;
-}
-
-/** Valeurs admises pour les champs à choix fermé, vérifiées à la relecture. */
-const VALEURS_ADMISES: Partial<Record<keyof HomeOfficeDraft, readonly string[]>> = {
-  statutOccupant: ["locataire", "proprietaire"],
-  typeLogement: ["appartement", "maison"],
-  regimeFoncier: ["micro", "reel"],
-  formalisation: ["indemnite", "bail_professionnel"],
-  impositionSociete: ["IS", "IR"],
-  typeComparaisonExterne: ["location", "coworking"],
+/** Ce que la validation générique de `draft.ts` ne peut pas deviner de ce formulaire. */
+const SCHEMA_BROUILLON: DraftSchema = {
+  champsNonPersistes: CHAMPS_NON_PERSISTES,
+  valeursAdmises: {
+    statutOccupant: ["locataire", "proprietaire"],
+    typeLogement: ["appartement", "maison"],
+    regimeFoncier: ["micro", "reel"],
+    formalisation: ["indemnite", "bail_professionnel"],
+    impositionSociete: ["IS", "IR"],
+    typeComparaisonExterne: ["location", "coworking"],
+  },
+  champsTaux: ["toleranceSurfaceBureau", "corporateTaxRate"],
+  listesParId: {
+    chargeLines: (p, c) => ({
+      montantAnnuel: typeof p.montantAnnuel === "number" && Number.isFinite(p.montantAnnuel) && p.montantAnnuel >= 0
+        ? p.montantAnnuel
+        : c.montantAnnuel,
+      enabled: typeof p.enabled === "boolean" ? p.enabled : c.enabled,
+    }),
+    surfacesAnnexes: (p, c) => ({
+      surfaceM2: typeof p.surfaceM2 === "number" && Number.isFinite(p.surfaceM2) && p.surfaceM2 >= 0
+        ? p.surfaceM2
+        : c.surfaceM2,
+      coefficientPro:
+        typeof p.coefficientPro === "number" && Number.isFinite(p.coefficientPro)
+          ? Math.min(1, Math.max(0, p.coefficientPro))
+          : c.coefficientPro,
+      enabled: typeof p.enabled === "boolean" ? p.enabled : c.enabled,
+    }),
+  },
 };
 
-/** Champs bornés à l'intervalle [0, 1] : un taux relu hors bornes produirait des montants absurdes. */
-const CHAMPS_TAUX: readonly (keyof HomeOfficeDraft)[] = ["toleranceSurfaceBureau", "corporateTaxRate"];
-
-function nombreValide(valeur: unknown, defaut: number): number {
-  return typeof valeur === "number" && Number.isFinite(valeur) && valeur >= 0 ? valeur : defaut;
+/** Extrait du formulaire tout ce que l'utilisateur a pu modifier, hors champs exclus ci-dessus. */
+export function extractHomeOfficeDraft(inputs: HomeOfficeInputs): HomeOfficeDraft {
+  return extractDraft(inputs, CHAMPS_NON_PERSISTES) as HomeOfficeDraft;
 }
 
-/**
- * Fusionne une liste persistée sur la liste courante, PAR IDENTIFIANT. Un élément ajouté depuis la
- * dernière visite garde sa valeur par défaut, un élément supprimé du code n'est pas ressuscité, et
- * l'ordre comme les libellés viennent du code et non du stockage.
- */
-function fusionnerParId<T extends { id: string }>(
-  courants: T[],
-  persistes: unknown,
-  champs: (persistee: Record<string, unknown>, courant: T) => Partial<T>,
-): T[] {
-  if (!Array.isArray(persistes)) return courants;
-  return courants.map((courant) => {
-    const persistee = persistes.find((p) => p && typeof p === "object" && p.id === courant.id);
-    return persistee ? { ...courant, ...champs(persistee as Record<string, unknown>, courant) } : courant;
-  });
-}
-
-/**
- * Applique un brouillon relu du stockage aux valeurs par défaut.
- *
- * Chaque champ est validé individuellement : une donnée écrite par une version antérieure, tronquée
- * ou trafiquée à la main retombe sur son défaut sans emporter les autres. La validation est générique
- * — même type que le défaut, nombres finis et positifs — avec des règles spécifiques pour les champs
- * à choix fermé, les taux et les listes.
- */
+/** Applique un brouillon relu du stockage aux valeurs par défaut, champ par champ. */
 export function applyHomeOfficeDraft(defaults: HomeOfficeInputs, draft: unknown): HomeOfficeInputs {
-  if (!draft || typeof draft !== "object") return defaults;
-  const persiste = draft as Record<string, unknown>;
-  const resultat: HomeOfficeInputs = { ...defaults };
-
-  for (const cle of Object.keys(defaults) as (keyof HomeOfficeInputs)[]) {
-    if ((CHAMPS_NON_PERSISTES as readonly string[]).includes(cle)) continue;
-    if (!(cle in persiste)) continue;
-    const valeur = persiste[cle];
-    const defaut = defaults[cle];
-
-    if (cle === "chargeLines") {
-      resultat.chargeLines = fusionnerParId(defaults.chargeLines, valeur, (p, c) => ({
-        montantAnnuel: nombreValide(p.montantAnnuel, c.montantAnnuel),
-        enabled: typeof p.enabled === "boolean" ? p.enabled : c.enabled,
-      }));
-      continue;
-    }
-    if (cle === "surfacesAnnexes") {
-      resultat.surfacesAnnexes = fusionnerParId(defaults.surfacesAnnexes, valeur, (p, c) => ({
-        surfaceM2: nombreValide(p.surfaceM2, c.surfaceM2),
-        coefficientPro:
-          typeof p.coefficientPro === "number" && Number.isFinite(p.coefficientPro)
-            ? Math.min(1, Math.max(0, p.coefficientPro))
-            : c.coefficientPro,
-        enabled: typeof p.enabled === "boolean" ? p.enabled : c.enabled,
-      }));
-      continue;
-    }
-
-    const admises = VALEURS_ADMISES[cle as keyof HomeOfficeDraft];
-    if (admises) {
-      if (typeof valeur === "string" && admises.includes(valeur)) {
-        (resultat as unknown as Record<string, unknown>)[cle] = valeur;
-      }
-      continue;
-    }
-    if (typeof defaut === "number") {
-      const nombre = nombreValide(valeur, defaut);
-      // Un taux hors [0, 1] est aussi absurde écrêté que brut : on préfère retomber sur le défaut.
-      const horsBornes = CHAMPS_TAUX.includes(cle as keyof HomeOfficeDraft) && nombre > 1;
-      (resultat as unknown as Record<string, unknown>)[cle] = horsBornes ? defaut : nombre;
-      continue;
-    }
-    if (typeof valeur === typeof defaut && (typeof defaut === "boolean" || typeof defaut === "string")) {
-      if (typeof defaut === "string" && (valeur as string).length === 0) continue;
-      (resultat as unknown as Record<string, unknown>)[cle] = valeur;
-    }
-  }
-
-  return resultat;
+  return applyDraft(defaults, draft, SCHEMA_BROUILLON);
 }
 
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {

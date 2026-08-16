@@ -29,8 +29,9 @@ import {
   createDefaultFinancingInputs,
 } from "./financing";
 import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
+import { type DraftSchema, applyDraft, extractDraft } from "./draft";
 import { computeEconomieImpotIS } from "./corporateTax";
-import { getVehicleModel } from "./vehicleModels";
+import { VEHICLE_MODELS, getVehicleModel } from "./vehicleModels";
 import { DEFAULT_DEPRECIATION_RATE_ANNUAL, estimateResidualValue } from "./vehicleDepreciation";
 
 /**
@@ -183,6 +184,57 @@ export const DEFAULT_TVA_RATE = 0.2;
 export const DEFAULT_PFU_RATE = 0.3; // prélèvement forfaitaire unique sur les dividendes (12,8% IR + 17,2% prélèvements sociaux)
 export const IK_MAJORATION_ELECTRIQUE = 0.2; // majoration légale de 20% du barème IK pour les véhicules électriques
 export const ALL_FINANCING_MODES: FinancingMode[] = ["comptant", "credit", "loa", "lld"];
+
+/**
+ * Persistance du formulaire véhicule dans le stockage local.
+ *
+ * `name` est exclu au même titre que les identifiants : c'est le libellé d'une simulation
+ * SAUVEGARDÉE, pas une préférence de saisie — le recharger ferait réapparaître le nom d'une
+ * simulation nommée sur un formulaire vierge.
+ */
+export const CHAMPS_VEHICULE_NON_PERSISTES = ["id", "name", "createdAt", "personalTaxProfile"] as const;
+
+export type VehicleDraft = Omit<SimulationInputs, (typeof CHAMPS_VEHICULE_NON_PERSISTES)[number]>;
+
+/** Ce que la validation générique de `draft.ts` ne peut pas deviner de ce formulaire. */
+const SCHEMA_BROUILLON_VEHICULE: DraftSchema = {
+  champsNonPersistes: CHAMPS_VEHICULE_NON_PERSISTES,
+  valeursAdmises: {
+    impositionSociete: ["IS", "IR"],
+    financingMode: ALL_FINANCING_MODES,
+    personalFinancingMode: ALL_FINANCING_MODES,
+    modeVersementParticipation: PARTICIPATION_VERSEMENT_MODES,
+  },
+  // Taux exprimés en fraction : un 43 relu là où l'on attend 0,43 multiplierait les cotisations
+  // par cent sans que rien ne le signale.
+  champsTaux: [
+    "tnsContributionRate",
+    "corporateTaxRate",
+    "tauxTVA",
+    "tauxExtractionResultat",
+    "tauxDeprecationAnnuel",
+    "tauxAnnuel",
+  ],
+  // Deux absences légitimes : aucune surcharge de taxe annuelle, aucun modèle sélectionné. Le
+  // modèle est en outre vérifié contre le registre : un identifiant retiré du code depuis la
+  // dernière visite laisserait sinon le sélecteur sur une valeur qu'il ne sait pas afficher.
+  champsNullables: ["annualVehicleTaxOverride", "vehicleModelId"],
+};
+
+SCHEMA_BROUILLON_VEHICULE.valeursAdmises = {
+  ...SCHEMA_BROUILLON_VEHICULE.valeursAdmises,
+  vehicleModelId: VEHICLE_MODELS.map((m) => m.id),
+};
+
+/** Extrait du formulaire tout ce que l'utilisateur a pu modifier, hors champs exclus ci-dessus. */
+export function extractVehicleDraft(inputs: SimulationInputs): VehicleDraft {
+  return extractDraft(inputs, CHAMPS_VEHICULE_NON_PERSISTES) as VehicleDraft;
+}
+
+/** Applique un brouillon relu du stockage aux valeurs par défaut, champ par champ. */
+export function applyVehicleDraft(defaults: SimulationInputs, draft: unknown): SimulationInputs {
+  return applyDraft(defaults, draft, SCHEMA_BROUILLON_VEHICULE);
+}
 
 export function createDefaultInputs(): SimulationInputs {
   const country = DEFAULT_COUNTRY;
