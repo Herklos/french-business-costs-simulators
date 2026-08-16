@@ -114,6 +114,13 @@ export interface SimulationInputs {
   chiffreAffairesPrevisionnel: number; // CA prévisionnel — informatif, condition d'éligibilité au taux réduit (<10M€)
   eligibleTauxReduitPME: boolean; // conditions art. 219 I-b CGI : CA<10M€, capital détenu ≥75% par des personnes physiques
 
+  // Identification des parties et du bien — sans effet sur les calculs, reprise dans la note
+  // justificative destinée à un contrôle URSSAF ou fiscal.
+  nomDirigeant: string;
+  denominationSociete: string;
+  immatriculation: string;
+  dateMiseADisposition: string; // ISO
+
   // Situation personnelle du dirigeant (pour affiner le TMI utilisé sur l'AEN et les revenus fonciers)
   personalTaxProfile: PersonalTaxProfile;
 
@@ -217,6 +224,11 @@ export function createDefaultInputs(): SimulationInputs {
     beneficeAvantChargePrevisionnel: 40000,
     chiffreAffairesPrevisionnel: 150000,
     eligibleTauxReduitPME: true,
+
+    nomDirigeant: "",
+    denominationSociete: "",
+    immatriculation: "",
+    dateMiseADisposition: "",
 
     personalTaxProfile: createDefaultPersonalTaxProfile(),
 

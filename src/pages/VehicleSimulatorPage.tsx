@@ -35,8 +35,8 @@ import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
 import { CopyButton } from "../components/CopyButton";
 import { ShareButton } from "../components/ShareButton";
-import { PdfButton } from "../components/PdfButton";
 import { PrintableReport } from "../components/PrintableReport";
+import { buildVehiculeJustification } from "../lib/vehiculeJustification";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { CompanyTypeFields } from "../components/CompanyTypeFields";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
@@ -196,6 +196,20 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
   const [costPeriod, setCostPeriod] = useState<CostPeriod>("annuel");
   const [perspective, setPerspective] = useState<Perspective>("consolide");
   const [borneInputs, setBorneInputs] = useState<BorneRechargeInputs>(() => createDefaultBorneRechargeInputs());
+  // Deux documents imprimables partagent le même canal (`window.print()`), il faut donc rendre le bon
+  // AVANT d'imprimer : l'impression se déclenche dans l'effet qui suit le rendu. Le document choisi
+  // reste ensuite en place — le réinitialiser exposerait à une course là où print() rend la main
+  // avant que la boîte de dialogue soit servie ; le compteur permet de relancer le même document.
+  const [impression, setImpression] = useState<{ doc: "simulation" | "justificatif"; n: number }>({
+    doc: "simulation",
+    n: 0,
+  });
+  const imprimer = (doc: "simulation" | "justificatif") => setImpression((p) => ({ doc, n: p.n + 1 }));
+
+  useEffect(() => {
+    if (impression.n === 0) return; // pas d'impression au premier rendu
+    window.print();
+  }, [impression]);
 
   function updateBorne<K extends keyof BorneRechargeInputs>(key: K, value: BorneRechargeInputs[K]) {
     setBorneInputs((prev) => ({ ...prev, [key]: value }));
@@ -328,9 +342,18 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildVehicleExportText(inputs)} />
         <ShareButton page="vehicle" getInputs={() => inputs} />
-        <PdfButton />
+        <button type="button" className="btn btn--ghost" onClick={() => imprimer("simulation")}>
+          🖨️ Exporter la simulation
+        </button>
+        <button type="button" className="btn btn--primary" onClick={() => imprimer("justificatif")}>
+          📄 Note justificative (contrôle URSSAF / fiscal)
+        </button>
       </div>
-      <PrintableReport text={buildVehicleExportText(inputs)} />
+      <PrintableReport
+        text={
+          impression.doc === "justificatif" ? buildVehiculeJustification(inputs) : buildVehicleExportText(inputs)
+        }
+      />
 
       <div className="layout">
         <div className="layout__form">
@@ -1560,6 +1583,36 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
             <Field label="Durée de projection (années)">
               <NumberInput value={inputs.projectionYears} onChange={(e) => update("projectionYears", Number(e.target.value))} />
             </Field>
+          </Section>
+
+          <Section
+            title="Identification — pour la note justificative"
+            subtitle="Sans effet sur les calculs. Ces mentions figurent sur la note destinée à un contrôle ; laissées vides, elles y apparaissent en pointillés à compléter à la main."
+          >
+            <div className="grid grid--2">
+              <Field label="Nom du dirigeant bénéficiaire">
+                <input value={inputs.nomDirigeant} onChange={(e) => update("nomDirigeant", e.target.value)} />
+              </Field>
+              <Field label="Dénomination de la société">
+                <input
+                  value={inputs.denominationSociete}
+                  onChange={(e) => update("denominationSociete", e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="grid grid--2">
+              <Field label="Immatriculation du véhicule">
+                <input value={inputs.immatriculation} onChange={(e) => update("immatriculation", e.target.value)} />
+              </Field>
+              <Field label="Date de mise à disposition" hint="Détermine notamment le barème d'avantage en nature applicable.">
+                <input
+                  type="date"
+                  value={inputs.dateMiseADisposition}
+                  onChange={(e) => update("dateMiseADisposition", e.target.value)}
+                />
+              </Field>
+            </div>
+            <RuleNote ruleId="vehicule-fonction-formalisme-organe-social" />
           </Section>
 
           <Field label="Nom de la simulation">
