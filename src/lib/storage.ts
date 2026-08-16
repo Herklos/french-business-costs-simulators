@@ -94,3 +94,39 @@ export function withPersistedPersonalTaxProfile<T extends { personalTaxProfile: 
   const saved = loadPersonalTaxProfile();
   return saved ? { ...defaults, personalTaxProfile: saved } : defaults;
 }
+
+// Description du logement (surfaces, type, ville, prix au m², factures) : même logique que le profil
+// fiscal ci-dessus. Ce sont des FAITS, pas des hypothèses de simulation — ils ne changent pas tant
+// qu'on n'a pas déménagé, et ressaisir sa surface et ses factures à chaque visite n'a aucun intérêt.
+// Persisté sous une clé dédiée et rechargé automatiquement à l'ouverture de la page.
+const LOGEMENT_PROFILE_KEY = "fbcs_logement_profile_v1";
+
+/** Profil de logement persisté, retourné brut : la validation champ par champ revient à l'appelant. */
+export function loadLogementProfile(): unknown {
+  try {
+    const raw = localStorage.getItem(LOGEMENT_PROFILE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveLogementProfile(profile: unknown) {
+  try {
+    localStorage.setItem(LOGEMENT_PROFILE_KEY, JSON.stringify(profile));
+  } catch {
+    // localStorage indisponible (mode privé, quota...) : on dégrade silencieusement, ce réglage
+    // n'est qu'un confort de pré-remplissage, jamais requis pour utiliser le simulateur.
+  }
+}
+
+/** Oublie le logement mémorisé — utile après un déménagement, pour repartir des valeurs par défaut. */
+export function clearLogementProfile() {
+  try {
+    localStorage.removeItem(LOGEMENT_PROFILE_KEY);
+  } catch {
+    // idem : l'absence de stockage n'est pas une erreur fonctionnelle.
+  }
+}

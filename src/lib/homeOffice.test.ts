@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   type HomeOfficeInputs,
+  LOGEMENT_PROFILE_FIELDS,
   TOLERANCE_SURFACE_BUREAU_DEFAUT,
+  applyLogementProfile,
   chargeLinesDeReference,
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
+  extractLogementProfile,
 } from "./homeOffice";
 import { montantReferenceCharge } from "./logementCharges";
 import { findLoyerVille, prixM2Ville } from "./loyersVille";
@@ -241,6 +244,137 @@ describe("computeHomeOffice — seuil de tolérance de surface paramétrable", (
     expect(
       computeHomeOffice({ ...base, surfaceBureauM2: 0, toleranceSurfaceBureau: 0 }).depasseToleranceSurface,
     ).toBe(false);
+  });
+});
+
+describe("extractLogementProfile / applyLogementProfile", () => {
+  it("un aller-retour complet restitue exactement les champs du logement", () => {
+    const modifie: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      statutOccupant: "locataire",
+      typeLogement: "maison",
+      surfaceTotaleM2: 123,
+      surfaceBureauM2: 27,
+      toleranceSurfaceBureau: 0.42,
+      ville: "nantes",
+      loyerMarcheM2Mensuel: 12.5,
+      loyerAutoDepuisPrixM2: false,
+      interetsEmpruntAnnuels: 4200,
+      chargeLines: createDefaultHomeOfficeInputs().chargeLines.map((c) => ({
+        ...c,
+        montantAnnuel: 777,
+        enabled: false,
+      })),
+    };
+    const restaure = applyLogementProfile(createDefaultHomeOfficeInputs(), extractLogementProfile(modifie));
+    for (const champ of LOGEMENT_PROFILE_FIELDS) {
+      expect(restaure[champ], champ).toEqual(modifie[champ]);
+    }
+  });
+
+  it("ne touche PAS aux champs qui sont des hypothèses de simulation", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyLogementProfile(defauts, extractLogementProfile({ ...defauts, surfaceTotaleM2: 200 }));
+    expect(restaure.regimeFoncier).toBe(defauts.regimeFoncier);
+    expect(restaure.beneficeAvantChargePrevisionnel).toBe(defauts.beneficeAvantChargePrevisionnel);
+    expect(restaure.formalisation).toBe(defauts.formalisation);
+    expect(restaure.typeComparaisonExterne).toBe(defauts.typeComparaisonExterne);
+    expect(restaure.personalTaxProfile).toEqual(defauts.personalTaxProfile);
+    expect(restaure.id).toBe(defauts.id);
+  });
+
+  it("un profil absent ou non exploitable laisse les valeurs par défaut intactes", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    for (const valeur of [null, undefined, 42, "texte", []]) {
+      const restaure = applyLogementProfile(defauts, valeur);
+      expect(restaure.surfaceTotaleM2, String(valeur)).toBe(defauts.surfaceTotaleM2);
+      expect(restaure.ville, String(valeur)).toBe(defauts.ville);
+    }
+  });
+
+  it("un champ invalide retombe sur sa valeur par défaut sans emporter les autres", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyLogementProfile(defauts, {
+      surfaceTotaleM2: "quatre-vingts",
+      surfaceBureauM2: -12,
+      loyerMarcheM2Mensuel: Number.NaN,
+      toleranceSurfaceBureau: 4,
+      statutOccupant: "squatteur",
+      typeLogement: "péniche",
+      ville: "",
+      loyerAutoDepuisPrixM2: "oui",
+      interetsEmpruntAnnuels: Number.POSITIVE_INFINITY,
+      // ...mais celui-ci est valide et doit bien être repris.
+      chargeLines: [{ id: "eau", montantAnnuel: 999, enabled: false }],
+    });
+    expect(restaure.surfaceTotaleM2).toBe(defauts.surfaceTotaleM2);
+    expect(restaure.surfaceBureauM2).toBe(defauts.surfaceBureauM2);
+    expect(restaure.loyerMarcheM2Mensuel).toBe(defauts.loyerMarcheM2Mensuel);
+    expect(restaure.toleranceSurfaceBureau).toBe(defauts.toleranceSurfaceBureau);
+    expect(restaure.statutOccupant).toBe(defauts.statutOccupant);
+    expect(restaure.typeLogement).toBe(defauts.typeLogement);
+    expect(restaure.ville).toBe(defauts.ville);
+    expect(restaure.loyerAutoDepuisPrixM2).toBe(defauts.loyerAutoDepuisPrixM2);
+    expect(restaure.interetsEmpruntAnnuels).toBe(defauts.interetsEmpruntAnnuels);
+    expect(restaure.chargeLines.find((c) => c.id === "eau")).toMatchObject({ montantAnnuel: 999, enabled: false });
+  });
+
+  it("un poste ajouté depuis la dernière visite apparaît à sa valeur de référence", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    // Profil enregistré par une version qui ne connaissait que deux postes.
+    const restaure = applyLogementProfile(defauts, {
+      chargeLines: [
+        { id: "eau", montantAnnuel: 111, enabled: true },
+        { id: "electricite", montantAnnuel: 222, enabled: true },
+      ],
+    });
+    expect(restaure.chargeLines).toHaveLength(defauts.chargeLines.length);
+    expect(restaure.chargeLines.find((c) => c.id === "eau")?.montantAnnuel).toBe(111);
+    expect(restaure.chargeLines.find((c) => c.id === "chauffage")?.montantAnnuel).toBe(
+      defauts.chargeLines.find((c) => c.id === "chauffage")?.montantAnnuel,
+    );
+  });
+
+  it("un poste disparu du code n'est pas réintroduit par le stockage", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyLogementProfile(defauts, {
+      chargeLines: [{ id: "poste-supprime-en-2024", montantAnnuel: 5000, enabled: true }],
+    });
+    expect(restaure.chargeLines.some((c) => c.id === "poste-supprime-en-2024")).toBe(false);
+    expect(restaure.chargeLines.map((c) => c.id)).toEqual(defauts.chargeLines.map((c) => c.id));
+  });
+
+  it("l'ordre et les libellés viennent du code, jamais du stockage", () => {
+    const defauts = createDefaultHomeOfficeInputs();
+    const restaure = applyLogementProfile(defauts, {
+      chargeLines: [...defauts.chargeLines].reverse().map((c) => ({ ...c, label: "libellé périmé" })),
+    });
+    expect(restaure.chargeLines.map((c) => c.id)).toEqual(defauts.chargeLines.map((c) => c.id));
+    expect(restaure.chargeLines.every((c) => c.label !== "libellé périmé")).toBe(true);
+  });
+
+  it("le profil restauré produit exactement le même calcul que la saisie d'origine", () => {
+    const saisie: HomeOfficeInputs = {
+      ...createDefaultHomeOfficeInputs(),
+      typeLogement: "maison",
+      surfaceTotaleM2: 140,
+      surfaceBureauM2: 25,
+      ville: "bordeaux",
+      loyerMarcheM2Mensuel: 14.5,
+    };
+    const restaure = applyLogementProfile(createDefaultHomeOfficeInputs(), extractLogementProfile(saisie));
+    expect(computeHomeOffice(restaure).indemniteAnnuelleBrute).toBeCloseTo(
+      computeHomeOffice(saisie).indemniteAnnuelleBrute,
+      6,
+    );
+  });
+
+  it("survit à un aller-retour par JSON, comme dans le stockage réel", () => {
+    const saisie: HomeOfficeInputs = { ...createDefaultHomeOfficeInputs(), surfaceTotaleM2: 95, ville: "lille" };
+    const viaJson = JSON.parse(JSON.stringify(extractLogementProfile(saisie)));
+    const restaure = applyLogementProfile(createDefaultHomeOfficeInputs(), viaJson);
+    expect(restaure.surfaceTotaleM2).toBe(95);
+    expect(restaure.ville).toBe("lille");
   });
 });
 

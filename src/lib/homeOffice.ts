@@ -152,6 +152,103 @@ export function chargeLinesDeReference(
   });
 }
 
+/**
+ * Champs qui décrivent le LOGEMENT lui-même, et non une hypothèse de simulation : ils ne changent
+ * pas d'une simulation à l'autre tant qu'on n'a pas déménagé. Ils sont persistés à part et
+ * rechargés automatiquement à l'ouverture de la page, sur le même principe que le profil fiscal du
+ * foyer — ressaisir sa surface et ses factures à chaque visite n'a aucun intérêt.
+ *
+ * Le régime foncier, le bénéfice prévisionnel de la société ou la comparaison au bureau externe
+ * n'en font délibérément pas partie : ce sont des hypothèses que l'on fait varier.
+ */
+export const LOGEMENT_PROFILE_FIELDS = [
+  "statutOccupant",
+  "typeLogement",
+  "surfaceTotaleM2",
+  "surfaceBureauM2",
+  "toleranceSurfaceBureau",
+  "ville",
+  "loyerMarcheM2Mensuel",
+  "loyerAutoDepuisPrixM2",
+  "chargeLines",
+  "interetsEmpruntAnnuels",
+] as const;
+
+export type LogementProfile = Pick<HomeOfficeInputs, (typeof LOGEMENT_PROFILE_FIELDS)[number]>;
+
+/** Extrait du formulaire les seuls champs décrivant le logement, à persister. */
+export function extractLogementProfile(inputs: HomeOfficeInputs): LogementProfile {
+  return {
+    statutOccupant: inputs.statutOccupant,
+    typeLogement: inputs.typeLogement,
+    surfaceTotaleM2: inputs.surfaceTotaleM2,
+    surfaceBureauM2: inputs.surfaceBureauM2,
+    toleranceSurfaceBureau: inputs.toleranceSurfaceBureau,
+    ville: inputs.ville,
+    loyerMarcheM2Mensuel: inputs.loyerMarcheM2Mensuel,
+    loyerAutoDepuisPrixM2: inputs.loyerAutoDepuisPrixM2,
+    chargeLines: inputs.chargeLines,
+    interetsEmpruntAnnuels: inputs.interetsEmpruntAnnuels,
+  };
+}
+
+function nombreValide(valeur: unknown, defaut: number): number {
+  return typeof valeur === "number" && Number.isFinite(valeur) && valeur >= 0 ? valeur : defaut;
+}
+
+/**
+ * Applique un profil de logement relu du stockage aux valeurs par défaut.
+ *
+ * Chaque champ est validé individuellement : une donnée écrite par une version antérieure, tronquée
+ * ou trafiquée à la main ne doit pas casser la page ni produire des montants absurdes — on retombe
+ * silencieusement sur la valeur par défaut du champ concerné, sans perdre les autres.
+ *
+ * Les postes de charge sont fusionnés PAR IDENTIFIANT sur la liste courante : un poste ajouté depuis
+ * la dernière visite apparaît avec sa valeur de référence, un poste supprimé disparaît, et l'ordre
+ * reste celui du code plutôt que celui du stockage.
+ */
+export function applyLogementProfile(defaults: HomeOfficeInputs, profil: unknown): HomeOfficeInputs {
+  if (!profil || typeof profil !== "object") return defaults;
+  const p = profil as Partial<LogementProfile>;
+
+  const chargeLines = Array.isArray(p.chargeLines)
+    ? defaults.chargeLines.map((ligne) => {
+        const persistee = (p.chargeLines as ChargeLine[]).find((c) => c && c.id === ligne.id);
+        if (!persistee) return ligne;
+        return {
+          ...ligne,
+          montantAnnuel: nombreValide(persistee.montantAnnuel, ligne.montantAnnuel),
+          enabled: typeof persistee.enabled === "boolean" ? persistee.enabled : ligne.enabled,
+        };
+      })
+    : defaults.chargeLines;
+
+  return {
+    ...defaults,
+    statutOccupant:
+      p.statutOccupant === "locataire" || p.statutOccupant === "proprietaire"
+        ? p.statutOccupant
+        : defaults.statutOccupant,
+    typeLogement:
+      p.typeLogement === "maison" || p.typeLogement === "appartement" ? p.typeLogement : defaults.typeLogement,
+    surfaceTotaleM2: nombreValide(p.surfaceTotaleM2, defaults.surfaceTotaleM2),
+    surfaceBureauM2: nombreValide(p.surfaceBureauM2, defaults.surfaceBureauM2),
+    toleranceSurfaceBureau:
+      typeof p.toleranceSurfaceBureau === "number" &&
+      Number.isFinite(p.toleranceSurfaceBureau) &&
+      p.toleranceSurfaceBureau >= 0 &&
+      p.toleranceSurfaceBureau <= 1
+        ? p.toleranceSurfaceBureau
+        : defaults.toleranceSurfaceBureau,
+    ville: typeof p.ville === "string" && p.ville.length > 0 ? p.ville : defaults.ville,
+    loyerMarcheM2Mensuel: nombreValide(p.loyerMarcheM2Mensuel, defaults.loyerMarcheM2Mensuel),
+    loyerAutoDepuisPrixM2:
+      typeof p.loyerAutoDepuisPrixM2 === "boolean" ? p.loyerAutoDepuisPrixM2 : defaults.loyerAutoDepuisPrixM2,
+    chargeLines,
+    interetsEmpruntAnnuels: nombreValide(p.interetsEmpruntAnnuels, defaults.interetsEmpruntAnnuels),
+  };
+}
+
 export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
   const surfaceTotaleM2 = 80;
   const statutOccupant: StatutOccupant = "proprietaire";

@@ -3,9 +3,11 @@ import {
   type ChargeLine,
   type HomeOfficeInputs,
   TOLERANCE_SURFACE_BUREAU_DEFAUT,
+  applyLogementProfile,
   chargeLinesDeReference,
   computeHomeOffice,
   createDefaultHomeOfficeInputs,
+  extractLogementProfile,
 } from "../lib/homeOffice";
 import { LOYERS_VILLES, SOURCES_LOYERS, VILLE_AUTRE, prixM2Ville } from "../lib/loyersVille";
 import { findChargeReference, fourchetteReferenceCharge, montantReferenceCharge } from "../lib/logementCharges";
@@ -27,7 +29,13 @@ import { PdfButton } from "../components/PdfButton";
 import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
-import { savePersonalTaxProfile, withPersistedPersonalTaxProfile } from "../lib/storage";
+import {
+  clearLogementProfile,
+  loadLogementProfile,
+  savePersonalTaxProfile,
+  saveLogementProfile,
+  withPersistedPersonalTaxProfile,
+} from "../lib/storage";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /**
@@ -93,8 +101,14 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
 }
 
 export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData?: string }) {
-  const [inputs, setInputs] = useState<HomeOfficeInputs>(
-    () => mergeSharedInputs(withPersistedPersonalTaxProfile(createDefaultHomeOfficeInputs()), initialShareData),
+  // Ordre d'application, du plus général au plus spécifique : valeurs par défaut, puis profil fiscal
+  // du foyer, puis logement mémorisé, et enfin le lien de partage — qui décrit une simulation
+  // précise et doit donc primer sur tout ce qui a été mémorisé localement.
+  const [inputs, setInputs] = useState<HomeOfficeInputs>(() =>
+    mergeSharedInputs(
+      applyLogementProfile(withPersistedPersonalTaxProfile(createDefaultHomeOfficeInputs()), loadLogementProfile()),
+      initialShareData,
+    ),
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const [periodeAffichage, setPeriodeAffichage] = useState<PeriodeAffichage>("an");
@@ -112,6 +126,13 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
     savePersonalTaxProfile(inputs.personalTaxProfile);
   }, [inputs.personalTaxProfile]);
 
+  // La description du logement est un fait, pas une hypothèse : on la mémorise à chaque modification
+  // pour la retrouver telle quelle à la prochaine visite, sans action explicite de l'utilisateur.
+  const logementProfile = useMemo(() => extractLogementProfile(inputs), [inputs]);
+  useEffect(() => {
+    saveLogementProfile(logementProfile);
+  }, [logementProfile]);
+
   function update<K extends keyof HomeOfficeInputs>(key: K, value: HomeOfficeInputs[K]) {
     setInputs((prev) => ({ ...prev, [key]: value }));
   }
@@ -120,6 +141,25 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
     setInputs((prev) => ({
       ...prev,
       chargeLines: prev.chargeLines.map((c) => (c.id === id ? { ...c, ...patch } : c)),
+    }));
+  }
+
+  /** Repart des valeurs par défaut pour le logement — après un déménagement, par exemple. */
+  function oublierLogementMemorise() {
+    clearLogementProfile();
+    const defauts = createDefaultHomeOfficeInputs();
+    setInputs((prev) => ({
+      ...prev,
+      statutOccupant: defauts.statutOccupant,
+      typeLogement: defauts.typeLogement,
+      surfaceTotaleM2: defauts.surfaceTotaleM2,
+      surfaceBureauM2: defauts.surfaceBureauM2,
+      toleranceSurfaceBureau: defauts.toleranceSurfaceBureau,
+      ville: defauts.ville,
+      loyerMarcheM2Mensuel: defauts.loyerMarcheM2Mensuel,
+      loyerAutoDepuisPrixM2: defauts.loyerAutoDepuisPrixM2,
+      chargeLines: defauts.chargeLines,
+      interetsEmpruntAnnuels: defauts.interetsEmpruntAnnuels,
     }));
   }
 
@@ -183,6 +223,15 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
           lisent en fin de parcours, une fois tous les paramètres renseignés. */}
       <div className="page__column">
       <Section title="Logement">
+          <p className="charges-toolbar">
+            <span className="charges-toolbar__context">
+              💾 Surfaces, type, ville, prix au m² et factures sont mémorisés sur cet appareil et rechargés à votre
+              prochaine visite. Rien n'est envoyé ailleurs.
+            </span>
+            <button type="button" className="charge-line__apply" onClick={oublierLogementMemorise}>
+              Oublier ce logement
+            </button>
+          </p>
           <div className="grid grid--3">
             <Field label="Statut">
               <select
