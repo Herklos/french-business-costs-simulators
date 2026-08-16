@@ -77,9 +77,15 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   push("");
   push(`Formalisation : ${sim.formalisation === "bail_professionnel" ? "Bail professionnel réel" : "Indemnité d'occupation"}`);
   push(`Régime foncier : ${sim.regimeFoncier === "micro" ? "Micro-foncier" : "Réel"}${!r.eligibleMicroFoncier ? " (plafond dépassé, régime réel appliqué)" : ""}`);
-  if (r.interetsEmpruntDeduits > 0) {
+  push(
+    `Comparaison des régimes : micro ${formatEUR(r.coutFiscalMicro)}/an vs réel ${formatEUR(r.coutFiscalReel)}/an d'impôt et prélèvements sociaux — le régime ${r.regimeOptimal === "micro" ? "micro-foncier" : "réel"} est plus favorable de ${formatEUR(r.gainRegimeOptimal)}/an`,
+  );
+  push(
+    `Charges déductibles au réel : ${formatEUR(r.chargesDeductiblesReel)}/an · Abattement micro (30 %) : ${formatEUR(r.seuilBasculeReel)}/an`,
+  );
+  if (sim.interetsEmpruntAnnuels > 0 || sim.assuranceEmpruntAnnuelle > 0) {
     push(
-      `Intérêts d'emprunt : ${formatEUR(sim.interetsEmpruntAnnuels)}/an, dont ${formatEUR(r.interetsEmpruntDeduits)} de quote-part professionnelle déduite du revenu foncier`,
+      `Emprunt : ${formatEUR(sim.interetsEmpruntAnnuels)}/an d'intérêts et ${formatEUR(sim.assuranceEmpruntAnnuelle)}/an d'assurance emprunteur, dont ${formatEUR(r.interetsEmpruntDeduits)} de quote-part professionnelle déduite (régime réel uniquement)`,
     );
   }
   push("");
@@ -183,6 +189,54 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
       chargeLines: chargeLinesDeReference(prev.surfaceTotaleM2, prev.statutOccupant, prev.typeLogement, prev.chargeLines),
     }));
   }
+
+  /**
+   * Leviers qui augmentent l'indemnité SANS toucher à la surface du bureau. La surface, elle, n'est
+   * pas un levier : c'est une mesure de ce qui est mis à disposition. Chaque levier est chiffré sur
+   * les valeurs courantes pour être comparable aux autres.
+   */
+  const leviers = useMemo(() => {
+    const quotePart = results.quotePartSurface;
+
+    // 1. Prix au m² : sensibilité par euro supplémentaire, plutôt qu'une cible arbitraire.
+    const gainParEuroM2 = inputs.surfaceBureauM2 * 12;
+
+    // 2. Postes activés saisis SOUS la fourchette basse de référence : l'écart est probablement une
+    //    sous-évaluation, pas une facture réellement plus basse.
+    let ecartSousEvalue = 0;
+    const postesSousEvalues: string[] = [];
+    // 3. Postes désactivés qui ont une valeur de référence non nulle.
+    let gainPostesDesactives = 0;
+    const postesDesactives: string[] = [];
+
+    for (const ligne of results.chargeLinesEffectives) {
+      if (ligne.id === "loyer") continue;
+      const reference = montantReferenceCharge(
+        ligne.id,
+        inputs.surfaceTotaleM2,
+        inputs.statutOccupant,
+        inputs.typeLogement,
+      );
+      if (reference === undefined || reference <= 0) continue;
+      if (!ligne.enabled) {
+        gainPostesDesactives += reference * quotePart;
+        postesDesactives.push(ligne.label);
+        continue;
+      }
+      const fourchette = fourchetteReferenceCharge(
+        ligne.id,
+        inputs.surfaceTotaleM2,
+        inputs.statutOccupant,
+        inputs.typeLogement,
+      );
+      if (fourchette && fourchette[0] > 0 && ligne.montantAnnuel < fourchette[0]) {
+        ecartSousEvalue += (reference - ligne.montantAnnuel) * quotePart;
+        postesSousEvalues.push(ligne.label);
+      }
+    }
+
+    return { gainParEuroM2, ecartSousEvalue, postesSousEvalues, gainPostesDesactives, postesDesactives };
+  }, [inputs.surfaceBureauM2, inputs.surfaceTotaleM2, inputs.statutOccupant, inputs.typeLogement, results]);
 
   const surfaceRatio = results.quotePartSurface;
   const surfaceDepasseTolerance = results.depasseToleranceSurface;
@@ -412,13 +466,16 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                   />{" "}
                   % de la surface totale, soit {Math.round(results.surfaceBureauTolerance * 10) / 10} m² de bureau
                 </span>
+                {/* Formulé comme une CORRECTION de saisie, pas comme un objectif à atteindre : la
+                    surface du bureau est une mesure, pas un curseur d'optimisation. */}
                 <button
                   type="button"
                   className="charge-line__apply"
                   onClick={alignerSurTolerance}
+                  title="Ne l'utilisez que si votre pièce fait réellement cette surface : agrandir le chiffre n'agrandit pas le bureau."
                   disabled={Math.abs(inputs.surfaceBureauM2 - results.surfaceBureauTolerance) < 0.05}
                 >
-                  Porter le bureau à ce seuil
+                  Ma pièce fait en réalité {Math.round(results.surfaceBureauTolerance * 10) / 10} m²
                 </button>
               </div>
             </div>
@@ -432,6 +489,84 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
               la pièce).
             </p>
           )}
+          <details className="charge-line__ref">
+            <summary>Augmenter l'indemnité — les leviers légitimes, chiffrés sur vos valeurs</summary>
+            <div className="seuil-doc">
+              <p>
+                <strong>La surface du bureau n'est pas un levier.</strong> L'indemnité vaut
+                (loyer de marché + charges) × (surface bureau ÷ surface totale) : la surface{" "}
+                <em>mesure</em> ce que vous mettez à disposition, elle ne se règle pas. Si la pièce fait 12 m², elle
+                fait 12 m². Le seul cas où l'augmenter est légitime, c'est quand vous aviez sous-compté — le coin
+                bureau saisi au lieu de la pièce entière qui lui est dédiée, une seconde pièce oubliée, ou deux
+                conventions de mesure différentes entre le numérateur et le dénominateur.
+              </p>
+              <p>Voici, en revanche, ce qui augmente l'indemnité à surface constante.</p>
+              <ol>
+                <li>
+                  <strong>Ajuster le prix au m² à votre quartier.</strong> La table propose des médianes
+                  d'agglomération ; un quartier cher peut être très au-dessus. Sur vos {inputs.surfaceBureauM2} m²,
+                  chaque euro de plus au m²/mois vaut <strong>{formatEUR(leviers.gainParEuroM2)}/an</strong>{" "}
+                  d'indemnité. Adossez-le à 2 ou 3 annonces comparables archivées — c'est exactement la preuve
+                  attendue.
+                </li>
+                <li>
+                  <strong>Saisir vos factures réelles à la place des moyennes.</strong> Les charges pèsent{" "}
+                  {formatPercent(
+                    results.totalChargesRetenuesAnnuel > 0
+                      ? 1 - results.loyerAnnuelLogementRetenu / results.totalChargesRetenuesAnnuel
+                      : 0,
+                  )}{" "}
+                  de l'assiette : c'est le poste le plus simple à documenter, puisque vous avez les pièces.
+                  {leviers.ecartSousEvalue > 0 ? (
+                    <>
+                      {" "}
+                      Vos saisies sont sous la fourchette basse sur {leviers.postesSousEvalues.length} poste(s) —{" "}
+                      {leviers.postesSousEvalues.join(", ")} — soit{" "}
+                      <strong>{formatEUR(leviers.ecartSousEvalue)}/an</strong> d'indemnité en moins que les
+                      références.
+                    </>
+                  ) : (
+                    " Aucun de vos postes activés n'est actuellement sous sa fourchette de référence."
+                  )}
+                </li>
+                <li>
+                  <strong>Activer les postes que vous supportez réellement.</strong>
+                  {leviers.gainPostesDesactives > 0 ? (
+                    <>
+                      {" "}
+                      {leviers.postesDesactives.join(", ")} {leviers.postesDesactives.length > 1 ? "sont" : "est"}{" "}
+                      désactivé(s) : les activer aux valeurs de référence ajouterait{" "}
+                      <strong>{formatEUR(leviers.gainPostesDesactives)}/an</strong>. Ne le faites que si vous les
+                      supportez vraiment — la TEOM n'a de sens que si votre taxe foncière a été saisie hors TEOM, ou
+                      si vous êtes locataire.
+                    </>
+                  ) : (
+                    " Tous les postes disposant d'une référence sont déjà activés."
+                  )}
+                </li>
+                <li>
+                  <strong>Choisir le bon régime foncier.</strong> Il ne change pas l'indemnité versée, mais ce qui
+                  vous en reste.{" "}
+                  {!results.eligibleMicroFoncier ? (
+                    <>
+                      Pas ici : votre indemnité dépasse le plafond micro-foncier de 15 000 €, le régime réel
+                      s'applique d'office. Raison de plus pour renseigner intérêts et assurance emprunteur, seuls
+                      déductibles à ce régime.
+                    </>
+                  ) : results.gainRegimeOptimal > 0 ? (
+                    <>
+                      Le régime {results.regimeOptimal === "micro" ? "micro-foncier" : "réel"} vous laisse{" "}
+                      <strong>{formatEUR(results.gainRegimeOptimal)}/an</strong> de plus que l'autre — détaillé dans
+                      la section « Fiscalité de l'indemnité » plus bas.
+                    </>
+                  ) : (
+                    "Les deux régimes donnent ici le même résultat."
+                  )}
+                </li>
+              </ol>
+            </div>
+          </details>
+
           <details className="charge-line__ref">
             <summary>
               Quelle quote-part est légitime ? Repères chiffrés, bandes de lecture et sources
@@ -729,36 +864,123 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
               />
             </Field>
           </div>
-          {!results.eligibleMicroFoncier && inputs.regimeFoncier === "micro" && (
-            <p className="warning-block">
-              Plafond micro-foncier (15 000 €) dépassé : le régime réel est appliqué automatiquement.
-            </p>
-          )}
           {inputs.statutOccupant === "proprietaire" && (
-            <Field
-              label="Intérêts annuels de l'emprunt immobilier (€/an)"
-              hint="Déductibles du revenu foncier au régime réel uniquement, au prorata de la surface professionnelle. Ils ne s'ajoutent pas à l'indemnité : le loyer de marché rémunère déjà la mise à disposition du bien."
-            >
-              <NumberInput
-                value={inputs.interetsEmpruntAnnuels}
-                onChange={(e) => update("interetsEmpruntAnnuels", Number(e.target.value))}
-              />
-            </Field>
+            <div className="grid grid--2">
+              <Field
+                label="Intérêts annuels de l'emprunt immobilier (€/an)"
+                hint="Déductibles du revenu foncier au régime réel uniquement, au prorata de la surface professionnelle. Ils ne s'ajoutent pas à l'indemnité : le loyer de marché rémunère déjà la mise à disposition du bien."
+              >
+                <NumberInput
+                  value={inputs.interetsEmpruntAnnuels}
+                  onChange={(e) => update("interetsEmpruntAnnuels", Number(e.target.value))}
+                />
+              </Field>
+              <Field
+                label="Assurance emprunteur de ce prêt (€/an)"
+                hint="Décès, invalidité, incapacité. Même traitement que les intérêts, et même ligne 250 de la 2044 : déductible au seul régime réel."
+              >
+                <NumberInput
+                  value={inputs.assuranceEmpruntAnnuelle}
+                  onChange={(e) => update("assuranceEmpruntAnnuelle", Number(e.target.value))}
+                />
+              </Field>
+            </div>
           )}
-          {inputs.interetsEmpruntAnnuels > 0 && inputs.regimeFoncier === "micro" && results.eligibleMicroFoncier && (
+
+          {/* Comparaison chiffrée des deux régimes : c'est un arbitrage à faire une fois, mais qui
+              engage trois ans, et le bon choix n'est pas devinable sans calcul. */}
+          <div className="keyfigures">
+            <div className="keyfigures__head">
+              <span className="keyfigures__title">Micro-foncier ou réel — ce que ça change</span>
+              {results.regimeOptimal !== inputs.regimeFoncier && results.eligibleMicroFoncier && (
+                <button
+                  type="button"
+                  className="charge-line__apply"
+                  onClick={() => update("regimeFoncier", results.regimeOptimal)}
+                >
+                  Basculer sur le régime {results.regimeOptimal === "micro" ? "micro-foncier" : "réel"}
+                </button>
+              )}
+            </div>
+            <div className="keyfigures__grid">
+              <div
+                className={`keyfigure${results.regimeOptimal === "micro" && results.eligibleMicroFoncier ? " keyfigure--accent" : ""}`}
+              >
+                <span className="keyfigure__label">
+                  Micro-foncier — abattement 30 %
+                  {!results.eligibleMicroFoncier && <span className="bande-chip bande-chip--bad">Non ouvert</span>}
+                </span>
+                <span className="keyfigure__value">{parPeriode(results.coutFiscalMicro)}</span>
+                <span className="keyfigure__sub">
+                  d'impôt + prélèvements sociaux · abattement {formatEUR(results.seuilBasculeReel)}
+                </span>
+              </div>
+              <div className={`keyfigure${results.regimeOptimal === "reel" ? " keyfigure--accent" : ""}`}>
+                <span className="keyfigure__label">
+                  Réel — charges déduites
+                  {!results.eligibleMicroFoncier && <span className="bande-chip bande-chip--neutral">Imposé</span>}
+                </span>
+                <span className="keyfigure__value">{parPeriode(results.coutFiscalReel)}</span>
+                <span className="keyfigure__sub">
+                  d'impôt + prélèvements sociaux · charges déductibles {formatEUR(results.chargesDeductiblesReel)}
+                </span>
+              </div>
+              <div className="keyfigure">
+                <span className="keyfigure__label">Écart annuel</span>
+                {/* Hors plafond, il n'y a pas d'arbitrage : afficher un « écart en faveur du réel »
+                    laisserait croire à un choix gagnant, alors que le réel est ici subi — et coûte
+                    même parfois plus cher que ne coûterait le micro s'il était ouvert. */}
+                <span className="keyfigure__value">
+                  {results.eligibleMicroFoncier ? parPeriode(results.gainRegimeOptimal) : "—"}
+                </span>
+                <span className="keyfigure__sub">
+                  {results.eligibleMicroFoncier
+                    ? `en faveur du ${results.regimeOptimal === "micro" ? "micro-foncier" : "réel"}`
+                    : results.coutFiscalReel > results.coutFiscalMicro
+                      ? `pas d'arbitrage possible — le micro coûterait ${parPeriode(results.coutFiscalMicro - results.coutFiscalReel < 0 ? results.coutFiscalReel - results.coutFiscalMicro : 0)} de moins s'il était ouvert`
+                      : "pas d'arbitrage possible — le réel est de toute façon plus favorable"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {!results.eligibleMicroFoncier ? (
+            <p className="warning-block">
+              Plafond micro-foncier de 15 000 € dépassé (indemnité + autres revenus fonciers du foyer) : le régime
+              réel s'applique d'office, ce n'est plus un choix. Le seuil s'apprécie par foyer fiscal, pas par bien.
+            </p>
+          ) : (
             <p className="hint-block">
-              Au micro-foncier, l'abattement forfaitaire de 30 % remplace toute déduction : vos intérêts d'emprunt
-              ne sont pas pris en compte. Comparez avec le régime réel, qui déduirait{" "}
-              <strong>
-                {formatEUR(Math.max(0, inputs.interetsEmpruntAnnuels) * results.quotePartSurface)}
-              </strong>{" "}
-              de quote-part professionnelle.
+              <strong>La règle est simple :</strong> le réel l'emporte dès que vos charges déductibles dépassent
+              l'abattement forfaitaire de 30 %, soit {formatEUR(results.seuilBasculeReel)} ici. Vous en êtes à{" "}
+              {formatEUR(results.chargesDeductiblesReel)} —{" "}
+              {results.chargesDeductiblesReel > results.seuilBasculeReel
+                ? "au-dessus, donc le réel est plus favorable."
+                : `en dessous, donc l'abattement forfaitaire est plus généreux que vos charges réelles (il manque ${formatEUR(results.seuilBasculeReel - results.chargesDeductiblesReel)}).`}{" "}
+              L'écart se creuse surtout avec un emprunt en cours : intérêts et assurance emprunteur ne sont
+              déductibles qu'au réel, et l'abattement de 30 % les absorbe.
             </p>
           )}
+
+          {results.eligibleMicroFoncier && (
+            <p className="warning-block">
+              ⚠️ L'option pour le régime réel est <strong>irrévocable pendant 3 ans</strong>. Ne raisonnez donc pas
+              sur la seule année en cours : un emprunt qui s'amortit voit ses intérêts décroître chaque année, et de
+              gros travaux ponctuels ne se répètent pas. Projetez les trois exercices avant d'opter.
+            </p>
+          )}
+
           {results.interetsEmpruntDeduits > 0 && (
             <p className="hint-block">
-              Quote-part professionnelle des intérêts déduite du revenu foncier :{" "}
+              Quote-part professionnelle des intérêts et de l'assurance emprunteur déduite du revenu foncier :{" "}
               <strong>{formatEUR(results.interetsEmpruntDeduits)}</strong>/an.
+            </p>
+          )}
+          {results.chargeLinesEffectives.some((c) => c.enabled && c.id === "taxeOrduresMenageres") && (
+            <p className="hint-block">
+              La TEOM entre dans l'assiette de l'indemnité — c'est une charge que vous supportez réellement — mais
+              elle n'est <strong>pas déductible</strong> du revenu foncier au régime réel : c'est une charge
+              récupérable auprès du locataire (art. 31, I-1°-a ter CGI). Le simulateur l'exclut donc de la déduction.
             </p>
           )}
           <RuleNote ruleId="foncier-charges-deductibles-regime-reel" />

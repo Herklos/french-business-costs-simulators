@@ -27,6 +27,16 @@ export const PLAFOND_MICRO_FONCIER = 15000;
  */
 export const TOLERANCE_SURFACE_BUREAU_DEFAUT = 0.3;
 
+/**
+ * Postes qui entrent dans l'assiette de l'indemnité — ce sont de vraies charges du logement — mais
+ * que l'art. 31 CGI EXCLUT des charges déductibles du revenu foncier au régime réel.
+ *
+ * La TEOM en est le cas d'école : elle figure sur l'avis de taxe foncière, mais c'est une charge
+ * récupérable auprès du locataire, donc non déductible (BOI-RFPI-BASE-20-50). La taxe foncière
+ * elle-même reste déductible, TEOM déduite.
+ */
+export const CHARGES_NON_DEDUCTIBLES_FONCIER = new Set(["taxeOrduresMenageres"]);
+
 export type RegimeFoncier = "micro" | "reel";
 export type StatutOccupant = "locataire" | "proprietaire";
 
@@ -71,6 +81,8 @@ export const DEFAULT_CHARGE_LINES: Omit<ChargeLine, "montantAnnuel">[] = [
   { id: "taxeOrduresMenageres", label: "Taxe d'enlèvement des ordures ménagères (TEOM)", enabled: false },
   { id: "entretienCopropriete", label: "Charges de copropriété", enabled: true },
   { id: "travauxEntretien", label: "Entretien courant et petites réparations", enabled: true },
+  // Désactivés par défaut : ces travaux sont épisodiques et se constatent l'année du paiement.
+  { id: "travauxAmelioration", label: "Gros travaux et amélioration (ravalement, toiture, isolation)", enabled: false },
   // Laissé à 0 : seuls ceux qui emploient réellement une aide ménagère ont ce poste à déclarer.
   { id: "menageNettoyage", label: "Ménage / nettoyage", enabled: true },
   { id: "internetTelephone", label: "Internet / téléphone", enabled: true },
@@ -119,6 +131,14 @@ export interface HomeOfficeInputs {
    * foncier au régime réel, au prorata de la surface professionnelle (art. 31, I-1°-d CGI).
    */
   interetsEmpruntAnnuels: number;
+
+  /**
+   * Cotisations annuelles d'assurance emprunteur (décès, invalidité, incapacité) adossées à ce prêt.
+   * Même régime que les intérêts : hors assiette de l'indemnité, déductibles du revenu foncier au
+   * seul régime réel, au prorata de la surface professionnelle. Elles se déclarent d'ailleurs sur la
+   * même ligne 250 de la 2044 que les intérêts (BOI-RFPI-BASE-20-60).
+   */
+  assuranceEmpruntAnnuelle: number;
 
   formalisation: Formalisation; // indemnité d'occupation (souple) ou bail professionnel réel (plus robuste)
   fraisMiseEnPlaceBail: number; // coût ponctuel (rédaction, enregistrement) si bail professionnel — 0 sinon
@@ -172,6 +192,7 @@ export const LOGEMENT_PROFILE_FIELDS = [
   "loyerAutoDepuisPrixM2",
   "chargeLines",
   "interetsEmpruntAnnuels",
+  "assuranceEmpruntAnnuelle",
 ] as const;
 
 export type LogementProfile = Pick<HomeOfficeInputs, (typeof LOGEMENT_PROFILE_FIELDS)[number]>;
@@ -189,6 +210,7 @@ export function extractLogementProfile(inputs: HomeOfficeInputs): LogementProfil
     loyerAutoDepuisPrixM2: inputs.loyerAutoDepuisPrixM2,
     chargeLines: inputs.chargeLines,
     interetsEmpruntAnnuels: inputs.interetsEmpruntAnnuels,
+    assuranceEmpruntAnnuelle: inputs.assuranceEmpruntAnnuelle,
   };
 }
 
@@ -246,6 +268,7 @@ export function applyLogementProfile(defaults: HomeOfficeInputs, profil: unknown
       typeof p.loyerAutoDepuisPrixM2 === "boolean" ? p.loyerAutoDepuisPrixM2 : defaults.loyerAutoDepuisPrixM2,
     chargeLines,
     interetsEmpruntAnnuels: nombreValide(p.interetsEmpruntAnnuels, defaults.interetsEmpruntAnnuels),
+    assuranceEmpruntAnnuelle: nombreValide(p.assuranceEmpruntAnnuelle, defaults.assuranceEmpruntAnnuelle),
   };
 }
 
@@ -276,6 +299,7 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     regimeFoncier: "micro",
     autresRevenusFonciersFoyer: 0,
     interetsEmpruntAnnuels: 0,
+    assuranceEmpruntAnnuelle: 0,
     formalisation: "indemnite",
     fraisMiseEnPlaceBail: 0,
     personalTaxProfile: createDefaultPersonalTaxProfile(),
@@ -305,8 +329,23 @@ export interface HomeOfficeResults {
   indemniteAnnuelleBrute: number;
 
   eligibleMicroFoncier: boolean;
+  /** Régime réellement appliqué : le micro bascule d'office au réel au-delà du plafond. */
+  regimeEffectif: RegimeFoncier;
   baseImposableFonciere: number;
   abattementApplique: number;
+
+  // --- Comparaison des deux régimes, pour recommander le plus favorable ---
+  /** Charges réellement déductibles au réel (hors loyer et hors postes exclus par l'art. 31 CGI). */
+  chargesDeductiblesReel: number;
+  baseMicro: number;
+  baseReel: number;
+  coutFiscalMicro: number;
+  coutFiscalReel: number;
+  regimeOptimal: RegimeFoncier;
+  /** Économie annuelle d'impôt et de prélèvements sociaux procurée par le régime optimal. */
+  gainRegimeOptimal: number;
+  /** Montant de charges déductibles à partir duquel le réel devient plus favorable (= abattement). */
+  seuilBasculeReel: number;
   /** Quote-part professionnelle des intérêts d'emprunt déduite — nulle hors régime réel. */
   interetsEmpruntDeduits: number;
 
@@ -357,25 +396,28 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
 
   const regimeEffectif = inputs.regimeFoncier === "micro" && !eligibleMicroFoncier ? "reel" : inputs.regimeFoncier;
 
-  let baseImposableFonciere: number;
-  let abattementApplique = 0;
-  let interetsEmpruntDeduits = 0;
-  if (regimeEffectif === "micro") {
-    abattementApplique = indemniteAnnuelleBrute * ABATTEMENT_MICRO_FONCIER;
-    baseImposableFonciere = indemniteAnnuelleBrute - abattementApplique;
-  } else {
-    // Régime réel : les charges hors loyer (déjà intégrées dans l'indemnité au prorata) sont
-    // déduites explicitement — le loyer/valeur locative lui-même reste imposable.
-    const chargesHorsLoyer = chargeLinesEffectives
-      .filter((c) => c.enabled && c.id !== "loyer")
-      .reduce((sum, c) => sum + c.montantAnnuel, 0);
-    // Les intérêts d'emprunt ne sont pas dans la base de l'indemnité (cf. `interetsEmpruntAnnuels`)
-    // mais sont déductibles du revenu foncier au réel, au prorata de la surface professionnelle.
-    interetsEmpruntDeduits = Math.max(0, inputs.interetsEmpruntAnnuels) * quotePartSurface;
-    const chargesDeductibles = chargesHorsLoyer * quotePartSurface + interetsEmpruntDeduits;
-    abattementApplique = chargesDeductibles;
-    baseImposableFonciere = Math.max(0, indemniteAnnuelleBrute - chargesDeductibles);
-  }
+  // Abattement forfaitaire du micro-foncier : 30 % de l'indemnité brute, qui REMPLACE toute
+  // déduction — les charges réelles et les intérêts d'emprunt y sont réputés inclus.
+  const abattementMicro = indemniteAnnuelleBrute * ABATTEMENT_MICRO_FONCIER;
+
+  // Régime réel : les charges hors loyer (déjà intégrées dans l'indemnité au prorata) sont déduites
+  // explicitement — le loyer/valeur locative lui-même reste imposable. Les postes que l'art. 31 CGI
+  // exclut (TEOM) restent dans l'assiette de l'indemnité mais pas dans la déduction.
+  const chargesHorsLoyerDeductibles = chargeLinesEffectives
+    .filter((c) => c.enabled && c.id !== "loyer" && !CHARGES_NON_DEDUCTIBLES_FONCIER.has(c.id))
+    .reduce((sum, c) => sum + c.montantAnnuel, 0);
+  // Les intérêts et l'assurance emprunteur ne sont pas dans l'assiette de l'indemnité (cf.
+  // `interetsEmpruntAnnuels`) mais sont déductibles au réel, au prorata de la surface pro.
+  const empruntDeductible =
+    (Math.max(0, inputs.interetsEmpruntAnnuels) + Math.max(0, inputs.assuranceEmpruntAnnuelle)) * quotePartSurface;
+  const chargesDeductiblesReel = chargesHorsLoyerDeductibles * quotePartSurface + empruntDeductible;
+
+  const baseMicro = Math.max(0, indemniteAnnuelleBrute - abattementMicro);
+  const baseReel = Math.max(0, indemniteAnnuelleBrute - chargesDeductiblesReel);
+
+  const baseImposableFonciere = regimeEffectif === "micro" ? baseMicro : baseReel;
+  const abattementApplique = regimeEffectif === "micro" ? abattementMicro : chargesDeductiblesReel;
+  const interetsEmpruntDeduits = regimeEffectif === "micro" ? 0 : empruntDeductible;
 
   const resolvedTax = resolvePersonalTaxProfile(
     inputs.impositionSociete === "IR"
@@ -391,6 +433,22 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
   const irDu = baseImposableFonciere * tauxIRUtilise;
   const prelevementsSociaux = baseImposableFonciere * PRELEVEMENTS_SOCIAUX_FONCIER;
   const coutFiscalGerant = irDu + prelevementsSociaux;
+
+  // Comparaison des deux régimes à situation identique, pour recommander le plus favorable. Le taux
+  // d'imposition étant le même dans les deux cas, comparer les bases suffirait ; on chiffre quand
+  // même le coût fiscal, plus parlant qu'un écart d'assiette.
+  const tauxImpositionFoncier = tauxIRUtilise + PRELEVEMENTS_SOCIAUX_FONCIER;
+  const coutFiscalMicro = baseMicro * tauxImpositionFoncier;
+  const coutFiscalReel = baseReel * tauxImpositionFoncier;
+  // Le micro n'est ouvert que sous le plafond : hors plafond, le réel n'est pas un choix.
+  const regimeOptimal: RegimeFoncier =
+    eligibleMicroFoncier && coutFiscalMicro <= coutFiscalReel ? "micro" : "reel";
+  const gainRegimeOptimal = eligibleMicroFoncier
+    ? Math.abs(coutFiscalMicro - coutFiscalReel)
+    : Math.max(0, coutFiscalMicro - coutFiscalReel);
+  // Point de bascule : le réel devient plus favorable dès que les charges déductibles dépassent
+  // l'abattement forfaitaire, soit 30 % de l'indemnité brute.
+  const seuilBasculeReel = abattementMicro;
   const gainNetGerant = indemniteAnnuelleBrute - coutFiscalGerant;
   const fraisMiseEnPlace = inputs.formalisation === "bail_professionnel" ? inputs.fraisMiseEnPlaceBail : 0;
   const gainNetGerantAnnee1 = gainNetGerant - fraisMiseEnPlace;
@@ -433,8 +491,17 @@ export function computeHomeOffice(inputs: HomeOfficeInputs): HomeOfficeResults {
     totalChargesRetenuesAnnuel,
     indemniteAnnuelleBrute,
     eligibleMicroFoncier,
+    regimeEffectif,
     baseImposableFonciere,
     abattementApplique,
+    chargesDeductiblesReel,
+    baseMicro,
+    baseReel,
+    coutFiscalMicro,
+    coutFiscalReel,
+    regimeOptimal,
+    gainRegimeOptimal,
+    seuilBasculeReel,
     interetsEmpruntDeduits,
     tauxIRUtilise,
     irDu,

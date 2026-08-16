@@ -519,6 +519,147 @@ describe("computeHomeOffice — postes de charge ajoutés", () => {
   });
 });
 
+describe("computeHomeOffice — comparaison micro-foncier / réel", () => {
+  const base: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 20,
+    autresRevenusFonciersFoyer: 0,
+  };
+
+  it("les deux régimes sont chiffrés quel que soit celui qui est sélectionné", () => {
+    const enMicro = computeHomeOffice({ ...base, regimeFoncier: "micro" });
+    const enReel = computeHomeOffice({ ...base, regimeFoncier: "reel" });
+    expect(enMicro.coutFiscalMicro).toBeCloseTo(enReel.coutFiscalMicro, 6);
+    expect(enMicro.coutFiscalReel).toBeCloseTo(enReel.coutFiscalReel, 6);
+    expect(enMicro.regimeOptimal).toBe(enReel.regimeOptimal);
+  });
+
+  it("le régime sélectionné détermine seul la base réellement imposée", () => {
+    const enMicro = computeHomeOffice({ ...base, regimeFoncier: "micro" });
+    const enReel = computeHomeOffice({ ...base, regimeFoncier: "reel" });
+    expect(enMicro.baseImposableFonciere).toBeCloseTo(enMicro.baseMicro, 6);
+    expect(enReel.baseImposableFonciere).toBeCloseTo(enReel.baseReel, 6);
+  });
+
+  it("le point de bascule est l'abattement forfaitaire de 30 %", () => {
+    const r = computeHomeOffice(base);
+    expect(r.seuilBasculeReel).toBeCloseTo(r.indemniteAnnuelleBrute * 0.3, 6);
+  });
+
+  it("le régime optimal est celui dont les charges dépassent — ou non — l'abattement", () => {
+    const r = computeHomeOffice(base);
+    expect(r.regimeOptimal).toBe(r.chargesDeductiblesReel > r.seuilBasculeReel ? "reel" : "micro");
+  });
+
+  it("un emprunt important fait basculer l'optimum vers le réel", () => {
+    const sansEmprunt = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 0 });
+    const avecEmprunt = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 40000 });
+    expect(sansEmprunt.regimeOptimal).toBe("micro");
+    expect(avecEmprunt.regimeOptimal).toBe("reel");
+    expect(avecEmprunt.chargesDeductiblesReel).toBeGreaterThan(sansEmprunt.chargesDeductiblesReel);
+  });
+
+  it("l'écart annoncé est bien la différence entre les deux coûts fiscaux", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 40000 });
+    expect(r.gainRegimeOptimal).toBeCloseTo(Math.abs(r.coutFiscalMicro - r.coutFiscalReel), 6);
+  });
+
+  it("au-delà du plafond micro, le réel s'applique d'office et devient l'optimum par défaut", () => {
+    const r = computeHomeOffice({ ...base, regimeFoncier: "micro", autresRevenusFonciersFoyer: 30000 });
+    expect(r.eligibleMicroFoncier).toBe(false);
+    expect(r.regimeEffectif).toBe("reel");
+    expect(r.regimeOptimal).toBe("reel");
+    expect(r.baseImposableFonciere).toBeCloseTo(r.baseReel, 6);
+  });
+
+  it("le régime effectif reflète la bascule d'office, pas la sélection de l'utilisateur", () => {
+    expect(computeHomeOffice({ ...base, regimeFoncier: "micro" }).regimeEffectif).toBe("micro");
+    expect(computeHomeOffice({ ...base, regimeFoncier: "reel" }).regimeEffectif).toBe("reel");
+  });
+});
+
+describe("computeHomeOffice — charges exclues de la déduction foncière (art. 31 CGI)", () => {
+  const base: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    regimeFoncier: "reel",
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 20,
+  };
+
+  function withTeom(inputs: HomeOfficeInputs, montantAnnuel: number): HomeOfficeInputs {
+    return {
+      ...inputs,
+      chargeLines: inputs.chargeLines.map((c) =>
+        c.id === "taxeOrduresMenageres" ? { ...c, enabled: true, montantAnnuel } : c,
+      ),
+    };
+  }
+
+  it("la TEOM entre dans l'assiette de l'indemnité — c'est une charge réellement supportée", () => {
+    const avec = computeHomeOffice(withTeom(base, 400));
+    const sans = computeHomeOffice(base);
+    expect(avec.indemniteAnnuelleBrute - sans.indemniteAnnuelleBrute).toBeCloseTo(400 * avec.quotePartSurface, 6);
+  });
+
+  it("...mais reste exclue des charges déductibles au régime réel", () => {
+    const avec = computeHomeOffice(withTeom(base, 400));
+    const sans = computeHomeOffice(base);
+    expect(avec.chargesDeductiblesReel).toBeCloseTo(sans.chargesDeductiblesReel, 6);
+  });
+
+  it("activer la TEOM augmente donc la base imposable au réel du plein montant de sa quote-part", () => {
+    const avec = computeHomeOffice(withTeom(base, 400));
+    const sans = computeHomeOffice(base);
+    expect(avec.baseReel - sans.baseReel).toBeCloseTo(400 * avec.quotePartSurface, 6);
+  });
+
+  it("les autres postes, eux, sont bien déduits", () => {
+    const majore = {
+      ...base,
+      chargeLines: base.chargeLines.map((c) =>
+        c.id === "eau" ? { ...c, montantAnnuel: c.montantAnnuel + 400 } : c,
+      ),
+    };
+    const r = computeHomeOffice(majore);
+    const sans = computeHomeOffice(base);
+    expect(r.chargesDeductiblesReel - sans.chargesDeductiblesReel).toBeCloseTo(400 * r.quotePartSurface, 6);
+    // La base imposable ne bouge pas : le poste entre dans l'assiette ET dans la déduction.
+    expect(r.baseReel).toBeCloseTo(sans.baseReel, 6);
+  });
+});
+
+describe("computeHomeOffice — assurance emprunteur", () => {
+  const base: HomeOfficeInputs = {
+    ...createDefaultHomeOfficeInputs(),
+    surfaceTotaleM2: 80,
+    surfaceBureauM2: 20, // quote-part de 25 %
+    regimeFoncier: "reel",
+  };
+
+  it("est déduite au réel comme les intérêts, au prorata de la surface professionnelle", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 4000, assuranceEmpruntAnnuelle: 800 });
+    expect(r.interetsEmpruntDeduits).toBeCloseTo((4000 + 800) * 0.25, 6);
+  });
+
+  it("n'est pas prise en compte au micro-foncier", () => {
+    const r = computeHomeOffice({ ...base, regimeFoncier: "micro", assuranceEmpruntAnnuelle: 800 });
+    expect(r.interetsEmpruntDeduits).toBe(0);
+  });
+
+  it("n'entre jamais dans l'assiette de l'indemnité", () => {
+    const avec = computeHomeOffice({ ...base, assuranceEmpruntAnnuelle: 800 });
+    const sans = computeHomeOffice({ ...base, assuranceEmpruntAnnuelle: 0 });
+    expect(avec.indemniteAnnuelleBrute).toBeCloseTo(sans.indemniteAnnuelleBrute, 6);
+    expect(avec.coutNetSociete).toBeCloseTo(sans.coutNetSociete, 6);
+  });
+
+  it("une valeur négative est neutralisée", () => {
+    const r = computeHomeOffice({ ...base, interetsEmpruntAnnuels: 4000, assuranceEmpruntAnnuelle: -5000 });
+    expect(r.interetsEmpruntDeduits).toBeCloseTo(4000 * 0.25, 6);
+  });
+});
+
 describe("computeHomeOffice — formalisation bail professionnel", () => {
   it("les frais de mise en place n'affectent que le gain net de la 1ère année, pas le gain récurrent", () => {
     const inputs: HomeOfficeInputs = {

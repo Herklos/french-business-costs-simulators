@@ -135,6 +135,16 @@ export const CHARGES_REFERENCES: ChargeReference[] = [
       "Entretien courant et petites réparations NON couverts par la copropriété : contrat d'entretien de chaudière, ramonage, plomberie, serrurerie, peinture. Poste principal en maison individuelle, où il remplace les charges de copropriété. En copropriété, ne retenir ici que ce qui reste à votre charge dans les parties privatives.",
   },
   {
+    id: "travauxAmelioration",
+    base: "surface",
+    montant: 0,
+    fourchette: [0, 60],
+    source: "Art. 31, I-1°-b CGI — dépenses de réparation, d'entretien et d'amélioration",
+    sourceUrl: "https://bofip.impots.gouv.fr/bofip/5806-PGP.html/identifiant=BOI-RFPI-BASE-20-50-20120912",
+    note:
+      "Ravalement, réfection de toiture, changement de chaudière, isolation, appels de fonds « travaux » de la copropriété. Laissé à 0 car ces dépenses sont épisodiques : ne renseigner que le montant réellement payé dans l'année, factures et appels de fonds à l'appui. ATTENTION : les travaux de CONSTRUCTION, de RECONSTRUCTION ou d'AGRANDISSEMENT sont exclus — ils augmentent la valeur du bien et ne sont ni refacturables ni déductibles à ce titre.",
+  },
+  {
     id: "taxeOrduresMenageres",
     base: "forfait",
     montant: 150,
