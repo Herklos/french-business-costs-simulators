@@ -18,6 +18,186 @@ function disableCharge(inputs: HomeOfficeInputs, id: string): HomeOfficeInputs {
   return { ...inputs, chargeLines: inputs.chargeLines.map((c) => (c.id === id ? { ...c, enabled: false } : c)) };
 }
 
+/**
+ * Cas d'école entièrement calculables de tête. Les invariants des autres suites prouvent la
+ * COHÉRENCE interne du moteur ; ces tests-ci prouvent qu'il donne les BONS nombres. Chaque valeur
+ * attendue est écrite avec son calcul, pour qu'une divergence se diagnostique sans déboguer.
+ */
+describe("computeHomeOffice — cas d'école chiffrés à la main", () => {
+  /**
+   * Logement de 100 m², bureau de 20 m² → quote-part exactement 20 %.
+   * Trois postes seulement : loyer 12 000, électricité 2 000, taxe foncière 1 000 = 15 000 €/an.
+   * Indemnité = 15 000 × 20 % = 3 000 €/an.
+   * TMI 30 %, société à l'IS, bénéfice 100 000 €, taux réduit PME applicable.
+   */
+  function casEcole(patch: Partial<HomeOfficeInputs> = {}): HomeOfficeInputs {
+    const defauts = createDefaultHomeOfficeInputs();
+    const montants: Record<string, number> = { loyer: 12000, electricite: 2000, taxeFonciere: 1000 };
+    return {
+      ...defauts,
+      surfaceTotaleM2: 100,
+      surfaceBureauM2: 20,
+      surfacesAnnexes: defauts.surfacesAnnexes.map((a) => ({ ...a, surfaceM2: 0 })),
+      loyerAutoDepuisPrixM2: false,
+      chargeLines: defauts.chargeLines.map((c) => ({
+        ...c,
+        enabled: c.id in montants,
+        montantAnnuel: montants[c.id] ?? 0,
+      })),
+      regimeFoncier: "micro",
+      autresRevenusFonciersFoyer: 0,
+      empruntEnCours: false,
+      interetsEmpruntAnnuels: 0,
+      assuranceEmpruntAnnuelle: 0,
+      impositionSociete: "IS",
+      beneficeAvantChargePrevisionnel: 100000,
+      eligibleTauxReduitPME: true,
+      corporateTaxRate: 0.25,
+      formalisation: "indemnite",
+      personalTaxProfile: { ...defauts.personalTaxProfile, mode: "manuel", tauxManuel: 0.3 },
+      ...patch,
+    };
+  }
+
+  it("quote-part et assiette : 20 m² / 100 m² sur 15 000 € de charges = 3 000 €", () => {
+    const r = computeHomeOffice(casEcole());
+    expect(r.quotePartSurface).toBeCloseTo(0.2, 9);
+    expect(r.totalChargesRetenuesAnnuel).toBe(15000);
+    expect(r.indemniteAnnuelleBrute).toBeCloseTo(3000, 6);
+    expect(r.loyerAnnuelBureauRetenu).toBeCloseTo(12000 * 0.2, 6); // 2 400 €
+  });
+
+  it("micro-foncier : abattement 900, base 2 100, IR 630, PS 361,20 → coût fiscal 991,20", () => {
+    const r = computeHomeOffice(casEcole({ regimeFoncier: "micro" }));
+    expect(r.abattementApplique).toBeCloseTo(900, 6); // 3 000 × 30 %
+    expect(r.baseImposableFonciere).toBeCloseTo(2100, 6);
+    expect(r.irDu).toBeCloseTo(630, 6); // 2 100 × 30 %
+    expect(r.prelevementsSociaux).toBeCloseTo(361.2, 6); // 2 100 × 17,2 %
+    expect(r.coutFiscalGerant).toBeCloseTo(991.2, 6);
+    expect(r.gainNetGerant).toBeCloseTo(2008.8, 6); // 3 000 − 991,20
+  });
+
+  it("régime réel : 600 € de charges déduites, base 2 400 → coût fiscal 1 132,80", () => {
+    const r = computeHomeOffice(casEcole({ regimeFoncier: "reel" }));
+    // Charges hors loyer : 2 000 + 1 000 = 3 000, ramenées au bureau par 20 % = 600.
+    expect(r.chargesDeductiblesReel).toBeCloseTo(600, 6);
+    expect(r.baseImposableFonciere).toBeCloseTo(2400, 6);
+    expect(r.coutFiscalGerant).toBeCloseTo(2400 * 0.472, 6); // 1 132,80
+  });
+
+  it("le micro l'emporte ici de 141,60 €/an, et le simulateur le dit", () => {
+    const r = computeHomeOffice(casEcole());
+    expect(r.coutFiscalMicro).toBeCloseTo(991.2, 6);
+    expect(r.coutFiscalReel).toBeCloseTo(1132.8, 6);
+    expect(r.regimeOptimal).toBe("micro");
+    expect(r.gainRegimeOptimal).toBeCloseTo(141.6, 6);
+  });
+
+  it("économie d'IS : 750 € — la charge tombe entièrement dans la tranche à 25 %", () => {
+    const r = computeHomeOffice(casEcole());
+    // IS sur 100 000 = 42 500 × 15 % + 57 500 × 25 % = 20 750.
+    // IS sur 97 000 = 42 500 × 15 % + 54 500 × 25 % = 20 000. Écart : 750 = 3 000 × 25 %.
+    expect(r.economieImpotSociete).toBeCloseTo(750, 6);
+    expect(r.coutNetSociete).toBeCloseTo(2250, 6);
+    expect(r.coutNetGlobal).toBeCloseTo(241.2, 6); // 991,20 − 750
+  });
+
+  it("bénéfice à cheval sur les deux tranches : l'économie suit le barème, pas un taux flat", () => {
+    // Bénéfice 44 000 : la charge de 3 000 absorbe 1 500 à 25 % puis 1 500 à 15 %.
+    const r = computeHomeOffice(casEcole({ beneficeAvantChargePrevisionnel: 44000 }));
+    expect(r.economieImpotSociete).toBeCloseTo(1500 * 0.25 + 1500 * 0.15, 6); // 600
+  });
+
+  it("société sans taux réduit PME : économie au taux normal plein", () => {
+    const r = computeHomeOffice(casEcole({ eligibleTauxReduitPME: false }));
+    expect(r.economieImpotSociete).toBeCloseTo(3000 * 0.25, 6);
+  });
+
+  it("société translucide (IR) : économie au taux marginal du foyer", () => {
+    const r = computeHomeOffice(casEcole({ impositionSociete: "IR" }));
+    expect(r.economieImpotSociete).toBeCloseTo(3000 * 0.3, 6); // 900
+  });
+
+  it("déficit foncier : 20 000 € d'intérêts sur ce dossier donnent 1 600 € de déficit", () => {
+    const r = computeHomeOffice(
+      casEcole({ regimeFoncier: "reel", empruntEnCours: true, interetsEmpruntAnnuels: 20000 }),
+    );
+    // Intérêts imputés en premier : 20 000 × 20 % = 4 000 contre 3 000 d'indemnité → 1 000 de
+    // déficit « emprunt », seulement reportable. Puis 600 d'autres charges → 600 imputables.
+    expect(r.interetsEmpruntDeduits).toBeCloseTo(4000, 6);
+    expect(r.deficitFoncierTotal).toBeCloseTo(1600, 6);
+    expect(r.deficitImputableRevenuGlobal).toBeCloseTo(600, 6);
+    expect(r.deficitReportableFoncier).toBeCloseTo(1000, 6);
+    expect(r.economieIRDeficitFoncier).toBeCloseTo(180, 6); // 600 × 30 %
+    expect(r.baseImposableFonciere).toBe(0);
+    expect(r.coutFiscalGerant).toBeCloseTo(-180, 6);
+    expect(r.gainNetGerant).toBeCloseTo(3180, 6);
+  });
+
+  it("annexes d'usage mixte : 10 m² à 40 % portent la quote-part de 20 % à 24 %", () => {
+    const inputs = casEcole();
+    const r = computeHomeOffice({
+      ...inputs,
+      surfacesAnnexes: inputs.surfacesAnnexes.map((a, i) =>
+        i === 0 ? { ...a, surfaceM2: 10, coefficientPro: 0.4, enabled: true } : a,
+      ),
+    });
+    expect(r.surfaceAnnexeRetenue).toBeCloseTo(4, 6);
+    expect(r.surfaceProfessionnelleTotale).toBeCloseTo(24, 6);
+    expect(r.quotePartSurface).toBeCloseTo(0.24, 9);
+    expect(r.indemniteAnnuelleBrute).toBeCloseTo(3600, 6); // 15 000 × 24 %
+  });
+
+  it("loyer calculé : 25 €/m²/mois sur 100 m² donnent 30 000 €/an, dont 6 000 pour le bureau", () => {
+    const r = computeHomeOffice(casEcole({ loyerAutoDepuisPrixM2: true, loyerMarcheM2Mensuel: 25 }));
+    expect(r.loyerAnnuelLogementRetenu).toBeCloseTo(30000, 6);
+    expect(r.loyerAnnuelBureauRetenu).toBeCloseTo(6000, 6); // 25 × 20 × 12
+    expect(r.totalChargesRetenuesAnnuel).toBeCloseTo(33000, 6); // 30 000 + 2 000 + 1 000
+    expect(r.indemniteAnnuelleBrute).toBeCloseTo(6600, 6);
+  });
+
+  it("bail professionnel : les frais de mise en place ne grèvent que la 1re année", () => {
+    const r = computeHomeOffice(casEcole({ formalisation: "bail_professionnel", fraisMiseEnPlaceBail: 900 }));
+    expect(r.gainNetGerant).toBeCloseTo(2008.8, 6);
+    expect(r.gainNetGerantAnnee1).toBeCloseTo(1108.8, 6);
+  });
+
+  it("comparaison au bureau externe : location 400 €/mois → 4 800 €/an, économie 2 550 €", () => {
+    const r = computeHomeOffice(casEcole({ typeComparaisonExterne: "location", loyerBureauExterneMensuel: 400 }));
+    expect(r.coutBureauExterneAnnuel).toBeCloseTo(4800, 6);
+    expect(r.economieVsBureauExterne).toBeCloseTo(4800 - 2250, 6);
+  });
+
+  it("comparaison au coworking : 30 €/jour × 15 jours × 12 = 5 400 €/an", () => {
+    const r = computeHomeOffice(
+      casEcole({ typeComparaisonExterne: "coworking", coworkingTarifJournalier: 30, coworkingJoursParMois: 15 }),
+    );
+    expect(r.coutBureauExterneAnnuel).toBeCloseTo(5400, 6);
+  });
+
+  it("la TEOM entre dans l'assiette sans entrer dans la déduction, sur un cas chiffré", () => {
+    const inputs = casEcole({ regimeFoncier: "reel" });
+    const avecTeom = computeHomeOffice({
+      ...inputs,
+      chargeLines: inputs.chargeLines.map((c) =>
+        c.id === "taxeOrduresMenageres" ? { ...c, enabled: true, montantAnnuel: 500 } : c,
+      ),
+    });
+    // +500 × 20 % = +100 d'indemnité, mais 0 de charge déductible en plus.
+    expect(avecTeom.indemniteAnnuelleBrute).toBeCloseTo(3100, 6);
+    expect(avecTeom.chargesDeductiblesReel).toBeCloseTo(600, 6);
+    expect(avecTeom.baseImposableFonciere).toBeCloseTo(2500, 6);
+  });
+
+  it("plafond micro : au-delà de 15 000 € de revenus fonciers, le réel s'impose", () => {
+    const sous = computeHomeOffice(casEcole({ autresRevenusFonciersFoyer: 11999 }));
+    expect(sous.eligibleMicroFoncier).toBe(true); // 3 000 + 11 999 = 14 999
+    const au = computeHomeOffice(casEcole({ autresRevenusFonciersFoyer: 12001 }));
+    expect(au.eligibleMicroFoncier).toBe(false); // 3 000 + 12 001 = 15 001
+    expect(au.regimeEffectif).toBe("reel");
+  });
+});
+
 describe("computeHomeOffice — quote-part et charges", () => {
   it("la quote-part de surface est bornée à 100% même si le bureau dépasse le logement", () => {
     const inputs = { ...createDefaultHomeOfficeInputs(), surfaceTotaleM2: 50, surfaceBureauM2: 80 };

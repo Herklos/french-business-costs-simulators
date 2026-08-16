@@ -135,6 +135,14 @@ export interface HomeOfficeInputs {
   name: string;
   createdAt: string;
 
+  // Identification des parties et du bien. Sans effet sur les calculs : ces champs ne servent qu'à
+  // produire une note justificative nominative, opposable en cas de contrôle URSSAF ou fiscal.
+  nomDirigeant: string;
+  denominationSociete: string;
+  adresseLogement: string;
+  /** Date de prise d'effet de la convention ou du bail (AAAA-MM-JJ). */
+  dateEffet: string;
+
   country: string;
   impositionSociete: ImpositionSociete;
   corporateTaxRate: number;
@@ -356,6 +364,10 @@ export function createDefaultHomeOfficeInputs(): HomeOfficeInputs {
     name: "Nouvelle simulation bureau",
     createdAt: new Date().toISOString(),
     country: "FR",
+    nomDirigeant: "",
+    denominationSociete: "",
+    adresseLogement: "",
+    dateEffet: "",
     impositionSociete: "IS",
     corporateTaxRate: 0.25,
     beneficeAvantChargePrevisionnel: 40000,

@@ -18,6 +18,15 @@ export function PrintableReport({ text }: { text: string }) {
         const sectionMatch = /^— (.+) —$/.exec(line.trim());
         if (sectionMatch) return <h3 key={key}>{sectionMatch[1]}</h3>;
         if (i === 0) return <h1 key={key}>{line}</h1>;
+        // Une tabulation en tête marque une ligne de tableau : rendue en chasse fixe pour que les
+        // colonnes s'alignent, ce qu'une police proportionnelle ne permet pas.
+        if (line.startsWith("\t")) {
+          return (
+            <p key={key} className="printable-report__row">
+              {line.slice(1)}
+            </p>
+          );
+        }
         return <p key={key}>{line}</p>;
       })}
     </div>,

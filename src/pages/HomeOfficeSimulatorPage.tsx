@@ -31,7 +31,6 @@ import { RuleNote } from "../components/RuleNote";
 import { SavedSimulationsPanel } from "../components/SavedSimulationsPanel";
 import { CopyButton } from "../components/CopyButton";
 import { ShareButton } from "../components/ShareButton";
-import { PdfButton } from "../components/PdfButton";
 import { PrintableReport } from "../components/PrintableReport";
 import { mergeSharedInputs } from "../lib/urlShare";
 import { PersonalTaxProfileFields } from "../components/PersonalTaxProfileFields";
@@ -42,6 +41,7 @@ import {
   saveHomeOfficeDraft,
   withPersistedPersonalTaxProfile,
 } from "../lib/storage";
+import { buildUrssafJustification } from "../lib/homeOfficeJustification";
 import { formatEUR, formatPercent } from "../lib/format";
 
 /**
@@ -137,7 +137,22 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
   );
   const [saveVersion, setSaveVersion] = useState(0);
   const [periodeAffichage, setPeriodeAffichage] = useState<PeriodeAffichage>("an");
+  // Deux documents imprimables partagent le même canal (`window.print()`), il faut donc rendre le bon
+  // AVANT d'imprimer : on passe par un état et l'impression se déclenche dans l'effet qui suit le
+  // rendu. Le document choisi RESTE en place ensuite — le réinitialiser exposerait à une course là
+  // où print() rend la main avant que la boîte de dialogue soit servie. Le compteur permet de
+  // relancer l'impression du même document sans changer de valeur.
+  const [impression, setImpression] = useState<{ doc: "simulation" | "justificatif"; n: number }>({
+    doc: "simulation",
+    n: 0,
+  });
+  const imprimer = (doc: "simulation" | "justificatif") => setImpression((p) => ({ doc, n: p.n + 1 }));
   const results = useMemo(() => computeHomeOffice(inputs), [inputs]);
+
+  useEffect(() => {
+    if (impression.n === 0) return; // pas d'impression au premier rendu
+    window.print();
+  }, [impression]);
 
   const diviseur = DIVISEUR_PERIODE[periodeAffichage];
   /** Montant annuel formaté dans la période d'affichage courante, suffixe compris. */
@@ -294,9 +309,18 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
       <div className="results-toolbar results-toolbar--top">
         <CopyButton getText={() => buildHomeOfficeExportText(inputs)} />
         <ShareButton page="homeOffice" getInputs={() => inputs} />
-        <PdfButton />
+        <button type="button" className="btn btn--ghost" onClick={() => imprimer("simulation")}>
+          🖨️ Exporter la simulation
+        </button>
+        <button type="button" className="btn btn--primary" onClick={() => imprimer("justificatif")}>
+          📄 Note justificative (contrôle URSSAF / fiscal)
+        </button>
       </div>
-      <PrintableReport text={buildHomeOfficeExportText(inputs)} />
+      <PrintableReport
+        text={
+          impression.doc === "justificatif" ? buildUrssafJustification(inputs) : buildHomeOfficeExportText(inputs)
+        }
+      />
 
       {/* Colonne unique, sans bandeau de résultats latéral : la synthèse chiffrée sous les champs du
           logement donne le retour immédiat que le bandeau assurait, et les résultats détaillés se
@@ -348,10 +372,147 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             <Field label="Surface totale du logement (m²)">
               <NumberInput value={inputs.surfaceTotaleM2} onChange={(e) => update("surfaceTotaleM2", Number(e.target.value))} />
             </Field>
-            <Field label="Surface du bureau professionnel (m²)">
+            <Field
+              label="Surface du bureau professionnel (m²)"
+              hint="La pièce dédiée uniquement. Couloir, entrée et WC se déclarent juste en dessous."
+            >
               <NumberInput value={inputs.surfaceBureauM2} onChange={(e) => update("surfaceBureauM2", Number(e.target.value))} />
             </Field>
           </div>
+          {/* Carte de SAISIE visible, et non repli documentaire : placée juste sous les surfaces, là
+              où l'utilisateur y pense, plutôt qu'au bas de la section parmi les explications — où
+              elle était introuvable. */}
+          <div className="annexes-card">
+            <div className="annexes-card__head">
+              <span className="annexes-card__title">Surfaces annexes d'usage mixte</span>
+              <span
+                className={`annexes-card__badge${results.surfaceAnnexeRetenue > 0 ? " annexes-card__badge--actif" : ""}`}
+              >
+                {results.surfaceAnnexeRetenue > 0
+                  ? `+ ${Math.round(results.surfaceAnnexeRetenue * 10) / 10} m² retenus`
+                  : "aucune retenue"}
+              </span>
+            </div>
+            <p className="annexes-card__lead">
+              Le couloir qui dessert votre bureau et les WC utilisés pendant le temps de travail comptent aussi — pour
+              une <strong>fraction</strong>, puisqu'ils servent également au privé. Mesurez-les pour les faire valoir :
+              c'est le levier le plus direct sur la quote-part après la pièce elle-même.
+            </p>
+
+            <table className="seuil-table annexes-card__table">
+              <thead>
+                <tr>
+                  <th>Pièce</th>
+                  <th>Surface</th>
+                  <th>Usage pro</th>
+                  <th>Retenu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {inputs.surfacesAnnexes.map((a) => (
+                  <tr key={a.id} className={a.enabled && a.surfaceM2 > 0 ? "seuil-table__row--current" : undefined}>
+                    <td>
+                      <label className="charge-line__toggle">
+                        <input
+                          type="checkbox"
+                          checked={a.enabled}
+                          onChange={(e) => updateSurfaceAnnexe(a.id, { enabled: e.target.checked })}
+                        />
+                        <span>{a.label}</span>
+                      </label>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        className="surface-gauge__input"
+                        min="0"
+                        step="0.5"
+                        disabled={!a.enabled}
+                        value={a.surfaceM2}
+                        onChange={(e) => updateSurfaceAnnexe(a.id, { surfaceM2: Number(e.target.value) })}
+                        aria-label={`Surface de ${a.label} en m²`}
+                      />{" "}
+                      m²
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        className="surface-gauge__input"
+                        min="0"
+                        max="100"
+                        step="5"
+                        disabled={!a.enabled}
+                        value={Math.round(a.coefficientPro * 1000) / 10}
+                        onChange={(e) => updateSurfaceAnnexe(a.id, { coefficientPro: Number(e.target.value) / 100 })}
+                        aria-label={`Coefficient d'usage professionnel de ${a.label}, en %`}
+                      />{" "}
+                      %
+                    </td>
+                    <td>
+                      {a.enabled && a.surfaceM2 > 0
+                        ? `${Math.round(Math.max(0, a.surfaceM2) * Math.min(1, Math.max(0, a.coefficientPro)) * 100) / 100} m²`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <p className="annexes-card__total">
+              Numérateur retenu : <strong>{inputs.surfaceBureauM2} m²</strong> de bureau dédié
+              {results.surfaceAnnexeRetenue > 0 && (
+                <>
+                  {" "}
+                  + <strong>{Math.round(results.surfaceAnnexeRetenue * 100) / 100} m²</strong> d'annexes pondérées
+                </>
+              )}{" "}
+              = <strong>{Math.round(results.surfaceProfessionnelleTotale * 100) / 100} m²</strong> sur{" "}
+              {inputs.surfaceTotaleM2} m², soit <strong>{formatPercent(results.quotePartSurface)}</strong>.
+            </p>
+
+            <details className="charge-line__ref">
+              <summary>Sur quoi cela repose, ce qui se compte et ce qui ne se compte pas</summary>
+              <div className="seuil-doc">
+                <p>
+                  Le BOFiP distingue le local <strong>exclusivement</strong> professionnel, dont les charges sont
+                  déductibles en totalité, de la pièce servant <strong>aussi</strong> à autre chose, qui donne lieu à
+                  une ventilation au prorata de l'usage professionnel. Un couloir de desserte et des sanitaires
+                  relèvent de ce second cas. C'est d'ailleurs ce que fait tout bail de bureau réel, dont les m²
+                  facturés incluent circulations et sanitaires — un bureau sans accès ni WC ne se loue pas.
+                </p>
+                <p>
+                  <strong>Aucun texte ne fixe de coefficient.</strong> Les{" "}
+                  {formatPercent(COEFFICIENT_ANNEXE_MIXTE_USUEL)} proposés sont une convention de pratique des
+                  associations de gestion, à défaut d'une clé plus fine. C'est vous qui devrez la défendre : mesurez
+                  les pièces, reportez-les sur un plan coté, et gardez ce plan.
+                </p>
+                <p>
+                  <strong>Ce qui se compte</strong> — {ANNEXES_MIXTES_ADMISES.join(", ").toLowerCase()}.{" "}
+                  <strong>Ce qui ne se compte pas</strong> — {ANNEXES_MIXTES_EXCLUES.join(", ").toLowerCase()}.
+                  Soutenir que le logement entier est d'usage mixte ne passe pas : c'est le caractère raisonnable de
+                  la ventilation qui est examiné.
+                </p>
+                <p className="field__hint">
+                  Rappel : ces annexes figurent déjà au <em>dénominateur</em>, dans la surface totale du logement. Les
+                  ajouter au numérateur fait donc mécaniquement monter la quote-part — surveillez la jauge et le seuil
+                  plus bas.
+                </p>
+                <p>Sources :</p>
+                <ul>
+                  {SOURCES_ANNEXES_MIXTES.map((s) => (
+                    <li key={s.url}>
+                      <a href={s.url} target="_blank" rel="noreferrer noopener">
+                        {s.label}
+                      </a>{" "}
+                      — {s.note}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </details>
+            <RuleNote ruleId="domicile-annexes-usage-mixte" />
+          </div>
+
           <div className="grid grid--3">
             <Field label="Ville du logement">
               <select value={inputs.ville} onChange={(e) => selectVille(e.target.value)}>
@@ -457,12 +618,39 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                   {results.chargeLinesEffectives.filter((c) => c.enabled).length} postes activés, logement entier
                 </span>
               </div>
-              <div className="keyfigure keyfigure--accent">
+              <div className="keyfigure">
                 <span className="keyfigure__label">Indemnité brute</span>
                 <span className="keyfigure__value">{parPeriode(results.indemniteAnnuelleBrute)}</span>
                 <span className="keyfigure__sub">charges retenues × quote-part</span>
               </div>
+              {/* Le brut ne dit pas grand-chose : ce qui compte est ce qui reste au dirigeant une
+                  fois l'impôt foncier payé, et ce que la société débourse une fois son économie
+                  d'impôt déduite. Ces deux chiffres n'apparaissaient qu'en fin de page. */}
+              <div className="keyfigure keyfigure--accent">
+                <span className="keyfigure__label">Net réellement perçu</span>
+                <span className="keyfigure__value">{parPeriode(results.gainNetGerant)}</span>
+                <span className="keyfigure__sub">
+                  après {parPeriode(results.coutFiscalGerant)} d'IR et de prélèvements sociaux
+                  {results.economieIRDeficitFoncier > 0 ? " (déficit foncier déduit)" : ""}
+                </span>
+              </div>
+              <div className="keyfigure keyfigure--cout">
+                <span className="keyfigure__label">Coût réel pour la société</span>
+                <span className="keyfigure__value">{parPeriode(results.coutNetSociete)}</span>
+                <span className="keyfigure__sub">
+                  après {parPeriode(results.economieImpotSociete)} d'économie d'impôt
+                </span>
+              </div>
             </div>
+
+            <p className="keyfigures__net">
+              Autrement dit : la société débourse{" "}
+              <strong>{parPeriode(results.indemniteAnnuelleBrute)}</strong>, lui coûtant réellement{" "}
+              <strong>{parPeriode(results.coutNetSociete)}</strong> après déduction ; il vous en reste{" "}
+              <strong>{parPeriode(results.gainNetGerant)}</strong> net en poche. L'écart entre les deux —{" "}
+              <strong>{parPeriode(results.coutNetGlobal)}</strong> — est ce que l'opération coûte (ou rapporte, si
+              négatif) au couple société + dirigeant pris ensemble.
+            </p>
 
             {/* Jauge de surface : le seuil n'est pas un plafond légal mais le point au-delà duquel
                 la justification doit être renforcée. Le montrer en permanence vaut mieux que de
@@ -509,128 +697,6 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             </div>
           </div>
 
-          {/* Annexes d'usage mixte : elles s'ajoutent au numérateur, pondérées. Le bloc est replié et
-              vide par défaut — le simulateur ne gonfle jamais la quote-part de lui-même. */}
-          <details className="charge-line__ref" open={results.surfaceAnnexeRetenue > 0}>
-            <summary>
-              Surfaces annexes d'usage mixte
-              {results.surfaceAnnexeRetenue > 0
-                ? ` — ${Math.round(results.surfaceAnnexeRetenue * 10) / 10} m² retenus en plus du bureau`
-                : " — entrée, couloir, WC (aucune retenue pour l'instant)"}
-            </summary>
-            <div className="seuil-doc">
-              <p>
-                Le BOFiP distingue le local <strong>exclusivement</strong> professionnel, dont les charges sont
-                déductibles en totalité, de la pièce servant <strong>aussi</strong> à autre chose, qui donne lieu à une
-                ventilation au prorata de l'usage professionnel. Un couloir qui dessert le bureau et des WC utilisés
-                pendant le temps de travail relèvent de ce second cas : ils comptent, mais pour une fraction. C'est
-                d'ailleurs ce que fait tout bail de bureau réel, dont les m² facturés incluent circulations et
-                sanitaires.
-              </p>
-              <p>
-                <strong>Aucun texte ne fixe de coefficient.</strong> Les{" "}
-                {formatPercent(COEFFICIENT_ANNEXE_MIXTE_USUEL)} proposés sont une convention de pratique des
-                associations de gestion, à défaut d'une clé plus fine. C'est vous qui devrez la défendre : mesurez les
-                pièces, reportez-les sur un plan coté, et gardez ce plan.
-              </p>
-
-              <table className="seuil-table">
-                <thead>
-                  <tr>
-                    <th>Pièce</th>
-                    <th>Surface</th>
-                    <th>Usage pro</th>
-                    <th>Retenu</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {inputs.surfacesAnnexes.map((a) => (
-                    <tr key={a.id}>
-                      <td>
-                        <label className="charge-line__toggle">
-                          <input
-                            type="checkbox"
-                            checked={a.enabled}
-                            onChange={(e) => updateSurfaceAnnexe(a.id, { enabled: e.target.checked })}
-                          />
-                          <span>{a.label}</span>
-                        </label>
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="surface-gauge__input"
-                          min="0"
-                          step="0.5"
-                          disabled={!a.enabled}
-                          value={a.surfaceM2}
-                          onChange={(e) => updateSurfaceAnnexe(a.id, { surfaceM2: Number(e.target.value) })}
-                          aria-label={`Surface de ${a.label} en m²`}
-                        />{" "}
-                        m²
-                      </td>
-                      <td>
-                        <input
-                          type="number"
-                          className="surface-gauge__input"
-                          min="0"
-                          max="100"
-                          step="5"
-                          disabled={!a.enabled}
-                          value={Math.round(a.coefficientPro * 1000) / 10}
-                          onChange={(e) => updateSurfaceAnnexe(a.id, { coefficientPro: Number(e.target.value) / 100 })}
-                          aria-label={`Coefficient d'usage professionnel de ${a.label}, en %`}
-                        />{" "}
-                        %
-                      </td>
-                      <td>
-                        {a.enabled
-                          ? `${Math.round(Math.max(0, a.surfaceM2) * Math.min(1, Math.max(0, a.coefficientPro)) * 100) / 100} m²`
-                          : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-
-              <p>
-                Numérateur retenu : <strong>{inputs.surfaceBureauM2} m²</strong> de bureau dédié
-                {results.surfaceAnnexeRetenue > 0 && (
-                  <>
-                    {" "}
-                    + <strong>{Math.round(results.surfaceAnnexeRetenue * 100) / 100} m²</strong> d'annexes pondérées
-                  </>
-                )}{" "}
-                = <strong>{Math.round(results.surfaceProfessionnelleTotale * 100) / 100} m²</strong> sur{" "}
-                {inputs.surfaceTotaleM2} m², soit {formatPercent(results.quotePartSurface)}.
-              </p>
-
-              <p>
-                <strong>Ce qui se compte</strong> — {ANNEXES_MIXTES_ADMISES.join(", ").toLowerCase()}.{" "}
-                <strong>Ce qui ne se compte pas</strong> — {ANNEXES_MIXTES_EXCLUES.join(", ").toLowerCase()}.
-                Soutenir que le logement entier est d'usage mixte ne passe pas : c'est le caractère raisonnable de la
-                ventilation qui est examiné.
-              </p>
-              <p className="field__hint">
-                Rappel : ces annexes figurent déjà au <em>dénominateur</em>, dans la surface totale du logement. Les
-                ajouter au numérateur fait donc mécaniquement monter la quote-part — surveillez la jauge et le seuil
-                ci-dessus.
-              </p>
-
-              <p>Sources :</p>
-              <ul>
-                {SOURCES_ANNEXES_MIXTES.map((s) => (
-                  <li key={s.url}>
-                    <a href={s.url} target="_blank" rel="noreferrer noopener">
-                      {s.label}
-                    </a>{" "}
-                    — {s.note}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </details>
-          <RuleNote ruleId="domicile-annexes-usage-mixte" />
 
           {surfaceDepasseTolerance && (
             <p className="warning-block">
@@ -1354,6 +1420,36 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
               tone={results.economieVsBureauExterne >= 0 ? "good" : "bad"}
             />
           </div>
+        </Section>
+
+        <Section
+          title="Identification — pour la note justificative"
+          subtitle="Sans effet sur les calculs. Ces mentions nominatives rendent la note produisible telle quelle en cas de contrôle ; laissées vides, elles apparaissent en pointillés à compléter à la main."
+        >
+          <div className="grid grid--2">
+            <Field label="Nom du dirigeant (bénéficiaire de l'indemnité)">
+              <input value={inputs.nomDirigeant} onChange={(e) => update("nomDirigeant", e.target.value)} />
+            </Field>
+            <Field label="Dénomination de la société (versante)">
+              <input
+                value={inputs.denominationSociete}
+                onChange={(e) => update("denominationSociete", e.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="grid grid--2">
+            <Field label="Adresse du logement">
+              <input value={inputs.adresseLogement} onChange={(e) => update("adresseLogement", e.target.value)} />
+            </Field>
+            <Field label="Date de prise d'effet de la convention ou du bail">
+              <input type="date" value={inputs.dateEffet} onChange={(e) => update("dateEffet", e.target.value)} />
+            </Field>
+          </div>
+          <p className="hint-block">
+            La note reprend les surfaces poste par poste, les charges ligne par ligne, le fondement juridique de
+            chaque étape et la liste des pièces à tenir à disposition. Imprimez-la via le bouton{" "}
+            <strong>« Note justificative »</strong> en haut de page, puis « Enregistrer en PDF ».
+          </p>
         </Section>
 
         <Section title="Sauvegarde & comparaison">
