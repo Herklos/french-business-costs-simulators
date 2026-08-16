@@ -25,16 +25,41 @@ describe("vehicleModels", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("le Tesla Model Y porte l'offre LOA constructeur réelle (308€/mois, 36 mois)", () => {
+  it("le Tesla Model Y porte l'offre LOA constructeur réelle (279€/mois, 48 mois)", () => {
     const modelY = getVehicleModel("tesla-model-y-berlin");
-    expect(modelY?.defaultPrice).toBe(45000);
+    expect(modelY?.defaultPrice).toBe(42784);
     expect(modelY?.defaultLoaOffer).toEqual({
-      premierLoyerMajore: 9320,
-      loyerMensuel: 308,
-      dureeMois: 36,
-      valeurOptionAchat: 25804,
+      premierLoyerMajore: 10000,
+      loyerMensuel: 279,
+      dureeMois: 48,
+      valeurOptionAchat: 20722,
       tauxAnnuelIndicatif: 0.0099,
     });
+  });
+
+  it("le Tesla Model Y porte aussi l'offre de crédit constructeur (469€/mois, 72 mois)", () => {
+    const modelY = getVehicleModel("tesla-model-y-berlin");
+    expect(modelY?.defaultCreditOffer).toEqual({ apport: 10000, tauxAnnuel: 0.0099, dureeMois: 72 });
+  });
+
+  it("les quatre modes du Model Y proviennent de la même offre, donc se comparent entre eux", () => {
+    // Un comparatif n'a de sens que si les modes sont sourcés au même moment : opposer une LOA
+    // promotionnelle à un crédit chiffré au taux de marché ferait gagner la LOA par construction.
+    const modelY = getVehicleModel("tesla-model-y-berlin");
+    expect(modelY?.defaultLoaOffer?.tauxAnnuelIndicatif).toBe(modelY?.defaultCreditOffer?.tauxAnnuel);
+    const totalLoa =
+      (modelY?.defaultLoaOffer?.premierLoyerMajore ?? 0) +
+      (modelY?.defaultLoaOffer?.loyerMensuel ?? 0) * (modelY?.defaultLoaOffer?.dureeMois ?? 0) +
+      (modelY?.defaultLoaOffer?.valeurOptionAchat ?? 0);
+    const totalCredit =
+      (modelY?.defaultCreditOffer?.apport ?? 0) +
+      469 * (modelY?.defaultCreditOffer?.dureeMois ?? 0);
+    // Les deux financements aboutissent à la propriété du véhicule pour un total du même ordre que
+    // le prix comptant : un écart massif signalerait une saisie erronée.
+    for (const total of [totalLoa, totalCredit]) {
+      expect(total).toBeGreaterThan(42784);
+      expect(total).toBeLessThan(42784 * 1.2);
+    }
   });
 
   it("le Tesla Model 3 porte l'offre LOA constructeur constatée (279€/mois, 36 mois)", () => {
@@ -57,14 +82,14 @@ describe("vehicleModels", () => {
     expect(scenic?.defaultLoaOffer).toBeUndefined();
   });
 
-  it("le Tesla Model Y porte aussi une offre LLD réelle « tout compris » (592€/mois, 48 mois)", () => {
+  it("le Tesla Model Y porte aussi une offre LLD réelle (326€/mois, 60 mois, loyer nu)", () => {
     const modelY = getVehicleModel("tesla-model-y-berlin");
     expect(modelY?.defaultLldOffer).toEqual({
-      premierLoyer: 0,
-      loyerMensuel: 592,
-      dureeMois: 48,
-      kmInclusAnnuel: 15000,
-      toutComprisEntretienAssurance: true,
+      premierLoyer: 5000,
+      loyerMensuel: 326,
+      dureeMois: 60,
+      kmInclusAnnuel: 10000,
+      toutComprisEntretienAssurance: false,
     });
   });
 

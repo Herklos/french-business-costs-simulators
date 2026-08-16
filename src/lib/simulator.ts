@@ -264,7 +264,10 @@ export function createDefaultInputs(): SimulationInputs {
     aideAchatVehicule: 0,
 
     privateUsePercent: 50,
-    totalKmAnnual: 15000,
+    // Aligné sur le kilométrage contractuel des offres LOA et LLD du modèle par défaut : un
+    // kilométrage réel supérieur au forfait inclus déclencherait d'emblée un coût de dépassement
+    // que rien dans le formulaire n'expliquerait.
+    totalKmAnnual: 10000,
 
     annualInsurance: 900,
     annualMaintenance: 600,
@@ -341,6 +344,12 @@ export function applyVehicleModel(inputs: SimulationInputs, modelId: string): Si
     const financing = createDefaultFinancingInputs(model.defaultPrice);
     if (model.defaultLoaOffer) {
       financing.loa = { prixTTC: model.defaultPrice, ...model.defaultLoaOffer, leveeOption: true };
+    }
+    if (model.defaultCreditOffer) {
+      // Sans cela, le crédit resterait chiffré sur des hypothèses génériques — apport de 10 % et
+      // taux de marché — pendant que la LOA et la LLD porteraient l'offre réelle du constructeur.
+      // Le comparatif opposerait alors une promotion à une estimation, ce qui n'a pas de sens.
+      financing.credit = { prixTTC: model.defaultPrice, ...model.defaultCreditOffer };
     }
     if (model.defaultLldOffer) {
       financing.lld = {

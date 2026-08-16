@@ -124,7 +124,7 @@ describe("computeSimulation — méthode réelle AEN selon le montage", () => {
     expect(r.aenBaseAnnualCosts).toBeCloseTo(amortAnnual + inputs.annualInsurance + inputs.annualMaintenance, 6);
   });
 
-  it("véhicule loué (LLD) : base AEN = 30% × (loyer + assurance + entretien)", () => {
+  it("véhicule loué (LLD) : base AEN = coût de location + assurance + entretien, sans coefficient", () => {
     const base = createDefaultInputs();
     const inputs: SimulationInputs = {
       ...base,
@@ -133,7 +133,19 @@ describe("computeSimulation — méthode réelle AEN selon le montage", () => {
       privateUsePercent: 100,
       annualFuelPrivateCost: 0,
       // Offre LLD classique (loyer nu) : assurance et entretien sont supportés en plus du loyer.
-      financing: { ...base.financing, lld: { ...base.financing.lld, toutComprisEntretienAssurance: false } },
+      // Premier loyer nul et kilométrage inclus égal au kilométrage réel, pour que le coût annuel
+      // de location soit exactement douze mensualités — sans quoi le calcul attendu ci-dessous
+      // devrait reconstituer l'étalement de l'apport et l'éventuel coût de dépassement.
+      financing: {
+        ...base.financing,
+        lld: {
+          ...base.financing.lld,
+          premierLoyer: 0,
+          kmInclusAnnuel: base.totalKmAnnual,
+          kmReelAnnuel: base.totalKmAnnual,
+          toutComprisEntretienAssurance: false,
+        },
+      },
     };
     const r = computeSimulation(inputs);
     const loyerAnnuel = inputs.financing.lld.loyerMensuel * 12;
@@ -152,6 +164,15 @@ describe("computeSimulation — méthode réelle AEN selon le montage", () => {
       isElectric: false,
       privateUsePercent: 100,
       annualFuelPrivateCost: 0,
+      financing: {
+        ...base.financing,
+        lld: {
+          ...base.financing.lld,
+          premierLoyer: 0,
+          kmInclusAnnuel: base.totalKmAnnual,
+          kmReelAnnuel: base.totalKmAnnual,
+        },
+      },
     };
     const nu = computeSimulation({
       ...commun,
@@ -271,21 +292,27 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     const base = { ...createDefaultInputs(), vehiclePrice: 30000, isElectric: false };
     const next = applyVehicleModel(base, "tesla-model-y-berlin");
 
-    expect(next.vehiclePrice).toBe(45000);
+    expect(next.vehiclePrice).toBe(42784);
     expect(next.isElectric).toBe(true);
     expect(next.isEcoScoreEligible).toBe(true);
-    expect(next.financing.loa.premierLoyerMajore).toBe(9320);
-    expect(next.financing.loa.loyerMensuel).toBe(308);
-    expect(next.financing.loa.dureeMois).toBe(36);
-    expect(next.financing.loa.valeurOptionAchat).toBe(25804);
+    expect(next.financing.loa.premierLoyerMajore).toBe(10000);
+    expect(next.financing.loa.loyerMensuel).toBe(279);
+    expect(next.financing.loa.dureeMois).toBe(48);
+    expect(next.financing.loa.valeurOptionAchat).toBe(20722);
     expect(next.financing.loa.leveeOption).toBe(true);
+    // Le crédit aussi : sans cela il resterait chiffré au taux de marché générique pendant que la
+    // LOA porterait une offre à 0,99 %, et le comparatif opposerait une promotion à une estimation.
+    expect(next.financing.credit.apport).toBe(10000);
+    expect(next.financing.credit.tauxAnnuel).toBe(0.0099);
+    expect(next.financing.credit.dureeMois).toBe(72);
 
     // L'offre LLD réelle (et non plus l'estimation générique) doit également être appliquée,
     // pour éviter de comparer une LOA réelle à une LLD synthétique (écart artificiel).
-    expect(next.financing.lld.loyerMensuel).toBe(592);
-    expect(next.financing.lld.dureeMois).toBe(48);
-    expect(next.financing.lld.premierLoyer).toBe(0);
-    expect(next.financing.lld.kmInclusAnnuel).toBe(15000);
+    expect(next.financing.lld.loyerMensuel).toBe(326);
+    expect(next.financing.lld.dureeMois).toBe(60);
+    expect(next.financing.lld.premierLoyer).toBe(5000);
+    expect(next.financing.lld.kmInclusAnnuel).toBe(10000);
+    expect(next.financing.lld.toutComprisEntretienAssurance).toBe(false);
   });
 
   it("réapplique le prix et l'offre LOA réelle du Tesla Model 3", () => {
@@ -330,10 +357,19 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
 
   it("createDefaultInputs applique bien les offres LOA et LLD réelles du Model Y par défaut", () => {
     const inputs = createDefaultInputs();
-    expect(inputs.financing.loa.loyerMensuel).toBe(308);
-    expect(inputs.financing.loa.dureeMois).toBe(36);
-    expect(inputs.financing.lld.loyerMensuel).toBe(592);
-    expect(inputs.financing.lld.dureeMois).toBe(48);
+    expect(inputs.financing.loa.loyerMensuel).toBe(279);
+    expect(inputs.financing.loa.dureeMois).toBe(48);
+    expect(inputs.financing.lld.loyerMensuel).toBe(326);
+    expect(inputs.financing.lld.dureeMois).toBe(60);
+    expect(inputs.financing.credit.dureeMois).toBe(72);
+  });
+
+  it("le kilométrage par défaut n'excède pas le forfait inclus dans les offres de location", () => {
+    // Sinon le comparatif ferait apparaître, dès l'ouverture du simulateur, un coût de dépassement
+    // kilométrique que rien dans le formulaire n'expliquerait.
+    const inputs = createDefaultInputs();
+    expect(inputs.totalKmAnnual).toBeLessThanOrEqual(inputs.financing.lld.kmInclusAnnuel);
+    expect(inputs.financing.lld.kmReelAnnuel).toBe(inputs.totalKmAnnual);
   });
 });
 
@@ -435,12 +471,22 @@ describe("computeSimulation — la valeur résiduelle annualisée (comptant/cré
   });
 
   it("Comptant vs Crédit société : les deux montages restent comparés à armes égales (déduction identique à durée égale)", () => {
-    const r = computeSimulation(createDefaultInputs());
+    const base = createDefaultInputs();
+    const r = computeSimulation({
+      ...base,
+      financing: {
+        ...base.financing,
+        credit: { ...base.financing.credit, dureeMois: base.financing.comptant.dureeDetentionMois },
+      },
+    });
     const societeComptant = r.allOptions.find((o) => o.owner === "societe" && o.mode === "comptant")!;
     const societeCredit = r.allOptions.find((o) => o.owner === "societe" && o.mode === "credit")!;
     const residuComptant = societeComptant.detail.find((d) => d.label.includes("Valeur résiduelle annualisée"))!.value;
     const residuCredit = societeCredit.detail.find((d) => d.label.includes("Valeur résiduelle annualisée"))!.value;
-    // Même durée de détention (60 mois) par défaut pour comptant et crédit → même valeur résiduelle annualisée.
+    // À durée de détention égale, la valeur résiduelle annualisée doit être la même : c'est ce qui
+    // garantit que l'écart affiché entre les deux montages tient au financement, et non à une
+    // hypothèse de détention différente. Les durées sont posées ici, l'offre de crédit du modèle
+    // par défaut portant 72 mois là où le comptant en retient 60.
     expect(residuComptant).toBeCloseTo(residuCredit, 6);
   });
 });
@@ -1152,6 +1198,9 @@ describe("computeSimulation — régression : IK supérieures au coût réel du 
       financingMode: "lld",
       personalFinancingMode: "lld",
       privateUsePercent: 0,
+      // Kilométrage posé explicitement, et non hérité du défaut : c'est lui qui fait dépasser le
+      // barème kilométrique au-dessus du coût réel du véhicule, donc l'hypothèse même du test.
+      totalKmAnnual: 30000,
       isElectric: false,
       co2EmissionsGkm: 120,
       annualFuelPrivateCost: 0,
