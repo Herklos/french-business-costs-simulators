@@ -109,7 +109,9 @@ function buildHomeOfficeExportText(sim: HomeOfficeInputs): string {
   }
   push("");
   push("— Résultats —");
-  push(`Indemnité annuelle brute : ${formatEUR(r.indemniteAnnuelleBrute)}`);
+  push(
+    `Somme annuelle due, brute : ${formatEUR(r.indemniteAnnuelleBrute)} — dont ${formatEUR(r.loyerAnnuelBureauRetenu)} au titre de la jouissance des locaux et ${formatEUR(Math.max(0, r.indemniteAnnuelleBrute - r.loyerAnnuelBureauRetenu))} au titre du remboursement de charges`,
+  );
   push(`Base imposable foncière : ${formatEUR(r.baseImposableFonciere)} · IR : ${formatEUR(r.irDu)} (TMI ${formatPercent(r.tauxIRUtilise)}) · Prélèvements sociaux : ${formatEUR(r.prelevementsSociaux)}`);
   push(`Gain net dirigeant (récurrent) : ${formatEUR(r.gainNetGerant)}`);
   if (sim.formalisation === "bail_professionnel" && sim.fraisMiseEnPlaceBail > 0) {
@@ -605,10 +607,11 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                 </span>
               </div>
               <div className="keyfigure">
-                <span className="keyfigure__label">Loyer imputé au bureau</span>
+                <span className="keyfigure__label">Valeur locative de la partie professionnelle</span>
                 <span className="keyfigure__value">{parPeriode(results.loyerAnnuelBureauRetenu)}</span>
                 <span className="keyfigure__sub">
-                  {inputs.surfaceBureauM2} m² × {inputs.loyerMarcheM2Mensuel} €/m²/mois
+                  {Math.round(results.surfaceProfessionnelleTotale * 10) / 10} m² retenus ×{" "}
+                  {inputs.loyerMarcheM2Mensuel} €/m²/mois
                 </span>
               </div>
               <div className="keyfigure">
@@ -619,9 +622,15 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
                 </span>
               </div>
               <div className="keyfigure">
-                <span className="keyfigure__label">Indemnité brute</span>
+                <span className="keyfigure__label">Somme due, brute</span>
                 <span className="keyfigure__value">{parPeriode(results.indemniteAnnuelleBrute)}</span>
-                <span className="keyfigure__sub">charges retenues × quote-part</span>
+                {/* Ce n'est pas un loyer d'un seul tenant : le local étant mixte, la somme se
+                    ventile entre la contrepartie de la jouissance et le remboursement de charges
+                    réellement supportées. C'est cette ventilation qu'un contrôle vient vérifier. */}
+                <span className="keyfigure__sub">
+                  dont {parPeriode(results.loyerAnnuelBureauRetenu)} de jouissance et{" "}
+                  {parPeriode(Math.max(0, results.indemniteAnnuelleBrute - results.loyerAnnuelBureauRetenu))} de charges
+                </span>
               </div>
               {/* Le brut ne dit pas grand-chose : ce qui compte est ce qui reste au dirigeant une
                   fois l'impôt foncier payé, et ce que la société débourse une fois son économie
@@ -1400,7 +1409,11 @@ export function HomeOfficeSimulatorPage({ initialShareData }: { initialShareData
             </div>
           </div>
           <div className="stat-grid">
-            <StatCard label="Indemnité brute" value={parPeriode(results.indemniteAnnuelleBrute)} />
+            <StatCard
+              label="Somme due, brute"
+              value={parPeriode(results.indemniteAnnuelleBrute)}
+              sub={`dont ${parPeriode(results.loyerAnnuelBureauRetenu)} de jouissance et ${parPeriode(Math.max(0, results.indemniteAnnuelleBrute - results.loyerAnnuelBureauRetenu))} de charges`}
+            />
             <StatCard label="Base imposable foncière" value={parPeriode(results.baseImposableFonciere)} />
             <StatCard label="IR dû" value={parPeriode(results.irDu)} sub={`TMI : ${formatPercent(results.tauxIRUtilise)}`} />
             <StatCard label="Prélèvements sociaux (17,2 %)" value={parPeriode(results.prelevementsSociaux)} />

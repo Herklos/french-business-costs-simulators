@@ -20,8 +20,8 @@ describe("buildUrssafJustification — structure du document", () => {
       "— 2. Fondement juridique —",
       "— 3. Détermination de la quote-part professionnelle —",
       "— 4. Valeur locative retenue —",
-      "— 5. Charges refacturées, poste par poste —",
-      "— 6. Montant de l'indemnité et traitement déclaratif —",
+      "— 5. Ventilation poste par poste : valeur locative et charges —",
+      "— 6. Montant dû et traitement déclaratif —",
       "— 7. Justificatifs tenus à disposition —",
       "— 8. Attestation —",
     ]);
@@ -160,10 +160,45 @@ describe("buildUrssafJustification — chiffres repris du calcul", () => {
     expect(buildUrssafJustification(inputs({ empruntEnCours: false }))).not.toContain("Tableau d'amortissement");
   });
 
-  it("signale le dépassement du seuil de surface plutôt que de le passer sous silence", () => {
+  it("signale le dépassement du repère de surface plutôt que de le passer sous silence", () => {
     const doc = buildUrssafJustification(inputs({ surfaceTotaleM2: 80, surfaceBureauM2: 40 }));
-    expect(doc).toContain("excède le seuil");
-    expect(buildUrssafJustification(inputs())).toContain("demeure sous le seuil");
+    expect(doc).toContain("dépasse le repère interne");
+    // ... en le présentant pour ce qu'il est : un seuil de vigilance que les parties se donnent, et
+    // non une norme légale sous laquelle la situation serait réputée sûre.
+    expect(doc).toContain("n'est pas une norme légale");
+  });
+
+  it("ne présente jamais le repère de surface comme un seuil légal protecteur", () => {
+    // Sous le repère, le document ne doit rien en dire : l'argument est la méthode de mesure, pas le
+    // franchissement d'un pourcentage. Laisser entendre qu'« en dessous de 30 % on est couvert »
+    // donnerait au lecteur une sécurité que l'art. L631-7-3 CCH ne confère pas.
+    const doc = buildUrssafJustification(inputs({ surfaceTotaleM2: 100, surfaceBureauM2: 15 }));
+    expect(doc).not.toContain("demeure sous le seuil");
+    expect(doc).not.toContain("repère interne");
+    expect(doc).toContain("relevé des surfaces effectivement affectées");
+  });
+
+  it("ventile explicitement la somme due entre jouissance des locaux et remboursement de charges", () => {
+    const sim = inputs();
+    const r = computeHomeOffice(sim);
+    const doc = buildUrssafJustification(sim);
+    expect(doc).toContain("Contrepartie de la mise à disposition");
+    expect(doc).toContain("Remboursement de charges professionnelles");
+    expect(doc).toContain("n'est pas un loyer forfaitaire");
+    // Les deux composantes doivent se recomposer exactement en l'indemnité totale.
+    const chiffres = (s: string) => s.replace(/\D/g, "");
+    const totalDu = doc.split("\n").find((l) => l.includes("TOTAL DÛ"));
+    expect(chiffres(totalDu ?? "")).toContain(chiffres(String(Math.round(r.indemniteAnnuelleBrute))));
+  });
+
+  it("la part « jouissance » est la quote-part professionnelle de la valeur locative", () => {
+    const sim = inputs();
+    const r = computeHomeOffice(sim);
+    const doc = buildUrssafJustification(sim);
+    const chiffres = (s: string) => s.replace(/\D/g, "");
+    const ligne = doc.split("\n").find((l) => l.includes("Contrepartie de la mise à disposition") && l.includes("/an"));
+    expect(ligne).toBeDefined();
+    expect(chiffres(ligne ?? "")).toContain(chiffres(String(Math.round(r.loyerAnnuelBureauRetenu))));
   });
 });
 

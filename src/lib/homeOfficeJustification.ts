@@ -9,8 +9,8 @@
 //   2. le fondement juridique invoqué, article par article ;
 //   3. la détermination de la quote-part professionnelle, surface par surface ;
 //   4. la valeur locative retenue et sa source ;
-//   5. les charges refacturées, poste par poste, avec leur quote-part ;
-//   6. le montant obtenu et son traitement déclaratif de part et d'autre ;
+//   5. la ventilation poste par poste — valeur locative et charges — avec leur quote-part ;
+//   6. le montant obtenu, ventilé entre jouissance et charges, et son traitement déclaratif ;
 //   7. la liste des justificatifs tenus à disposition.
 //
 // Le format de sortie est celui de `PrintableReport` : « — Titre — » pour une section, une
@@ -50,6 +50,13 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
 
   const ville = LOYERS_VILLES.find((v) => v.id === sim.ville)?.label;
   const quotePart = formatPercent(r.quotePartSurface);
+  // La somme versée recouvre deux natures juridiques distinctes, que le total confond : la
+  // contrepartie de la jouissance des locaux, et le remboursement de charges effectivement
+  // supportées. Un local mixte impose de ventiler les dépenses selon leur caractère professionnel
+  // ou privé (BOI-BNC-BASE-40-60-30) : présenter le tout comme un « loyer » d'un seul tenant
+  // masquerait cette ventilation, qui est précisément ce qu'un contrôle vient vérifier.
+  const partLoyer = r.loyerAnnuelBureauRetenu;
+  const partCharges = Math.max(0, r.indemniteAnnuelleBrute - partLoyer);
 
   push("Note justificative — indemnité d'occupation du domicile à des fins professionnelles");
   push(`Établie le ${new Date().toLocaleDateString("fr-FR")}`);
@@ -129,8 +136,13 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
     );
   }
   push(
-    `La quote-part retenue s'établit à ${quotePart} de la surface du logement. ${r.depasseToleranceSurface ? "Elle excède le seuil de " + formatPercent(sim.toleranceSurfaceBureau) + " retenu par les parties : la réalité de l'affectation professionnelle est établie par les pièces listées au § 7." : "Elle demeure sous le seuil de " + formatPercent(sim.toleranceSurfaceBureau) + " retenu par les parties."}`,
+    `La quote-part retenue s'établit à ${quotePart} de la surface du logement. Elle ne résulte pas de l'application d'un pourcentage choisi a priori, mais du relevé des surfaces effectivement affectées à l'activité, pondérées prudemment pour celles dont l'usage est mixte. Elle est vérifiable sur le plan coté annexé.`,
   );
+  if (r.depasseToleranceSurface) {
+    push(
+      `Cette quote-part dépasse le repère interne de ${formatPercent(sim.toleranceSurfaceBureau)} que les parties se sont donné. Ce repère n'est pas une norme légale — aucun texte ne fixe de plafond général —, mais un seuil de vigilance : au-delà, l'affectation professionnelle est d'autant plus attendue qu'elle soit établie par des éléments matériels. Elle l'est ici par les pièces listées au § 7.`,
+    );
+  }
   push("");
 
   push("— 4. Valeur locative retenue —");
@@ -152,8 +164,10 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
   }
   push("");
 
-  push("— 5. Charges refacturées, poste par poste —");
-  push("Montants annuels réellement supportés, justifiés par les pièces listées au § 7.");
+  push("— 5. Ventilation poste par poste : valeur locative et charges —");
+  push(
+    "Le local étant à usage mixte, chaque dépense est ventilée entre sa part professionnelle et sa part privée, conformément au principe rappelé au § 2. Montants annuels réellement supportés, justifiés par les pièces listées au § 7.",
+  );
   push("");
   push(ligne("Poste", "Montant annuel", "Quote-part", "Retenu"));
   push(separateur());
@@ -173,10 +187,27 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
     ),
   );
   push("");
-
-  push("— 6. Montant de l'indemnité et traitement déclaratif —");
+  // Deux composantes de nature différente, que la somme masque : la contrepartie de la jouissance
+  // des locaux d'une part, le remboursement de dépenses réellement engagées d'autre part.
   push(
-    `Indemnité annuelle : ${formatEUR(r.indemniteAnnuelleBrute)} — soit ${formatEUR(r.indemniteAnnuelleBrute / 12)} par mois.`,
+    ligne("dont contrepartie de la mise à disposition", "", "", formatEUR(partLoyer)),
+  );
+  push(ligne("dont remboursement de charges", "", "", formatEUR(partCharges)));
+  push("");
+
+  push("— 6. Montant dû et traitement déclaratif —");
+  push(
+    `La somme versée n'est pas un loyer forfaitaire : elle se décompose en deux éléments de nature distincte, dont chacun se justifie séparément.`,
+  );
+  push(
+    ligne("Contrepartie de la mise à disposition", "", "", `${formatEUR(partLoyer)}/an`),
+  );
+  push(ligne("Remboursement de charges professionnelles", "", "", `${formatEUR(partCharges)}/an`));
+  push(separateur());
+  push(ligne("TOTAL DÛ", "", "", `${formatEUR(r.indemniteAnnuelleBrute)}/an`));
+  push("");
+  push(
+    `Soit ${formatEUR(r.indemniteAnnuelleBrute / 12)} par mois, dont ${formatEUR(partLoyer / 12)} au titre de la jouissance des locaux et ${formatEUR(partCharges / 12)} au titre des charges. La première composante correspond à la quote-part professionnelle de la valeur locative établie au § 4 ; la seconde au remboursement, dans la même proportion, de dépenses effectivement engagées et justifiées, énumérées au § 5.`,
   );
   push(
     `Côté société : charge déductible du résultat, engagée dans l'intérêt de l'exploitation. Coût net après économie d'impôt : ${formatEUR(r.coutNetSociete)}/an.`,
@@ -198,7 +229,7 @@ export function buildUrssafJustification(sim: HomeOfficeInputs): string {
     );
   }
   push(
-    "L'indemnité est versée par virement du compte de la société vers le compte personnel du bénéficiaire, sur une périodicité régulière, et comptabilisée comme telle.",
+    "Les deux composantes sont versées par virement du compte de la société vers le compte personnel du bénéficiaire, sur une périodicité régulière, et comptabilisées distinctement.",
   );
   push("");
 
