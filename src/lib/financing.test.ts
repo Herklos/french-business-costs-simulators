@@ -37,21 +37,43 @@ describe("computeComptant", () => {
   });
 });
 
+const CAPITAL_NEUTRE = { prixTTC: 45000, dureeDetentionMois: 60, tauxOpportunite: 0 };
+
 describe("computeCredit", () => {
   it("le coût total inclut l'apport et est supérieur au prix TTC (coût du crédit)", () => {
-    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0.04, dureeMois: 60, tauxOpportunite: 0 });
+    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0.04, dureeMois: 60 }, CAPITAL_NEUTRE);
     expect(r.coutTotal).toBeGreaterThan(45000);
     expect(r.devientProprietaire).toBe(true);
     expect(r.loyerAnnuelMoyen).toBeCloseTo(r.coutMensuelEquivalent * 12, 6);
   });
 
   it("un apport égal au prix TTC ne génère aucune mensualité", () => {
-    const r = computeCredit({ prixTTC: 45000, apport: 45000, tauxAnnuel: 0.04, dureeMois: 60, tauxOpportunite: 0 });
+    const r = computeCredit({ prixTTC: 45000, apport: 45000, tauxAnnuel: 0.04, dureeMois: 60 }, CAPITAL_NEUTRE);
     expect(r.coutTotal).toBeCloseTo(45000, 6);
   });
 
+  it("l'apport supporte le coût d'opportunité du capital, au taux et sur la durée de détention du comptant", () => {
+    const capital = { prixTTC: 45000, dureeDetentionMois: 84, tauxOpportunite: 0.03 };
+    const r = computeCredit({ prixTTC: 45000, apport: 10000, tauxAnnuel: 0, dureeMois: 60 }, capital);
+    // 10 000 € immobilisés à 3 %/an pendant sept ans — la durée de DÉTENTION, car le capital n'est
+    // récupéré qu'à la revente, et non à la dernière mensualité.
+    expect(r.detail.coutOpportuniteApport).toBeCloseTo(10000 * 0.03 * 7, 6);
+    // Les 35 000 € empruntés sortent progressivement sur cinq ans : chaque euro de principal est
+    // absent en moyenne 7 − 5/2 = 4,5 ans.
+    expect(r.detail.coutOpportunitePrincipal).toBeCloseTo(35000 * 0.03 * 4.5, 6);
+    expect(r.coutTotal).toBeCloseTo(45000 + 10000 * 0.03 * 7 + 35000 * 0.03 * 4.5, 6);
+  });
+
+  it("à taux nuls, crédit et comptant coûtent exactement le même total, quel que soit l'apport", () => {
+    const capital = { prixTTC: 45000, dureeDetentionMois: 60, tauxOpportunite: 0 };
+    for (const apport of [0, 4500, 20000, 45000]) {
+      const r = computeCredit({ prixTTC: 45000, apport, tauxAnnuel: 0, dureeMois: 60 }, capital);
+      expect(r.coutTotal).toBeCloseTo(computeComptant(capital).coutTotal, 6);
+    }
+  });
+
   it("taux à 0% (financement promotionnel) : le coût total = prix TTC exact, mensualité linéaire", () => {
-    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0, dureeMois: 60, tauxOpportunite: 0 });
+    const r = computeCredit({ prixTTC: 45000, apport: 4500, tauxAnnuel: 0, dureeMois: 60 }, CAPITAL_NEUTRE);
     expect(r.coutTotal).toBeCloseTo(45000, 6);
     expect(r.coutMensuelEquivalent).toBeCloseTo(45000 / 60, 6);
   });

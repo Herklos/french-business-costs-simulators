@@ -93,6 +93,14 @@ export function OptionsComparison({
   // écarts lisibles d'un coup d'œil sans avoir à comparer des nombres entre eux.
   const coutMax = Math.max(...results.allOptions.map(cout), 1);
   const classementDiverge = results.bestOptionPocheDirigeant.label !== results.allOptions[0].label;
+  // Un coût annuel n'est comparable qu'à durée égale : étaler le même véhicule sur six ans plutôt
+  // que cinq en réduit le montant annuel sans rien changer au coût réel. Les achats partagent
+  // désormais la durée de détention ; les locations gardent leur terme contractuel, et c'est là que
+  // l'écart subsiste — d'où l'avertissement, faute de pouvoir aligner ce qui ne l'est pas.
+  const durees = [...new Set(results.allOptions.map((o) => Math.round(o.dureeAnnees * 10) / 10))]
+    .filter((d) => d > 0)
+    .sort((a, b) => a - b);
+  const dureesInegales = durees.length > 1;
 
   return (
     <>
@@ -214,6 +222,16 @@ export function OptionsComparison({
         </p>
       )}
 
+      {dureesInegales && (
+        <p className="warning-block">
+          ⚠️ <strong>Toutes les options ne portent pas sur la même durée</strong> ({durees.map((d) => `${d} an${d > 1 ? "s" : ""}`).join(", ")}).
+          Comptant et crédit décrivent le même véhicule conservé le même temps et sont ramenés à la durée de détention que
+          vous avez saisie ; une location, elle, court sur son terme contractuel. Un coût annuel étalé sur six ans est
+          mécaniquement plus faible que le même coût étalé sur cinq, sans que rien ne soit moins cher — alignez les durées
+          de contrat sur la détention avant de conclure, ou lisez le classement en gardant l'écart à l'esprit.
+        </p>
+      )}
+
       <table className="projection-table compare-table">
         <thead>
           <tr>
@@ -250,6 +268,14 @@ export function OptionsComparison({
                         {badge.icone} {badge.texte}
                       </span>
                       <span className="option-row__label">{opt.label.replace(/^.*— /, "")}</span>
+                      {opt.dureeAnnees > 0 && (
+                        <span
+                          className="option-row__duree"
+                          title="Durée sur laquelle le coût de cette option est ramené en €/an — durée de détention pour un achat, terme du contrat pour une location."
+                        >
+                          {(Math.round(opt.dureeAnnees * 10) / 10).toLocaleString("fr-FR")} ans
+                        </span>
+                      )}
                       {isBest && <span className="option-row__trophy" title="Meilleure option pour ce point de vue">🏆</span>}
                       {estAffichee && (
                         <span className="option-row__pin" title="Mode retenu pour les panneaux de détail plus bas" />

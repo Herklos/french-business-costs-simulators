@@ -415,21 +415,174 @@ describe("computeSimulation — valeur résiduelle en fin de période", () => {
     expect(optWithout?.valeurResiduelleEstimee).toBe(0);
   });
 
-  it("une durée de détention plus longue réduit la valeur résiduelle", () => {
+  it("une durée de DÉTENTION plus longue réduit la valeur résiduelle", () => {
     const base = createDefaultInputs();
-    const courte: SimulationInputs = {
+    const avecDetention = (mois: number): SimulationInputs => ({
       ...base,
-      financing: { ...base.financing, credit: { ...base.financing.credit, dureeMois: 24 } },
-    };
-    const longue: SimulationInputs = {
+      financing: { ...base.financing, comptant: { ...base.financing.comptant, dureeDetentionMois: mois } },
+    });
+    const residuelle = (inputs: SimulationInputs) =>
+      computeSimulation(inputs).allOptions.find((o) => o.owner === "societe" && o.mode === "credit")!
+        .valeurResiduelleEstimee;
+    expect(residuelle(avecDetention(24))).toBeGreaterThan(residuelle(avecDetention(84)));
+  });
+
+  it("la durée du CRÉDIT, elle, ne change pas la valeur résiduelle du véhicule", () => {
+    // Régression : le modèle confondait durée de financement et durée de détention. Rembourser sur
+    // six ans plutôt que deux ne fait pas vieillir la voiture — mais faisait chuter sa valeur
+    // résiduelle et baisser son coût annuel, au point de rendre le crédit artificiellement gagnant.
+    const base = createDefaultInputs();
+    const avecCredit = (mois: number): SimulationInputs => ({
       ...base,
-      financing: { ...base.financing, credit: { ...base.financing.credit, dureeMois: 84 } },
+      financing: { ...base.financing, credit: { ...base.financing.credit, dureeMois: mois } },
+    });
+    const residuelle = (inputs: SimulationInputs) =>
+      computeSimulation(inputs).allOptions.find((o) => o.owner === "societe" && o.mode === "credit")!
+        .valeurResiduelleEstimee;
+    expect(residuelle(avecCredit(24))).toBeCloseTo(residuelle(avecCredit(84)), 6);
+  });
+});
+
+/**
+ * Un coût annuel n'a de sens comparatif qu'à durée égale. Le modèle confondait la durée de
+ * FINANCEMENT et la durée de DÉTENTION : un crédit de soixante-douze mois étalait le même véhicule
+ * sur six ans quand le comptant l'étalait sur cinq, et lui estimait une valeur résiduelle à six ans.
+ * Deux avantages, l'un et l'autre illusoires, pour la seule raison d'avoir emprunté plus longtemps.
+ *
+ * Ce bloc verrouille l'alignement : comptant et crédit décrivent le même véhicule, conservé le même
+ * temps, et ne diffèrent que par la modalité de paiement. Emprunter ne peut donc, à taux égal, que
+ * coûter davantage.
+ */
+describe("computeSimulation — comparabilité des modes d'acquisition (lissage aligné sur la détention)", () => {
+  const base = createDefaultInputs();
+
+  function avecFinancement(patch: {
+    detentionMois?: number;
+    tauxOpportunite?: number;
+    apport?: number;
+    creditMois?: number;
+    creditTaux?: number;
+  }): SimulationInputs {
+    return {
+      ...base,
+      financing: {
+        ...base.financing,
+        comptant: {
+          ...base.financing.comptant,
+          dureeDetentionMois: patch.detentionMois ?? base.financing.comptant.dureeDetentionMois,
+          tauxOpportunite: patch.tauxOpportunite ?? base.financing.comptant.tauxOpportunite,
+        },
+        credit: {
+          ...base.financing.credit,
+          apport: patch.apport ?? base.financing.credit.apport,
+          dureeMois: patch.creditMois ?? base.financing.credit.dureeMois,
+          tauxAnnuel: patch.creditTaux ?? base.financing.credit.tauxAnnuel,
+        },
+      },
     };
-    const rCourte = computeSimulation(courte);
-    const rLongue = computeSimulation(longue);
-    const optCourte = rCourte.allOptions.find((o) => o.owner === "societe" && o.mode === "credit");
-    const optLongue = rLongue.allOptions.find((o) => o.owner === "societe" && o.mode === "credit");
-    expect(optCourte!.valeurResiduelleEstimee).toBeGreaterThan(optLongue!.valeurResiduelleEstimee);
+  }
+
+  const coutOption = (inputs: SimulationInputs, mode: "comptant" | "credit" | "loa" | "lld") =>
+    computeSimulation(inputs).allOptions.find((o) => o.owner === "societe" && o.mode === mode)!;
+
+  it("comptant et crédit sont lissés sur la MÊME durée : celle de détention", () => {
+    const inputs = avecFinancement({ detentionMois: 60, creditMois: 72 });
+    expect(coutOption(inputs, "comptant").dureeAnnees).toBeCloseTo(5, 6);
+    expect(coutOption(inputs, "credit").dureeAnnees).toBeCloseTo(5, 6);
+  });
+
+  it("chaque option expose la durée sur laquelle son coût est ramené en €/an", () => {
+    const r = computeSimulation(base);
+    for (const opt of r.allOptions) {
+      expect(Number.isFinite(opt.dureeAnnees)).toBe(true);
+      expect(opt.dureeAnnees).toBeGreaterThan(0);
+    }
+  });
+
+  it("les locations gardent leur terme contractuel, insensible à la durée de détention", () => {
+    const court = avecFinancement({ detentionMois: 24 });
+    const long = avecFinancement({ detentionMois: 96 });
+    for (const mode of ["loa", "lld"] as const) {
+      expect(coutOption(court, mode).dureeAnnees).toBeCloseTo(coutOption(long, mode).dureeAnnees, 6);
+    }
+    expect(coutOption(court, "loa").dureeAnnees).toBeCloseTo(base.financing.loa.dureeMois / 12, 6);
+    expect(coutOption(court, "lld").dureeAnnees).toBeCloseTo(base.financing.lld.dureeMois / 12, 6);
+  });
+
+  it("à taux égaux, le comptant n'est JAMAIS plus cher que le crédit — emprunter, c'est payer le prix PLUS des intérêts", () => {
+    for (const taux of [0, 0.0099, 0.03, 0.06]) {
+      for (const detentionMois of [24, 60, 84]) {
+        const inputs = avecFinancement({
+          detentionMois,
+          tauxOpportunite: taux,
+          creditTaux: taux,
+          creditMois: detentionMois,
+        });
+        const comptant = coutOption(inputs, "comptant").globalCostAnnual;
+        const credit = coutOption(inputs, "credit").globalCostAnnual;
+        expect(comptant).toBeLessThanOrEqual(credit + 1e-6);
+      }
+    }
+  });
+
+  it("à taux nuls des deux côtés, comptant et crédit convergent exactement — quel que soit l'apport", () => {
+    for (const apport of [0, 5000, 10000, 42784]) {
+      const inputs = avecFinancement({ tauxOpportunite: 0, creditTaux: 0, apport, creditMois: 60, detentionMois: 60 });
+      expect(coutOption(inputs, "credit").globalCostAnnual).toBeCloseTo(
+        coutOption(inputs, "comptant").globalCostAnnual,
+        6,
+      );
+    }
+  });
+
+  it("le coût du crédit croît avec son taux, toutes choses égales par ailleurs", () => {
+    const cout = (creditTaux: number) => coutOption(avecFinancement({ creditTaux }), "credit").globalCostAnnual;
+    expect(cout(0)).toBeLessThan(cout(0.03));
+    expect(cout(0.03)).toBeLessThan(cout(0.06));
+  });
+
+  it("augmenter l'apport ne rend plus le crédit artificiellement moins cher : le capital sorti garde son coût d'opportunité", () => {
+    // Régression : seul le comptant se voyait facturer un coût d'opportunité, si bien que sortir du
+    // cash sous forme d'apport était gratuit — le simulateur récompensait alors le gros apport.
+    const cout = (apport: number) => coutOption(avecFinancement({ apport, creditMois: 60 }), "credit").globalCostAnnual;
+    // TAEG par défaut inférieur au taux d'opportunité : emprunter davantage doit rester avantageux,
+    // mais l'écart doit rester borné par le seul différentiel de taux, sans prime au décaissement.
+    expect(cout(0)).toBeLessThanOrEqual(cout(30000) + 1e-6);
+  });
+
+  it("à TAEG égal au taux d'opportunité, la durée du crédit est NEUTRE sur le coût annuel", () => {
+    // Régression : allonger le remboursement étalait le total sur davantage d'années ET rabotait la
+    // valeur résiduelle. Le crédit long gagnait donc deux fois, sans qu'aucun euro ne soit économisé.
+    // Emprunter au taux exact auquel on placerait est une opération blanche : sa durée ne doit rien
+    // changer. Ce qui subsiste est l'écart entre l'amortissement réel et son approximation linéaire.
+    const cout = (creditMois: number) =>
+      coutOption(avecFinancement({ creditMois, creditTaux: 0.03, tauxOpportunite: 0.03, detentionMois: 96 }), "credit")
+        .globalCostAnnual;
+    // Un amortissement par annuités constantes rembourse le principal un peu plus tard que
+    // l'approximation linéaire retenue : le résidu est positif, mais de l'ordre de quelques euros
+    // par an sur plus de huit mille — contre plusieurs centaines avant l'alignement.
+    for (const mois of [72, 96]) {
+      expect(cout(mois)).toBeGreaterThanOrEqual(cout(24) - 1e-6);
+      expect(cout(mois) - cout(24)).toBeLessThan(cout(24) * 0.005);
+    }
+  });
+
+  it("un TAEG inférieur au taux d'opportunité rend le crédit long moins cher — arbitrage réel, non artefact de lissage", () => {
+    // L'effet ne vient plus de la durée d'étalement, désormais commune, mais du seul différentiel de
+    // taux : emprunter à 1 % ce qu'on placerait à 3 % rapporte, et d'autant plus longtemps qu'on
+    // rembourse tard. C'est un arbitrage financier authentique, pas un biais du modèle.
+    const cout = (creditMois: number) =>
+      coutOption(avecFinancement({ creditMois, creditTaux: 0.01, tauxOpportunite: 0.03, detentionMois: 96 }), "credit")
+        .globalCostAnnual;
+    expect(cout(96)).toBeLessThan(cout(24));
+  });
+
+  it("allonger la DÉTENTION, en revanche, réduit bien le coût annuel des deux modes d'achat", () => {
+    // Celui-ci est un effet réel : le même véhicule amorti sur plus longtemps coûte moins par an.
+    for (const mode of ["comptant", "credit"] as const) {
+      const cout = (detentionMois: number) => coutOption(avecFinancement({ detentionMois }), mode).globalCostAnnual;
+      expect(cout(84)).toBeLessThan(cout(36));
+    }
   });
 });
 

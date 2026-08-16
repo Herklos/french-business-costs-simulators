@@ -149,8 +149,10 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   }
   push("");
   push("— Modes de financement (paramètres, hypothèses) —");
-  push(`Comptant : durée de détention ${sim.financing.comptant.dureeDetentionMois} mois, taux d'opportunité ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an`);
-  push(`Crédit : apport ${formatEUR(sim.financing.credit.apport)}, TAEG ${formatPercent(sim.financing.credit.tauxAnnuel, 3)}, durée ${sim.financing.credit.dureeMois} mois`);
+  push(
+    `Détention du véhicule : ${sim.financing.comptant.dureeDetentionMois} mois (commune au comptant et au crédit, qui portent sur le même véhicule), taux d'opportunité du capital ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an`,
+  );
+  push(`Crédit : apport ${formatEUR(sim.financing.credit.apport)}, TAEG ${formatPercent(sim.financing.credit.tauxAnnuel, 3)}, durée de remboursement ${sim.financing.credit.dureeMois} mois`);
   push(
     `LOA : 1er loyer majoré ${formatEUR(sim.financing.loa.premierLoyerMajore)}, loyer mensuel ${formatEUR(sim.financing.loa.loyerMensuel)}, durée ${sim.financing.loa.dureeMois} mois, option d'achat ${formatEUR(sim.financing.loa.valeurOptionAchat)} (${sim.financing.loa.leveeOption ? "levée" : "non levée"})`,
   );
@@ -1522,16 +1524,22 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                 onChange={(v) => update("tauxDeprecationAnnuel", v)}
               />
             </Field>
+            <Field
+              label="Durée de détention du véhicule (mois)"
+              hint="Combien de temps le véhicule est gardé — ce n'est pas la durée du financement. Comptant et crédit décrivent le même véhicule, conservé le même temps : ils partagent donc cette durée, et c'est elle qui ramène leur coût total en €/an et fixe la date à laquelle la valeur résiduelle est estimée. Une location fait exception, son terme étant contractuel."
+            >
+              <NumberInput
+                value={inputs.financing.comptant.dureeDetentionMois}
+                onChange={(e) => updateFinancing("comptant", { dureeDetentionMois: Number(e.target.value) })}
+              />
+            </Field>
             <div className="financing-grid">
               <div className="financing-card">
                 <h4>Comptant</h4>
-                <Field label="Durée de détention (mois)">
-                  <NumberInput
-                    value={inputs.financing.comptant.dureeDetentionMois}
-                    onChange={(e) => updateFinancing("comptant", { dureeDetentionMois: Number(e.target.value) })}
-                  />
-                </Field>
-                <Field label="Taux d'opportunité du capital (%/an)">
+                <Field
+                  label="Taux d'opportunité du capital (%/an)"
+                  hint="Rendement auquel votre argent serait placé s'il ne finançait pas le véhicule. Il s'applique à tout capital sorti de poche — le prix payé comptant comme l'apport et les mensualités d'un crédit — et non au seul comptant."
+                >
                   <NumberInput
                     step="0.01"
                     value={inputs.financing.comptant.tauxOpportunite}
@@ -1539,13 +1547,14 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   />
                 </Field>
                 <p className="field__hint">
-                  Le coût du comptant inclut ce coût d'opportunité sur la <strong>totalité du prix</strong>, pendant{" "}
-                  <strong>toute la durée de détention</strong> (le capital n'est récupéré qu'à la revente, en une fois, en fin
-                  de période — déjà déduite ci-dessous de la valeur résiduelle). À l'inverse, sur un crédit, les intérêts ne
-                  portent que sur le capital restant dû, qui diminue chaque mois. Résultat : même avec un TAEG supérieur au
-                  taux d'opportunité (comme ici, 4 % vs 3 % par défaut), le crédit peut ressortir moins cher que le comptant —
-                  ce n'est pas une erreur, c'est l'effet mécanique d'un capital immobilisé en totalité (comptant) comparé à un
-                  capital restant dû dégressif (crédit).
+                  Ce taux ne concerne pas que le comptant : il chiffre ce que rapporterait tout capital qui n'a pas financé
+                  le véhicule. Payé comptant, le prix entier sort au premier jour et n'est récupéré qu'à la revente — d'où un
+                  coût d'opportunité sur <strong>la totalité du prix, pendant toute la durée de détention</strong>. À crédit,
+                  l'<strong>apport</strong> sort exactement de la même façon, et le <strong>principal</strong> sort plus tard,
+                  au fil des mensualités : il n'est donc absent, en moyenne, que depuis la moitié du remboursement. C'est cet
+                  étalement — et non un quelconque avantage — qui rend le crédit intéressant, et il se paie en intérêts.
+                  Emprunter au taux exact auquel vous placeriez est ainsi une opération blanche : sa durée ne change rien. Un
+                  crédit moins cher signale un TAEG inférieur à votre taux d'opportunité, ce qui est un arbitrage réel.
                 </p>
               </div>
 

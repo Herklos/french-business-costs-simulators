@@ -1170,6 +1170,18 @@ td {
   font-size: 0.9rem;
 }
 
+/* Durée sur laquelle le coût annuel est lissé : discrète, mais toujours présente, car deux coûts
+   annuels ne se comparent qu'à durée égale. */
+.option-row__duree {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 /* Marqueur du mode alimentant les panneaux de détail : réduit à une pastille, le texte complet
    restant disponible en infobulle. */
 .option-row__pin {

@@ -35,10 +35,6 @@ export interface CreditParams {
   apport: number;
   tauxAnnuel: number; // TAEG (0-1)
   dureeMois: number;
-  // Même rendement alternatif que celui du comptant : l'apport est du capital immobilisé au premier
-  // jour, exactement comme un achat comptant. Ne le facturer que d'un côté rendait le crédit
-  // artificiellement moins cher, d'autant plus que l'apport est important.
-  tauxOpportunite: number;
 }
 
 export interface LoaParams {
@@ -82,7 +78,6 @@ export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
       apport: prixTTC * 0.1,
       tauxAnnuel: 0.04,
       dureeMois: 60,
-      tauxOpportunite: TAUX_OPPORTUNITE_DEFAUT,
     },
     loa: {
       prixTTC,
@@ -152,16 +147,37 @@ export function coutOpportuniteCapital(montant: number, tauxAnnuel: number, dure
   return Math.max(0, montant) * Math.max(0, tauxAnnuel) * (Math.max(0, dureeMois) / 12);
 }
 
-export function computeCredit(p: CreditParams): FinancingResult {
+/**
+ * Le capital immobilisé — prix payé comptant, ou apport d'un crédit — n'appartient à aucun mode de
+ * financement en particulier : c'est le même argent, du même détenteur, sorti le même jour et
+ * récupéré à la même revente. Rendement alternatif et durée d'immobilisation sont donc UNIQUES, et
+ * lus depuis les paramètres du comptant plutôt que dupliqués dans ceux du crédit — deux copies
+ * pouvant diverger, et l'écart se lisant alors comme un avantage économique du crédit.
+ */
+export function computeCredit(p: CreditParams, capital: ComptantParams): FinancingResult {
   const montantEmprunte = Math.max(0, p.prixTTC - p.apport);
   const mensualite = computeMensualiteCredit(montantEmprunte, p.tauxAnnuel, p.dureeMois);
   const totalMensualites = mensualite * p.dureeMois;
   const coutCredit = totalMensualites - montantEmprunte;
-  // L'apport est immobilisé dès le premier jour, au même titre qu'un achat comptant : il supporte
-  // donc le même coût d'opportunité. L'omettre faisait mécaniquement gagner le crédit dès qu'un
-  // apport était saisi, sans qu'aucune ligne du détail ne l'explique.
-  const coutOpportuniteApport = coutOpportuniteCapital(p.apport, p.tauxOpportunite, p.dureeMois);
-  const coutTotal = p.apport + totalMensualites + coutOpportuniteApport;
+  // L'apport est immobilisé dès le premier jour, au même titre qu'un achat comptant, et jusqu'à la
+  // revente du véhicule — donc sur la durée de DÉTENTION, non sur celle du remboursement. L'omettre
+  // faisait mécaniquement gagner le crédit dès qu'un apport était saisi, sans qu'aucune ligne du
+  // détail ne l'explique.
+  const coutOpportuniteApport = coutOpportuniteCapital(p.apport, capital.tauxOpportunite, capital.dureeDetentionMois);
+  // Le capital EMPRUNTÉ finit lui aussi par sortir de la poche, simplement plus tard : remboursé
+  // linéairement sur la durée du crédit, chaque euro de principal est absent en moyenne depuis la
+  // moitié du remboursement jusqu'à la revente. Ne compter que les intérêts revenait à traiter cette
+  // sortie comme gratuite, alors que l'achat comptant se voyait facturer la même somme immobilisée
+  // dès le premier jour — d'où un crédit systématiquement gagnant à taux égal, ce qui est impossible.
+  const dureeRemboursementMois = Math.min(p.dureeMois, capital.dureeDetentionMois);
+  const dureeMoyenneSortieMois = Math.max(0, capital.dureeDetentionMois - dureeRemboursementMois / 2);
+  const coutOpportunitePrincipal = coutOpportuniteCapital(
+    montantEmprunte,
+    capital.tauxOpportunite,
+    dureeMoyenneSortieMois,
+  );
+  const coutOpportunite = coutOpportuniteApport + coutOpportunitePrincipal;
+  const coutTotal = p.apport + totalMensualites + coutOpportunite;
   const coutMensuelEquivalent = p.dureeMois > 0 ? coutTotal / p.dureeMois : 0;
   return {
     mode: "credit",
@@ -169,7 +185,16 @@ export function computeCredit(p: CreditParams): FinancingResult {
     coutTotal,
     coutMensuelEquivalent,
     loyerAnnuelMoyen: coutMensuelEquivalent * 12,
-    detail: { montantEmprunte, mensualite, totalMensualites, coutCredit, apport: p.apport, coutOpportuniteApport },
+    detail: {
+      montantEmprunte,
+      mensualite,
+      totalMensualites,
+      coutCredit,
+      apport: p.apport,
+      coutOpportuniteApport,
+      coutOpportunitePrincipal,
+      coutOpportunite,
+    },
     devientProprietaire: true,
   };
 }
@@ -227,7 +252,7 @@ export function computeLld(p: LldParams): FinancingResult {
 export function compareFinancingModes(inputs: FinancingInputs): FinancingResult[] {
   return [
     computeComptant(inputs.comptant),
-    computeCredit(inputs.credit),
+    computeCredit(inputs.credit, inputs.comptant),
     computeLoa(inputs.loa),
     computeLld(inputs.lld),
   ];

@@ -349,11 +349,7 @@ export function applyVehicleModel(inputs: SimulationInputs, modelId: string): Si
       // Sans cela, le crédit resterait chiffré sur des hypothèses génériques — apport de 10 % et
       // taux de marché — pendant que la LOA et la LLD porteraient l'offre réelle du constructeur.
       // Le comparatif opposerait alors une promotion à une estimation, ce qui n'a pas de sens.
-      financing.credit = {
-        prixTTC: model.defaultPrice,
-        tauxOpportunite: financing.comptant.tauxOpportunite,
-        ...model.defaultCreditOffer,
-      };
+      financing.credit = { prixTTC: model.defaultPrice, ...model.defaultCreditOffer };
     }
     if (model.defaultLldOffer) {
       financing.lld = {
@@ -498,9 +494,50 @@ export interface SimulationResults {
   prixNetPersonnel: number; // inputs.vehiclePrice − remisePersonnel
 }
 
-function getFinancingAnnual(financingResults: FinancingResult[], mode: FinancingMode): number {
+/**
+ * Durée de DÉTENTION du véhicule, distincte de la durée de son financement.
+ *
+ * Un crédit sur 72 mois n'oblige pas à garder la voiture six ans, et un achat comptant ne dit rien
+ * de la durée de conservation. Ce sont deux choses différentes que le modèle confondait : il
+ * annualisait chaque mode d'achat sur la durée de SON financement, si bien qu'un crédit plus long
+ * paraissait moins cher — non parce qu'il l'était, mais parce qu'il étalait le même véhicule sur
+ * davantage d'années et lui laissait moins de valeur résiduelle à récupérer.
+ *
+ * Les modes d'ACHAT partagent donc désormais cette durée unique, et seuls les échéanciers restent
+ * propres à chaque financement. Une location fait exception : on ne garde pas un véhicule qu'on
+ * restitue, sa durée de détention EST celle du contrat.
+ */
+export function getDureeDetentionMois(inputs: SimulationInputs): number {
+  return Math.max(1, inputs.financing.comptant.dureeDetentionMois);
+}
+
+/**
+ * Le mode décrit-il une ACQUISITION dont seule la modalité de paiement varie ?
+ *
+ * Comptant et crédit, oui : c'est le même véhicule, acheté et conservé le même temps, payé d'un
+ * coup ou par mensualités. Ils partagent donc la durée de détention, et c'est ce qui les rend
+ * comparables. Une location non : son terme est contractuel, et il n'y a pas de sens à lisser un
+ * contrat de quarante-huit mois sur une détention de soixante — pas même lorsque l'option est
+ * levée, auquel cas la durée du contrat reste celle sur laquelle loyers et rachat s'étalent.
+ */
+function estAcquisitionDirecte(mode: FinancingMode): boolean {
+  return mode === "comptant" || mode === "credit";
+}
+
+/**
+ * Coût annuel du financement, lissé sur la durée pertinente : la durée de détention pour un
+ * véhicule conservé, la durée du contrat pour un véhicule restitué. Le coût TOTAL du financement
+ * reste celui de son échéancier propre — seul son étalement change.
+ */
+function getFinancingAnnual(
+  financingResults: FinancingResult[],
+  mode: FinancingMode,
+  inputs: SimulationInputs,
+): number {
   const found = financingResults.find((f) => f.mode === mode);
-  return found ? found.coutMensuelEquivalent * 12 : 0;
+  if (!found) return 0;
+  if (!estAcquisitionDirecte(mode)) return found.coutMensuelEquivalent * 12;
+  return found.coutTotal / (getDureeDetentionMois(inputs) / 12);
 }
 
 /** Coût de LOCATION annuel moyen (hors option d'achat/valeur résiduelle) — cf. FinancingResult.loyerAnnuelMoyen. */
@@ -509,18 +546,14 @@ function getLoyerAnnuelMoyen(financingResults: FinancingResult[], mode: Financin
   return found ? found.loyerAnnuelMoyen : 0;
 }
 
-/** Durée (mois) du montage retenu pour un mode de financement donné (0 pour la LLD, jamais possédée). */
+/**
+ * Durée (mois) sur laquelle le coût d'un mode est lissé, et au terme de laquelle sa valeur
+ * résiduelle est estimée. Cf. `estAcquisitionDirecte` : comptant et crédit partagent la durée de
+ * détention, les locations suivent leur contrat.
+ */
 function getDureeMoisForMode(inputs: SimulationInputs, mode: FinancingMode): number {
-  switch (mode) {
-    case "comptant":
-      return inputs.financing.comptant.dureeDetentionMois;
-    case "credit":
-      return inputs.financing.credit.dureeMois;
-    case "loa":
-      return inputs.financing.loa.dureeMois;
-    case "lld":
-      return 0;
-  }
+  if (estAcquisitionDirecte(mode)) return getDureeDetentionMois(inputs);
+  return mode === "loa" ? inputs.financing.loa.dureeMois : inputs.financing.lld.dureeMois;
 }
 
 /**
@@ -709,7 +742,7 @@ function computeSocieteForMode(
   const companyTypeConfig = getCompanyType(inputs.country, inputs.companyType);
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
 
-  const financingAnnual = getFinancingAnnual(financingResults, mode);
+  const financingAnnual = getFinancingAnnual(financingResults, mode, inputs);
   const loyerAnnuelMoyen = getLoyerAnnuelMoyen(financingResults, mode);
   // Offre LLD « tout compris » : entretien et assurance sont déjà dans le loyer. On les neutralise
   // POUR CE SEUL MODE — les champs de saisie sont communs aux quatre modes et restent indispensables
@@ -956,7 +989,7 @@ function computePersonnelForMode(
   const effectiveIkRatePerKm = inputs.ikRatePerKm * (inputs.isElectric ? 1 + IK_MAJORATION_ELECTRIQUE : 1);
   const ikReimbursement = proKmAnnual * effectiveIkRatePerKm;
 
-  const personalFinancingAnnual = getFinancingAnnual(financingResults, mode);
+  const personalFinancingAnnual = getFinancingAnnual(financingResults, mode, inputs);
   // Valeur résiduelle annualisée (véhicule possédé en fin de période) — cf. getResidualValueAnnualized :
   // le dirigeant reste propriétaire du véhicule, sa revente future doit venir en déduction du coût.
   // Nommée différemment de son équivalent côté société (cf. computeSocieteForMode) pour éviter toute
