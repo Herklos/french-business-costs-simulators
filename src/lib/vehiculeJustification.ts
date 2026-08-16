@@ -74,9 +74,13 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
   push("— 1. Parties, véhicule et contrat —");
   push(`Société détentrice du contrat : ${champ(sim.denominationSociete)}`);
   push(`Bénéficiaire de la mise à disposition : ${champ(sim.nomDirigeant)}`);
-  push(
-    `Statut du bénéficiaire : ${estTNS ? "gérant majoritaire, travailleur non salarié (art. 62 CGI)" : "dirigeant assimilé salarié (régime général)"}`,
-  );
+  // « Gérant majoritaire » décrit une SARL à plusieurs associés ; dans une société unipersonnelle,
+  // « associé unique » est à la fois plus exact et plus précis pour le lecteur.
+  const unipersonnelle = sim.companyType === "EURL" || sim.companyType === "SASU";
+  const qualiteBeneficiaire = estTNS
+    ? `gérant ${unipersonnelle ? "associé unique" : "majoritaire"} — travailleur non salarié, rémunération relevant de l'art. 62 CGI`
+    : `${unipersonnelle ? "président associé unique" : "dirigeant"} assimilé salarié, affilié au régime général`;
+  push(`Statut du bénéficiaire : ${qualiteBeneficiaire}`);
   push(`Véhicule : ${modele ? modele.label : A_COMPLETER} — immatriculation ${champ(sim.immatriculation)}`);
   push(
     `Motorisation : ${sim.isElectric ? "100 % électrique (0 g CO2/km)" : `thermique ou hybride, ${sim.co2EmissionsGkm} g CO2/km (WLTP)`}`,
@@ -102,7 +106,7 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
     "Art. L223-19 (SARL et EURL) et L227-10 (SAS) du code de commerce — la mise à disposition consentie au dirigeant constitue une convention entre la société et lui. Lorsque la société ne comprend qu'un associé unique et que la convention est conclue avec celui-ci, aucun rapport spécial n'est requis : il en est seulement fait mention au registre des décisions, mention qui conditionne l'opposabilité de la convention.",
   );
   push(
-    "Art. L241-3, 4° du code de commerce — l'abus de biens sociaux suppose la réunion d'un usage contraire à l'intérêt social, d'une finalité personnelle et de la MAUVAISE FOI du dirigeant. Aucun texte ne fixe de proportion d'usage privé au-delà de laquelle l'infraction serait constituée. La présente note, la décision sociale qui l'accompagne et la déclaration intégrale de l'avantage écartent la dissimulation, qui en est l'élément déterminant.",
+    "Art. L241-3, 4° du code de commerce — l'abus de biens sociaux suppose la réunion d'un usage contraire à l'intérêt social, d'une finalité personnelle et de la MAUVAISE FOI du dirigeant. Aucun texte ne fixe de proportion d'usage privé au-delà de laquelle l'infraction serait constituée. La mise à disposition est ici autorisée par une décision préalable de l'organe compétent, l'usage privé est reconnu, et l'avantage correspondant est déclaré selon les règles applicables. Ces éléments établissent la transparence de l'opération et concourent à écarter la mauvaise foi, SANS PRÉJUGER de l'appréciation globale de son intérêt social, qui relève d'un examen d'ensemble de la situation de la société (cf. § 6).",
   );
   push("");
 
@@ -124,9 +128,24 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
   push(separateur());
   push(ligne("TOTAL", `${sim.totalKmAnnual} km`, "100 %"));
   push("");
-  push(
-    `L'usage privé est déclaré pour sa part réelle, sans minoration. ${partPrivee >= 80 ? "Sa prépondérance est assumée : elle ne fait pas obstacle à la mise à disposition, dès lors que l'avantage correspondant est intégralement déclaré et que le véhicule est traité pour ce qu'il est — un élément de rémunération. " : ""}Un relevé kilométrique est tenu et conservé.`,
-  );
+  if (partPrivee >= 100) {
+    // À usage exclusivement privé, l'argument tiré du besoin professionnel n'existe plus. Le taire
+    // serait la faiblesse du dossier ; l'assumer en déplaçant la justification sur le terrain de la
+    // rémunération est à la fois plus exact et plus solide.
+    push(
+      "AUCUN USAGE PROFESSIONNEL N'EST DÉCLARÉ, et cette note ne prétend pas le contraire. Le véhicule n'est pas justifié comme un outil de travail : il constitue, en totalité, un ÉLÉMENT DE RÉMUNÉRATION du dirigeant, consenti sous forme d'avantage en nature. Sa déductibilité ne repose donc pas sur un besoin professionnel — qui serait ici inexistant — mais sur l'art. 39-1-1° CGI, qui admet en charge les rémunérations indirectes.",
+    );
+    push(
+      "Trois conséquences en découlent, assumées comme telles. L'avantage en nature est déclaré pour la TOTALITÉ du coût du véhicule, sans proratisation. Le caractère non excessif de la rémunération globale du dirigeant, avantage compris, devient le seul terrain sur lequel l'opération se défend : il est examiné au § 6. Et aucun frais de déplacement professionnel ni aucune indemnité kilométrique ne peuvent être réclamés au titre de ce véhicule.",
+    );
+    push(
+      "Un relevé kilométrique reste tenu et conservé : il documente l'absence d'usage professionnel autant qu'il en établirait la réalité, et c'est la cohérence entre ce relevé et l'avantage déclaré qui est vérifiable.",
+    );
+  } else {
+    push(
+      `L'usage privé est déclaré pour sa part réelle, sans minoration. ${partPrivee >= 80 ? "Sa prépondérance est assumée : elle ne fait pas obstacle à la mise à disposition, dès lors que l'avantage correspondant est intégralement déclaré et que le véhicule est traité pour ce qu'il est — un élément de rémunération. " : ""}Un relevé kilométrique est tenu et conservé.`,
+    );
+  }
   push("");
 
   push("— 4. Évaluation de l'avantage en nature, au réel —");
@@ -182,20 +201,32 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
   }
   if (r.abattement > 0) {
     push(
-      `L'abattement retenu est celui de la méthode réelle — 50 % de l'avantage, plafonné — et non celui de la méthode forfaitaire, plus favorable mais indissociable de cette dernière. Les frais d'électricité engagés pour la recharge ne sont, en tout état de cause, pas pris en compte dans l'évaluation.`,
+      `L'abattement retenu est celui de la méthode réelle — 50 % de l'avantage, plafonné à ${formatEUR(2026.3)} — et non celui de la méthode forfaitaire, plus favorable mais indissociable de cette dernière. Les frais d'électricité engagés pour la recharge ne sont, en tout état de cause, pas pris en compte dans l'évaluation.`,
     );
+    if (estTNS) {
+      // Point réellement discuté : l'arrêté qui institue cet abattement vise les salariés du régime
+      // général. Les commentateurs professionnels divergent sur son extension à un TNS. Le simuler
+      // sans le dire donnerait à un chiffre incertain l'apparence d'un acquis.
+      push(
+        "RÉSERVE EXPRESSE SUR CE POINT. L'arrêté du 25 février 2025, qui institue cet abattement, vise les salariés affiliés au régime général et au régime agricole ; le bénéficiaire relevant du régime des travailleurs non salariés en est hors du champ. Les commentateurs professionnels divergent sur son extension à un gérant relevant de l'art. 62 CGI, certains l'appliquant à l'évaluation au réel, d'autres la réservant aux salariés et assimilés. L'abattement est retenu ici parce qu'il correspond à la pratique la plus répandue, mais il n'est pas acquis : à défaut de validation par le conseil de la société ou par un rescrit social, l'avantage devrait être porté à " +
+          `${formatEUR(r.aenNet + r.abattement)}/an. C'est le seul poste de la présente note dont le fondement soit discuté.`,
+      );
+    }
   }
   push("");
 
   push("— 5. Traitement déclaratif —");
   push(
-    `Côté bénéficiaire : l'avantage de ${formatEUR(r.aenNet)} est intégré à sa rémunération. Cotisations sociales correspondantes : ${formatEUR(r.cotisationsTNS)}. Impôt sur le revenu au taux marginal de ${formatPercent(r.tauxIRUtilise)} : ${formatEUR(r.irEstimee)}. Charge totale supportée à ce titre : ${formatEUR(r.coutTotalGerantSociete)}/an.`,
+    `Côté bénéficiaire : l'avantage de ${formatEUR(r.aenNet)} est intégré à sa rémunération.`,
+  );
+  push(
+    `Estimation des prélèvements correspondants : ${formatEUR(r.cotisationsTNS)} de cotisations sociales et ${formatEUR(r.irEstimee)} d'impôt sur le revenu, soit ${formatEUR(r.coutTotalGerantSociete)}/an. Ces montants reposent sur un taux global de cotisations de ${formatPercent(sim.tnsContributionRate)} et un taux marginal d'imposition de ${formatPercent(r.tauxIRUtilise)} retenus par hypothèse : ils situent l'ordre de grandeur et ne se substituent pas au calcul de l'organisme social, qui dépend de l'assiette effective, de la rémunération et des cotisations déjà appelées.`,
   );
   push(
     `Côté société : décaissement annuel de ${formatEUR(r.companyCashBaseAnnual)}. La déduction retenue est limitée à la quote-part professionnelle, soit ${formatEUR(r.quotePartProfessionnelleDeductible)}. Coût net après économie d'impôt : ${formatEUR(r.coutNetSociete)}/an.`,
   );
   push(
-    "Cette limitation est une hypothèse de prudence, et non une contrainte légale : l'art. 39-1-1° CGI rend déductibles les rémunérations indirectes, avantages en nature compris, de sorte qu'un véhicule de fonction régulièrement qualifié comme élément de rémunération et déclaré comme tel est en principe déductible pour la totalité de son coût. Le chiffrage ci-dessus retient donc le traitement le moins favorable à la société, ce qui ne peut pas la desservir en cas de contrôle.",
+    "Cette limitation est une hypothèse de prudence, et non une contrainte légale : l'art. 39-1-1° CGI rend déductibles les rémunérations directes comme indirectes, avantages en nature compris, dès lors qu'elles correspondent à un travail effectif et ne sont pas excessives au regard du service rendu. La prise en charge du véhicule peut donc constituer une rémunération indirecte déductible à ce titre. Cette qualification ne lève toutefois AUCUNE des limitations propres aux véhicules de tourisme — plafond de l'art. 39-4 CGI, exclusion du droit à déduction de la TVA, taxes annuelles —, qui continuent de s'appliquer indépendamment. Le chiffrage ci-dessus retient le traitement le moins favorable à la société, ce qui ne peut pas la desservir en cas de contrôle.",
   );
   if (r.reintegrationFiscaleCO2 > 0) {
     push(
@@ -208,8 +239,8 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
   }
   push(
     r.annualVehicleTax > 0
-      ? `Taxes annuelles sur l'affectation du véhicule à des fins économiques : ${formatEUR(r.annualVehicleTax)}/an.`
-      : "Taxes annuelles sur l'affectation du véhicule à des fins économiques : néant (cf. § 6).",
+      ? `Taxes annuelles sur l'affectation du véhicule à des fins économiques : ${formatEUR(r.annualVehicleTax)}/an, sous réserve des caractéristiques exactes portées au certificat d'immatriculation.`
+      : "Taxes annuelles sur l'affectation du véhicule à des fins économiques : néant, le véhicule fonctionnant exclusivement à l'électricité (cf. § 6) — sous réserve de confirmation à partir du certificat d'immatriculation et de l'affectation effective du véhicule.",
   );
   push(
     r.tvaDeductible > 0
@@ -256,7 +287,8 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
       push("");
       push(
         modele.ecoScoreEligible
-          ? `VÉHICULE ÉLIGIBLE À L'ÉCO-SCORE. Le modèle retenu — ${modele.label} — figure parmi les véhicules dont le score environnemental atteint le seuil requis, condition à laquelle l'arrêté du 25 février 2025 subordonne l'abattement applicable à l'avantage en nature. Cette éligibilité s'apprécie AU JOUR DE LA MISE À DISPOSITION et dépend du site d'assemblage et de la filière batterie : l'inscription du modèle sur la liste publiée par l'ADEME à cette date est conservée au dossier. Elle procure ici ${formatEUR(r.abattement)} d'abattement annuel.`
+          ? `VÉHICULE ÉLIGIBLE À L'ÉCO-SCORE. Le modèle retenu — ${modele.label} — figure parmi les véhicules dont le score environnemental atteint le seuil requis, condition à laquelle l'arrêté du 25 février 2025 subordonne l'abattement applicable à l'avantage en nature. Elle procure ici ${formatEUR(r.abattement)} d'abattement annuel.\n\n` +
+            "L'ÉLIGIBILITÉ NE SE PRÉSUME PAS DU NOM DU MODÈLE. Elle s'apprécie au jour de la mise à disposition et dépend du site d'assemblage et de la filière batterie, qui varient d'une version et d'un millésime à l'autre au sein d'une même gamme. Le dossier identifie donc la VERSION EXACTE, le type-variante-version porté au certificat d'immatriculation et le numéro d'identification du véhicule, et conserve l'extrait daté de la liste publiée par l'ADEME établissant l'éligibilité de cette version précise à cette date."
           : `ÉCO-SCORE. Le modèle retenu — ${modele.label} — n'atteint pas le seuil de score environnemental auquel l'arrêté du 25 février 2025 subordonne l'abattement sur l'avantage en nature. Aucun abattement n'est donc pratiqué, ce qui majore l'avantage déclaré et les prélèvements correspondants. Cette absence est assumée et documentée plutôt que présumée.`,
       );
     }
@@ -334,7 +366,9 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
     );
   }
   if (sim.isElectric && modele?.ecoScoreEligible) {
-    pieces.push("Justificatif d'inscription du modèle sur la liste ADEME à la date de mise à disposition");
+    pieces.push(
+      "Extrait daté de la liste ADEME établissant l'éligibilité de la version exacte du véhicule (type-variante-version et numéro d'identification) à la date de mise à disposition",
+    );
   }
   if (r.participationAnnual > 0) {
     pieces.push("Justificatifs des versements de la participation financière du bénéficiaire");

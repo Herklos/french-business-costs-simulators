@@ -106,6 +106,7 @@ export const TAX_RULES: TaxRule[] = [
     validFrom: "2025-02-01",
     validUntil: "2027-12-31",
     notes:
+      "POINT DISCUTÉ POUR UN GÉRANT TNS, à connaître avant de s'appuyer sur le chiffre. L'arrêté qui institue cet abattement vise les salariés affiliés au régime général et au régime agricole : un gérant majoritaire, relevant du régime des travailleurs non salariés, est hors de son champ. Les commentateurs professionnels divergent sur son extension à l'évaluation au réel d'un dirigeant de l'art. 62 CGI — certains l'appliquent, d'autres le réservent aux salariés et assimilés. Le simulateur le retient parce qu'il correspond à la pratique la plus répandue et parce que l'écarter d'office surestimerait l'avantage ; le champ « éligible à l'éco-score » permet de calculer sans lui, et la note justificative porte la réserve en toutes lettres. Un rescrit social lève définitivement le doute.\n\n" +
       "Dispositif renforcé applicable aux véhicules mis à disposition entre le 1er février 2025 et le 31 décembre 2027. Condition d'éligibilité : éco-score ≥ 60 points (liste ADEME) au jour de la mise à disposition. Modèles généralement éligibles : Tesla Model Y (assemblage Berlin), Renault Megane E-Tech, Renault Scenic E-Tech (assemblés en France). Modèle généralement non éligible : Tesla Model 3. Liste non exhaustive et évolutive — vérifier la liste ADEME officielle à jour.",
   },
   {

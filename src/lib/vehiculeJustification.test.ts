@@ -212,7 +212,10 @@ describe("buildVehiculeJustification — justification du choix électrique", ()
   it("un modèle listé ADEME est justifié par son éco-score, avec la date d'appréciation", () => {
     const doc = buildVehiculeJustification(loaElectrique({ vehicleModelId: MODELE_ELIGIBLE }));
     expect(doc).toContain("VÉHICULE ÉLIGIBLE À L'ÉCO-SCORE");
-    expect(doc).toContain("AU JOUR DE LA MISE À DISPOSITION");
+    // L'éligibilité varie d'une version et d'un millésime à l'autre au sein d'une même gamme : le
+    // document doit exiger l'identification précise du véhicule, pas se contenter du nom du modèle.
+    expect(doc).toContain("NE SE PRÉSUME PAS DU NOM DU MODÈLE");
+    expect(doc).toContain("type-variante-version");
     expect(doc).toContain("liste publiée par l'ADEME");
   });
 
@@ -224,10 +227,10 @@ describe("buildVehiculeJustification — justification du choix électrique", ()
 
   it("la pièce ADEME ne figure aux justificatifs que si le modèle en dépend", () => {
     expect(buildVehiculeJustification(loaElectrique({ vehicleModelId: MODELE_ELIGIBLE }))).toContain(
-      "liste ADEME à la date de mise à disposition",
+      "Extrait daté de la liste ADEME",
     );
     expect(buildVehiculeJustification(loaElectrique({ vehicleModelId: MODELE_NON_ELIGIBLE }))).not.toContain(
-      "liste ADEME à la date de mise à disposition",
+      "Extrait daté de la liste ADEME",
     );
   });
 });
@@ -365,5 +368,82 @@ describe("buildVehiculeJustification — proportionnalité quand la dépense exc
       const presentes = phrases.filter((p) => doc.includes(p));
       expect(presentes, `bénéfice ${benefice} : ${presentes.join(" + ")}`).toHaveLength(1);
     }
+  });
+});
+
+describe("buildVehiculeJustification — usage exclusivement privé", () => {
+  it("assume l'absence d'usage professionnel plutôt que de la passer sous silence", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ privateUsePercent: 100 }));
+    expect(doc).toContain("AUCUN USAGE PROFESSIONNEL N'EST DÉCLARÉ");
+    expect(doc).toContain("cette note ne prétend pas le contraire");
+    expect(doc).toContain("ÉLÉMENT DE RÉMUNÉRATION");
+  });
+
+  it("déplace la justification du besoin professionnel vers la rémunération", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ privateUsePercent: 100 }));
+    expect(doc).toContain("ne repose donc pas sur un besoin professionnel");
+    expect(doc).toContain("39-1-1°");
+    // Le seul terrain de défense restant est la proportionnalité de la rémunération globale.
+    expect(doc).toContain("caractère non excessif de la rémunération globale");
+  });
+
+  it("tire les conséquences pratiques : aucune indemnité kilométrique possible", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ privateUsePercent: 100 }));
+    expect(doc).toContain("aucune indemnité kilométrique");
+  });
+
+  it("un usage partiellement professionnel garde la formulation ordinaire", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ privateUsePercent: 90 }));
+    expect(doc).not.toContain("AUCUN USAGE PROFESSIONNEL N'EST DÉCLARÉ");
+    expect(doc).toContain("Sa prépondérance est assumée");
+  });
+});
+
+describe("buildVehiculeJustification — réserves sur les points discutés", () => {
+  it("signale que l'abattement électrique n'est pas acquis pour un TNS, et chiffre l'alternative", () => {
+    const sim = loaElectrique({ companyType: "EURL", gerantMajoritaire: true });
+    const r = computeSimulation(sim);
+    expect(r.dirigeantStatus).toBe("TNS");
+    expect(r.abattement).toBeGreaterThan(0);
+    const doc = buildVehiculeJustification(sim);
+    expect(doc).toContain("RÉSERVE EXPRESSE SUR CE POINT");
+    expect(doc).toContain("hors du champ");
+    expect(doc).toContain("le seul poste de la présente note dont le fondement soit discuté");
+    // L'avantage sans abattement doit être chiffré, pour que la réserve soit exploitable.
+    const chiffres = (s: string) => s.replace(/\D/g, "");
+    const ligneReserve = doc.split("\n").find((l) => l.includes("RÉSERVE EXPRESSE"));
+    expect(chiffres(ligneReserve ?? "")).toContain(chiffres(String(Math.round(r.aenNet + r.abattement))));
+  });
+
+  it("aucune réserve de ce type pour un assimilé salarié, qui est dans le champ du texte", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ companyType: "SASU" }));
+    expect(doc).not.toContain("RÉSERVE EXPRESSE SUR CE POINT");
+  });
+
+  it("la transparence concourt à écarter la mauvaise foi sans trancher l'intérêt social", () => {
+    const doc = buildVehiculeJustification(loaElectrique());
+    expect(doc).toContain("SANS PRÉJUGER");
+    expect(doc).not.toContain("écartent la dissimulation");
+  });
+
+  it("la qualification en rémunération ne lève pas les limitations propres aux véhicules", () => {
+    const doc = buildVehiculeJustification(loaElectrique());
+    expect(doc).toContain("ne lève toutefois AUCUNE des limitations propres aux véhicules de tourisme");
+  });
+
+  it("les prélèvements du bénéficiaire sont donnés comme des hypothèses de taux", () => {
+    const doc = buildVehiculeJustification(loaElectrique());
+    expect(doc).toContain("retenus par hypothèse");
+    expect(doc).toContain("ne se substituent pas au calcul de l'organisme social");
+  });
+
+  it("une société unipersonnelle désigne un associé unique, pas un gérant majoritaire", () => {
+    expect(buildVehiculeJustification(loaElectrique({ companyType: "EURL" }))).toContain("gérant associé unique");
+    expect(buildVehiculeJustification(loaElectrique({ companyType: "SASU" }))).toContain("président associé unique");
+  });
+
+  it("l'exonération de taxes annuelles est donnée sous réserve du certificat d'immatriculation", () => {
+    const doc = buildVehiculeJustification(loaElectrique());
+    expect(doc).toContain("sous réserve de confirmation à partir du certificat d'immatriculation");
   });
 });
