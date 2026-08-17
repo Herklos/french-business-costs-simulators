@@ -317,16 +317,26 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     expect(next.financing.lld.toutComprisEntretienAssurance).toBe(false);
   });
 
-  it("réapplique le prix et l'offre LOA réelle du Tesla Model 3", () => {
+  it("réapplique le prix et les offres LOA, crédit et LLD réelles du Tesla Model 3", () => {
     const base = { ...createDefaultInputs(), vehiclePrice: 38000 };
     const next = applyVehicleModel(base, "tesla-model-3");
 
-    expect(next.vehiclePrice).toBe(42990);
+    expect(next.vehiclePrice).toBe(37364);
     expect(next.isEcoScoreEligible).toBe(false);
-    expect(next.financing.loa.premierLoyerMajore).toBe(8250);
-    expect(next.financing.loa.loyerMensuel).toBe(279);
+    expect(next.financing.loa.premierLoyerMajore).toBe(5450);
+    expect(next.financing.loa.loyerMensuel).toBe(303);
     expect(next.financing.loa.dureeMois).toBe(36);
-    expect(next.financing.loa.valeurOptionAchat).toBe(16745);
+    expect(next.financing.loa.valeurOptionAchat).toBe(21297);
+
+    expect(next.financing.credit.apport).toBe(11097);
+    expect(next.financing.credit.tauxAnnuel).toBeCloseTo(0.0099, 6);
+    expect(next.financing.credit.dureeMois).toBe(72);
+
+    expect(next.financing.lld.premierLoyer).toBe(5000);
+    expect(next.financing.lld.loyerMensuel).toBe(319);
+    expect(next.financing.lld.dureeMois).toBe(60);
+    expect(next.financing.lld.kmInclusAnnuel).toBe(10000);
+    expect(next.financing.lld.toutComprisEntretienAssurance).toBe(false);
   });
 
   it("un modèle avec seulement un prix de référence (Renault Megane E-Tech) met à jour le prix mais garde l'estimation générique pour la LOA", () => {

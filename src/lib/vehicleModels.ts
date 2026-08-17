@@ -109,13 +109,33 @@ export const VEHICLE_MODELS: VehicleModel[] = [
     isElectric: true,
     ecoScoreEligible: false,
     notes: "Majoritairement non éligible (production hors UE pour une grande partie des versions commercialisées en France).",
-    defaultPrice: 42990, // version Propulsion, prix constaté 2026
+    // Offres relevées au configurateur Tesla pour la Model 3 Propulsion. Comme pour la Model Y, le
+    // prix comptant, la LOA, le crédit et la LLD proviennent de la même page au même moment : c'est
+    // ce qui rend leur classement significatif.
+    defaultPrice: 37364,
     defaultLoaOffer: {
-      // Offre LOA Tesla constatée 2026 (Model 3 Propulsion, 36 mois / 10 000 km/an).
-      premierLoyerMajore: 8250,
-      loyerMensuel: 279,
+      // 5 450 € de premier loyer majoré, 303 €/mois sur 36 mois, option à 21 297 €, pour 10 000 km/an.
+      premierLoyerMajore: 5450,
+      loyerMensuel: 303,
       dureeMois: 36,
-      valeurOptionAchat: 16745,
+      valeurOptionAchat: 21297,
+    },
+    defaultCreditOffer: {
+      // 11 097 € d'apport, 376 €/mois sur 72 mois, TAEG fixe de 0,99 % — la mensualité affichée par
+      // le configurateur se retrouve bien à partir des 26 267 € empruntés, ce qui confirme la saisie.
+      apport: 11097,
+      tauxAnnuel: 0.0099,
+      dureeMois: 72,
+    },
+    defaultLldOffer: {
+      // 5 000 € d'apport, 319 €/mois sur 60 mois, 10 000 km/an. Loyer nu : l'entretien n'est
+      // proposé qu'en option payante lors de la souscription, il n'est donc pas compris ici, et
+      // l'assurance ne l'est jamais.
+      premierLoyer: 5000,
+      loyerMensuel: 319,
+      dureeMois: 60,
+      kmInclusAnnuel: 10000,
+      toutComprisEntretienAssurance: false,
     },
     // Prime CEE constatée 2026 (montant unique, non gradué par revenu pour ce modèle — remplace le
     // bonus écologique, non éligible du fait de la production hors UE) — à vérifier au cas par cas.

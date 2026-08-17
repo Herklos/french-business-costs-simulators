@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { computeMensualiteCredit } from "./financing";
 import { VEHICLE_MODELS, getVehicleModel } from "./vehicleModels";
 
 describe("vehicleModels", () => {
@@ -62,15 +63,41 @@ describe("vehicleModels", () => {
     }
   });
 
-  it("le Tesla Model 3 porte l'offre LOA constructeur constatée (279€/mois, 36 mois)", () => {
+  it("le Tesla Model 3 porte l'offre LOA constructeur constatée (303€/mois, 36 mois)", () => {
     const model3 = getVehicleModel("tesla-model-3");
-    expect(model3?.defaultPrice).toBe(42990);
+    expect(model3?.defaultPrice).toBe(37364);
     expect(model3?.defaultLoaOffer).toEqual({
-      premierLoyerMajore: 8250,
-      loyerMensuel: 279,
+      premierLoyerMajore: 5450,
+      loyerMensuel: 303,
       dureeMois: 36,
-      valeurOptionAchat: 16745,
+      valeurOptionAchat: 21297,
     });
+  });
+
+  it("le Tesla Model 3 porte aussi les offres crédit (376€/mois, 72 mois) et LLD (319€/mois, 60 mois)", () => {
+    const model3 = getVehicleModel("tesla-model-3");
+    expect(model3?.defaultCreditOffer).toEqual({ apport: 11097, tauxAnnuel: 0.0099, dureeMois: 72 });
+    expect(model3?.defaultLldOffer).toEqual({
+      premierLoyer: 5000,
+      loyerMensuel: 319,
+      dureeMois: 60,
+      kmInclusAnnuel: 10000,
+      toutComprisEntretienAssurance: false,
+    });
+  });
+
+  it("la mensualité de crédit affichée par Tesla pour le Model 3 se retrouve à partir du prix, de l'apport et du TAEG", () => {
+    // Une mensualité annoncée qui ne se recalcule pas signalerait soit une saisie erronée, soit des
+    // frais non dits — dans les deux cas le comparatif serait faussé sans qu'on le voie.
+    const model3 = getVehicleModel("tesla-model-3");
+    const emprunte = (model3?.defaultPrice ?? 0) - (model3?.defaultCreditOffer?.apport ?? 0);
+    const mensualite = computeMensualiteCredit(
+      emprunte,
+      model3?.defaultCreditOffer?.tauxAnnuel ?? 0,
+      model3?.defaultCreditOffer?.dureeMois ?? 0,
+    );
+    expect(mensualite).toBeGreaterThan(375);
+    expect(mensualite).toBeLessThan(377);
   });
 
   it("Megane E-Tech et Scenic E-Tech ont un prix de référence mais pas d'offre LOA constructeur codée en dur (donnée non trouvée de façon fiable)", () => {
@@ -93,10 +120,14 @@ describe("vehicleModels", () => {
     });
   });
 
-  it("les autres modèles n'ont pas d'offre LLD constructeur codée en dur", () => {
+  it("les modèles sans offre constructeur relevée n'en portent aucune codée en dur", () => {
+    // Seuls les deux Tesla ont une offre publiée relevée ; pour les autres, une offre inventée
+    // passerait pour une donnée constructeur alors que l'estimation générique s'applique.
+    const avecOffreRelevee = new Set(["tesla-model-y-berlin", "tesla-model-3"]);
     for (const m of VEHICLE_MODELS) {
-      if (m.id !== "tesla-model-y-berlin") {
+      if (!avecOffreRelevee.has(m.id)) {
         expect(m.defaultLldOffer).toBeUndefined();
+        expect(m.defaultCreditOffer).toBeUndefined();
       }
     }
   });
