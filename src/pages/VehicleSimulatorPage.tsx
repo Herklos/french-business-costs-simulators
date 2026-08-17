@@ -18,7 +18,13 @@ import {
   createDefaultInputs,
 } from "../lib/simulator";
 import { getCompanyType, resolveDirigeantStatus } from "../lib/companyTypes";
-import { createDefaultFinancingInputs, getTauxUsureApplicable, type FinancingMode } from "../lib/financing";
+import {
+  TAUX_OPPORTUNITE_DEFAUT,
+  TAUX_OPPORTUNITE_PERSONNEL_DEFAUT,
+  createDefaultFinancingInputs,
+  getTauxUsureApplicable,
+  type FinancingMode,
+} from "../lib/financing";
 import { IR_BAREME_2026 } from "../lib/frenchIncomeTax";
 import { VEHICLE_MODELS, getVehicleModel } from "../lib/vehicleModels";
 import { DEFAULT_DEPRECIATION_RATE_ANNUAL } from "../lib/vehicleDepreciation";
@@ -152,7 +158,7 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push("");
   push("— Modes de financement (paramètres, hypothèses) —");
   push(
-    `Détention du véhicule : ${sim.financing.comptant.dureeDetentionMois} mois (commune au comptant et au crédit, qui portent sur le même véhicule), taux d'opportunité du capital ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an`,
+    `Détention du véhicule : ${sim.financing.comptant.dureeDetentionMois} mois (commune au comptant et au crédit, qui portent sur le même véhicule), taux d'opportunité net ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an côté trésorerie société et ${formatPercent(sim.tauxOpportunitePersonnel)}/an côté patrimoine personnel`,
   );
   push(`Crédit : apport ${formatEUR(sim.financing.credit.apport)}, TAEG ${formatPercent(sim.financing.credit.tauxAnnuel, 3)}, durée de remboursement ${sim.financing.credit.dureeMois} mois`);
   push(
@@ -1560,18 +1566,30 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               <div className="financing-card">
                 <h4>Comptant</h4>
                 <Field
-                  label="Taux d'opportunité du capital (%/an)"
-                  hint="Rendement auquel votre argent serait placé s'il ne finançait pas le véhicule. Il s'applique à tout capital sorti de poche — le prix payé comptant comme l'apport et les mensualités d'un crédit — et non au seul comptant."
+                  label="Taux d'opportunité — trésorerie de la société (%/an, net)"
+                  hint="Ce que rapporterait la trésorerie de la société si elle ne finançait pas le véhicule, NET d'impôt : ses produits financiers sont du résultat ordinaire, imposés à l'IS comme le reste. Si cet argent dort sur un compte courant, la réponse honnête est 0."
                 >
-                  <NumberInput
-                    step="0.01"
+                  <ResetableNumberInput
+                    step="0.005"
                     value={inputs.financing.comptant.tauxOpportunite}
-                    onChange={(e) => updateFinancing("comptant", { tauxOpportunite: Number(e.target.value) })}
+                    defaultValue={TAUX_OPPORTUNITE_DEFAUT}
+                    onChange={(v) => updateFinancing("comptant", { tauxOpportunite: v })}
+                  />
+                </Field>
+                <Field
+                  label="Taux d'opportunité — patrimoine personnel (%/an, net)"
+                  hint="Même question pour l'argent du dirigeant, dans le scénario d'achat personnel. Net également, mais d'un PFU de 30 % et non de l'IS : un placement à 3 % bruts ne laisse que 2,1 %. Ce ne sont ni le même argent ni la même fiscalité — d'où deux champs."
+                >
+                  <ResetableNumberInput
+                    step="0.005"
+                    value={inputs.tauxOpportunitePersonnel}
+                    defaultValue={TAUX_OPPORTUNITE_PERSONNEL_DEFAUT}
+                    onChange={(v) => update("tauxOpportunitePersonnel", v)}
                   />
                 </Field>
                 <p className="field__hint">
-                  Ce taux ne concerne pas que le comptant : il chiffre ce que rapporterait tout capital qui n'a pas financé
-                  le véhicule. Payé comptant, le prix entier sort au premier jour et n'est récupéré qu'à la revente — d'où un
+                  Ces taux ne concernent pas que le comptant : ils chiffrent ce que rapporterait tout capital qui n'a pas
+                  financé le véhicule. Payé comptant, le prix entier sort au premier jour et n'est récupéré qu'à la revente — d'où un
                   coût d'opportunité sur <strong>la totalité du prix, pendant toute la durée de détention</strong>. À crédit,
                   l'<strong>apport</strong> sort exactement de la même façon, et le <strong>principal</strong> sort plus tard,
                   au fil des mensualités : il n'est donc absent, en moyenne, que depuis la moitié du remboursement. C'est cet
@@ -1581,6 +1599,13 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   déductible quand le rendement auquel vous renoncez ne l'est pas — il apparaît sur sa propre ligne de
                   détail, hors du décaissement. Un crédit nettement moins cher signale, lui, un TAEG inférieur à votre taux
                   d'opportunité : c'est un arbitrage réel, et c'est ce qui explique qu'un comptant puisse arriver dernier.
+                </p>
+                <p className="hint-block">
+                  Le bon réflexe pour choisir ces taux : « si je n'achète pas ce véhicule comptant, qu'est-ce que je fais
+                  de cette somme ? » Elle dort sur le compte pro → <strong>0</strong>. Elle évite un découvert ou un prêt →
+                  le taux de ce prêt. Elle part sur un support de trésorerie → son rendement <strong>net d'impôt</strong>.
+                  Les valeurs par défaut sont volontairement basses : la trésorerie d'une petite structure est rarement
+                  rémunérée, et elle est captive — l'en sortir coûte un PFU ou des cotisations.
                 </p>
               </div>
 

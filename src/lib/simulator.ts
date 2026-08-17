@@ -26,6 +26,7 @@ import {
   type FinancingInputs,
   type FinancingMode,
   type FinancingResult,
+  TAUX_OPPORTUNITE_PERSONNEL_DEFAUT,
   compareFinancingModes,
   createDefaultFinancingInputs,
 } from "./financing";
@@ -169,7 +170,12 @@ export interface SimulationInputs {
   // et si le dirigeant l'achète à titre personnel (chacun retient le mode qui l'intéresse).
   financingMode: FinancingMode; // mode retenu côté société pour l'affichage détaillé
   personalFinancingMode: FinancingMode; // mode retenu côté personnel pour l'affichage détaillé
+  // `financing.comptant.tauxOpportunite` porte le rendement alternatif de la trésorerie de la
+  // SOCIÉTÉ ; celui du patrimoine personnel du dirigeant est ci-dessous. Un taux unique pour les
+  // deux revenait à confondre deux capitaux qui n'ont ni le même détenteur ni la même fiscalité :
+  // un placement de société est imposé à l'IS, un placement personnel au PFU.
   financing: FinancingInputs;
+  tauxOpportunitePersonnel: number; // rendement alternatif NET du patrimoine personnel (0-1/an)
 
   // Coût de sortie du résultat de la société vers le patrimoine personnel du dirigeant (PFU 30% par
   // défaut). Sert au point de vue « poche du dirigeant » : une charge supportée par la société est
@@ -306,6 +312,8 @@ const SCHEMA_BROUILLON_VEHICULE: DraftSchema = {
     "tauxExtractionResultat",
     "tauxDeprecationAnnuel",
     "tauxAnnuel",
+    "tauxOpportunite",
+    "tauxOpportunitePersonnel",
   ],
   // Deux absences légitimes : aucune surcharge de taxe annuelle, aucun modèle sélectionné. Le
   // modèle est en outre vérifié contre le registre : un identifiant retiré du code depuis la
@@ -396,6 +404,7 @@ export function createDefaultInputs(): SimulationInputs {
     financingMode: "credit",
     personalFinancingMode: "credit",
     financing: createDefaultFinancingInputs(vehiclePrice),
+    tauxOpportunitePersonnel: TAUX_OPPORTUNITE_PERSONNEL_DEFAUT,
 
     tauxExtractionResultat: DEFAULT_PFU_RATE,
     projectionYears: 5,
@@ -1172,6 +1181,17 @@ function computePersonnelForMode(
  * (loyers constructeur publiés) ne sont volontairement pas modifiées : les aides s'appliquent en
  * pratique à une acquisition comptant/crédit, pas à un contrat de location déjà négocié.
  */
+/** Substitue le rendement alternatif du capital, sans rien changer d'autre au montage. */
+function avecTauxOpportunite(inputs: SimulationInputs, taux: number): SimulationInputs {
+  return {
+    ...inputs,
+    financing: {
+      ...inputs.financing,
+      comptant: { ...inputs.financing.comptant, tauxOpportunite: taux },
+    },
+  };
+}
+
 function applyPrixNetAchat(inputs: SimulationInputs, remise: number): SimulationInputs {
   if (remise <= 0) return inputs;
   return {
@@ -1238,7 +1258,13 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const remisePersonnel = bonusReprise + Math.max(0, inputs.ceeSelectedAmount);
 
   const inputsSociete = applyPrixNetAchat(inputs, remiseSociete);
-  const inputsPersonnel = applyPrixNetAchat(inputs, remisePersonnel);
+  // Le scénario personnel décrit le MÊME véhicule financé par un autre capital : celui du dirigeant.
+  // Seul le rendement auquel ce capital renonce change, et il est substitué ici — le taux saisi dans
+  // la carte « Comptant » ne vaut que pour la trésorerie de la société.
+  const inputsPersonnel = avecTauxOpportunite(
+    applyPrixNetAchat(inputs, remisePersonnel),
+    inputs.tauxOpportunitePersonnel,
+  );
   const financingResultsSociete = compareFinancingModes(inputsSociete.financing);
   const financingResultsPersonnel = compareFinancingModes(inputsPersonnel.financing);
   // Régime IR (société translucide) : le bénéfice de la société est directement imposé entre les
@@ -1390,7 +1416,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           ...(s.coutOpportuniteAnnuel > 0
             ? [
                 {
-                  label: `Coût d'opportunité du capital immobilisé (rendement alternatif de ${formatPercent(inputs.financing.comptant.tauxOpportunite)}, non décaissé)`,
+                  label: `Coût d'opportunité de la trésorerie immobilisée (rendement alternatif net de ${formatPercent(inputs.financing.comptant.tauxOpportunite)}, non décaissé)`,
                   value: s.coutOpportuniteAnnuel,
                 },
               ]
@@ -1496,7 +1522,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           ...(p.personalCoutOpportuniteAnnuel > 0
             ? [
                 {
-                  label: `Coût d'opportunité du capital immobilisé (rendement alternatif de ${formatPercent(inputs.financing.comptant.tauxOpportunite)}, non décaissé)`,
+                  label: `Coût d'opportunité du capital personnel immobilisé (rendement alternatif net de ${formatPercent(inputs.tauxOpportunitePersonnel)}, non décaissé)`,
                   value: p.personalCoutOpportuniteAnnuel,
                 },
               ]

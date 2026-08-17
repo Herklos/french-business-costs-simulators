@@ -669,6 +669,44 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     }
   });
 
+  it("société et dirigeant ont chacun leur taux d'opportunité : ce ne sont ni le même capital ni la même fiscalité", () => {
+    // Régression : un champ unique servait les deux scénarios. Les produits financiers d'une société
+    // sont imposés à l'IS, ceux du dirigeant au PFU — un rendement net commun aux deux n'existe pas.
+    const inputs: SimulationInputs = {
+      ...avecFinancement({ tauxOpportunite: 0.04, detentionMois: 60, creditMois: 60 }),
+      tauxOpportunitePersonnel: 0,
+      financingMode: "comptant",
+      personalFinancingMode: "comptant",
+    };
+    const r = computeSimulation(inputs);
+    const ligne = (owner: "societe" | "personnel") =>
+      r.allOptions
+        .find((o) => o.owner === owner && o.mode === "comptant")!
+        .detail.find((d) => d.label.startsWith("Coût d'opportunité"));
+
+    // Le taux personnel à zéro ne doit pas être contaminé par les 4 % de la société, ni l'inverse.
+    expect(ligne("societe")!.value).toBeGreaterThan(0);
+    expect(ligne("personnel")).toBeUndefined();
+    expect(r.coutOpportuniteAnnuel).toBeGreaterThan(0);
+    expect(r.personalCoutOpportuniteAnnuel).toBe(0);
+  });
+
+  it("le taux personnel pilote le scénario personnel, et lui seul", () => {
+    const construire = (tauxPersonnel: number): SimulationInputs => ({
+      ...avecFinancement({ tauxOpportunite: 0.02, detentionMois: 60, creditMois: 60 }),
+      tauxOpportunitePersonnel: tauxPersonnel,
+      financingMode: "comptant",
+      personalFinancingMode: "comptant",
+    });
+    const bas = computeSimulation(construire(0.01));
+    const haut = computeSimulation(construire(0.06));
+
+    expect(haut.personalCoutOpportuniteAnnuel).toBeGreaterThan(bas.personalCoutOpportuniteAnnuel);
+    // Le coût côté société ne bouge pas d'un centime : les deux scénarios sont bien étanches.
+    expect(haut.coutOpportuniteAnnuel).toBeCloseTo(bas.coutOpportuniteAnnuel, 6);
+    expect(haut.coutNetSociete).toBeCloseTo(bas.coutNetSociete, 6);
+  });
+
   it("à taux nuls des deux côtés, comptant et crédit convergent exactement — quel que soit l'apport", () => {
     for (const apport of [0, 5000, 10000, 42784]) {
       const inputs = avecFinancement({ tauxOpportunite: 0, creditTaux: 0, apport, creditMois: 60, detentionMois: 60 });

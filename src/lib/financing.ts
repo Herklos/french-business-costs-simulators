@@ -22,12 +22,33 @@ export function getTauxUsureApplicable(montantEmprunte: number): number {
 }
 
 /** Rendement alternatif du capital immobilisé, commun au comptant et à l'apport d'un crédit. */
-export const TAUX_OPPORTUNITE_DEFAUT = 0.03;
+/**
+ * Rendement alternatif par défaut de la trésorerie de la SOCIÉTÉ, exprimé NET d'impôt.
+ *
+ * Bas à dessein : les produits financiers d'une société à l'IS sont du résultat ordinaire, imposés
+ * comme le reste — 2 % bruts ne valent que ~1,5 % nets. Et la trésorerie d'une petite structure dort
+ * le plus souvent sur un compte courant non rémunéré, quand elle n'est pas simplement captive : la
+ * sortir coûte un PFU ou des cotisations. Une hypothèse généreuse ici pénaliserait le comptant sans
+ * que rien ne le signale, alors que c'est ce seul paramètre qui décide de son classement.
+ */
+export const TAUX_OPPORTUNITE_DEFAUT = 0.015;
+
+/**
+ * Équivalent pour le patrimoine PERSONNEL du dirigeant, également NET : un placement à 3 % bruts ne
+ * laisse que ~2,1 % après un PFU de 30 %. Distinct du taux société parce que ce ne sont ni le même
+ * argent, ni la même fiscalité — les confondre revenait à chiffrer deux immobilisations différentes
+ * avec un rendement unique.
+ */
+export const TAUX_OPPORTUNITE_PERSONNEL_DEFAUT = 0.02;
 
 export interface ComptantParams {
   prixTTC: number;
   dureeDetentionMois: number;
-  tauxOpportunite: number; // rendement alternatif du capital immobilisé (0-1/an), pour chiffrer le coût d'opportunité
+  // Rendement alternatif NET du capital immobilisé (0-1/an), pour chiffrer le coût d'opportunité.
+  // Net, car le coût d'opportunité n'est pas déductible : le comparer à un rendement brut ferait
+  // porter au véhicule un manque à gagner que le fisc aurait de toute façon prélevé. Le simulateur
+  // injecte ici un taux différent selon le détenteur du capital — cf. `tauxOpportunitePersonnel`.
+  tauxOpportunite: number;
 }
 
 export interface CreditParams {
