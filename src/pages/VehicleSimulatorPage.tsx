@@ -1813,7 +1813,15 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                 </select>
               </Field>
             </div>
-            {dirigeantStatus === "TNS" && inputs.isElectric && (
+            {inputs.isElectric && results.abattement <= 0 && (
+              // Un abattement nul se lit comme un oubli du simulateur, alors qu'il est le plus souvent
+              // la règle applicable. La raison doit donc figurer ici, contre la carte à 0 €, et pas
+              // seulement en haut de page à côté du champ qui la commande.
+              <p className="warning-block">
+                ⚠️ {LIBELLES_REGIME_ABATTEMENT[results.regimeAbattementElectrique]}
+              </p>
+            )}
+            {dirigeantStatus === "TNS" && inputs.isElectric && results.abattement > 0 && (
               <p className="field__hint">
                 ℹ️ Abattement électrique plafonné à 50% de l'AEN (max. 2 026,30€) : c'est le plafond de la{" "}
                 <strong>méthode réelle</strong>, seule autorisée pour un dirigeant TNS. L'abattement forfaitaire de
