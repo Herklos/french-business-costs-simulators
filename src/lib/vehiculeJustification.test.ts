@@ -166,10 +166,28 @@ describe("buildVehiculeJustification — évaluation de l'avantage", () => {
     );
   });
 
-  it("l'abattement mentionné est celui de la méthode réelle, jamais celui du forfait", () => {
+  it("l'abattement retenu est celui de la méthode réelle ; le forfait de 70 % n'est cité que pour être écarté", () => {
     const doc = buildVehiculeJustification(loaElectrique());
     expect(doc).toContain("50 % de l'avantage, plafonné");
-    expect(doc).not.toContain("70 %");
+    // Le 70 % peut être nommé — mais uniquement pour dire qu'il n'est PAS retenu, et pourquoi. Une
+    // note qui le tairait laisserait croire à un oubli plutôt qu'à un choix.
+    expect(doc).toContain("et non l'abattement renforcé de 70 %");
+    expect(doc).toContain("indissociable de la méthode forfaitaire");
+    expect(doc).toContain("présidents de SAS ou de SASU");
+  });
+
+  it("explique un abattement NUL au lieu de le laisser deviner", () => {
+    // Cas de la Tesla Model 3 : électrique, mais hors liste éco-score depuis février 2025.
+    const doc = buildVehiculeJustification(loaElectrique({ isEcoScoreEligible: false, dateMiseADisposition: "2026-03-01" }));
+    expect(doc).not.toContain("50 % de l'avantage, plafonné");
+    expect(doc).toContain("liste ADEME");
+    expect(doc).toContain("règles applicables aux véhicules thermiques");
+    expect(doc).toContain("7 mai 2026");
+  });
+
+  it("un véhicule confié avant février 2025 garde son abattement sans condition d'éco-score", () => {
+    const doc = buildVehiculeJustification(loaElectrique({ isEcoScoreEligible: false, dateMiseADisposition: "2024-06-01" }));
+    expect(doc).toContain("50 % de l'avantage, plafonné");
   });
 
   it("signale l'écrêtement quand le plafond « équivalent achat » a mordu, et se tait sinon", () => {

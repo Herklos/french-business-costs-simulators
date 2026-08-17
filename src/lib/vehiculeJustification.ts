@@ -20,7 +20,7 @@
 // Deux questions y sont traitées de front — pourquoi ce véhicule, et pourquoi ce prix au regard des
 // ressources de la société — parce que ce sont celles qui se posent réellement.
 
-import { type SimulationInputs, computeSimulation } from "./simulator";
+import { type SimulationInputs, LIBELLES_REGIME_ABATTEMENT, computeSimulation } from "./simulator";
 import type { FinancingMode } from "./financing";
 import { estimateAnnualVehicleTax } from "./vehicleTaxes";
 import { getVehicleModel } from "./vehicleModels";
@@ -199,9 +199,19 @@ export function buildVehiculeJustification(sim: SimulationInputs): string {
       `Le coût de la location, ${formatEUR(r.aenBaseAvantPlafond)}, excède la base qu'aurait produite l'acquisition du même véhicule. L'avantage est en conséquence ramené à cette dernière, conformément au plafonnement institué par l'arrêté du 25 février 2025 pour les véhicules loués.`,
     );
   }
+  if (sim.isElectric && r.abattement === 0) {
+    // Un abattement nul sur un véhicule électrique surprend : mieux vaut en donner la raison dans la
+    // note elle-même que laisser un contrôleur — ou le dirigeant — la chercher.
+    push(LIBELLES_REGIME_ABATTEMENT[r.regimeAbattementElectrique]);
+    if (r.regimeAbattementElectrique === "aucun_eco_score_manquant") {
+      push(
+        "L'avantage est donc évalué selon les règles applicables aux véhicules thermiques. Seule demeure l'exclusion des frais d'électricité de recharge, qui tient à la motorisation et non au score environnemental. Si la version du véhicule venait à intégrer la liste officielle, l'abattement s'appliquerait à compter de la date de publication de celle-ci, sans nouvelle mise à disposition (BOSS, précision du 7 mai 2026).",
+      );
+    }
+  }
   if (r.abattement > 0) {
     push(
-      `L'abattement retenu est celui de la méthode réelle — 50 % de l'avantage, plafonné à ${formatEUR(2026.3)} — et non celui de la méthode forfaitaire, plus favorable mais indissociable de cette dernière. Les frais d'électricité engagés pour la recharge ne sont, en tout état de cause, pas pris en compte dans l'évaluation.`,
+      `L'abattement retenu est celui de la méthode réelle — 50 % de l'avantage, plafonné à ${formatEUR(2026.3)} — et non l'abattement renforcé de 70 % (plafond ${formatEUR(4641.6)}), plus favorable mais indissociable de la méthode forfaitaire. Cette dernière est réservée aux salariés et assimilés : salariés non dirigeants, gérants minoritaires ou égalitaires de SARL, présidents de SAS ou de SASU. Les frais d'électricité engagés pour la recharge ne sont, en tout état de cause, pas pris en compte dans l'évaluation.`,
     );
     if (estTNS) {
       // Point réellement discuté : l'arrêté qui institue cet abattement vise les salariés du régime

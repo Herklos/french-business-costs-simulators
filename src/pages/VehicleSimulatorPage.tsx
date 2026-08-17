@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   type ParticipationVersementMode,
+  type PositionAbattementElectrique,
   type SimulationInputs,
+  LIBELLES_REGIME_ABATTEMENT,
   PARTICIPATION_VERSEMENT_LABELS,
   PARTICIPATION_VERSEMENT_MODES,
   DEFAULT_CORPORATE_TAX_RATE,
@@ -533,6 +535,27 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                     </select>
                   </Field>
                 )}
+              </>
+            )}
+            {inputs.isElectric && (
+              <>
+                <Field
+                  label="Abattement électrique retenu"
+                  hint="L'arrêté qui institue cet abattement vise « les salariés affiliés au régime général et au régime agricole ». Un gérant majoritaire est un travailleur non salarié : son extension à l'évaluation au réel d'un dirigeant de l'art. 62 CGI est discutée entre professionnels. Ce champ permet de chiffrer la position prudente sans avoir à fausser l'éco-score du véhicule."
+                >
+                  <select
+                    value={inputs.positionAbattementElectrique}
+                    onChange={(e) => update("positionAbattementElectrique", e.target.value as PositionAbattementElectrique)}
+                  >
+                    <option value="auto">Régime légal applicable à la date de mise à disposition</option>
+                    <option value="aucun">Aucun abattement (position prudente pour un TNS)</option>
+                  </select>
+                </Field>
+                <p className={results.abattement > 0 ? "field__hint" : "warning-block"}>
+                  {results.abattement > 0 ? "✅ " : "⚠️ "}
+                  {LIBELLES_REGIME_ABATTEMENT[results.regimeAbattementElectrique]}
+                  {results.abattement > 0 && ` Abattement retenu : ${formatEUR(results.abattement)}/an.`}
+                </p>
               </>
             )}
             {inputs.isElectric && <RuleNote ruleId="aen-abattement-vehicule-electrique-taux" />}

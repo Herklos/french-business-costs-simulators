@@ -90,6 +90,10 @@ export interface SimulationInputs {
   vehicleOverFiveYears: boolean; // > 5 ans => amortissement 10%, sinon 20% (véhicule acheté uniquement)
   isElectric: boolean; // 100% électrique => électricité exclue du calcul, exonéré de taxes CO2/polluants
   isEcoScoreEligible: boolean; // éco-score >= 60 (liste ADEME) => abattement 50% (électrique uniquement)
+  // Position retenue sur l'abattement électrique : « auto » suit le régime légal, « aucun »
+  // l'écarte volontairement (cf. resolveAbattementElectrique — le champ d'application de
+  // l'arrêté est discuté pour un gérant TNS).
+  positionAbattementElectrique: PositionAbattementElectrique;
   co2EmissionsGkm: number; // émissions CO2 WLTP (g/km) — détermine le plafond de déduction fiscale et la taxe annuelle
   annualVehicleTaxOverride: number | null; // surcharge manuelle de la taxe annuelle CO2+polluants (null = estimation automatique)
   tauxDeprecationAnnuel: number; // 0-1, taux de décote annuel estimé, pour chiffrer la valeur résiduelle en fin de période
@@ -177,6 +181,92 @@ export interface SimulationInputs {
 }
 
 export const DEFAULT_ABATTEMENT_CAP = 2026.3; // plafond 2026 abattement véhicule électrique méthode réelle (50%)
+export const TAUX_ABATTEMENT_ELECTRIQUE_REEL = 0.5;
+/** Plafond 2026 de l'abattement renforcé — méthode FORFAITAIRE, hors de portée d'un gérant TNS. */
+export const PLAFOND_ABATTEMENT_ELECTRIQUE_FORFAIT = 4641.6;
+/** Première mise à disposition ouvrant l'abattement électrique (arrêté du 21 mai 2019). */
+export const DATE_OUVERTURE_ABATTEMENT_ELECTRIQUE = "2020-01-01";
+/** À compter de cette date, l'abattement est réservé aux véhicules éco-scorés (arrêté du 25/02/2025). */
+export const DATE_CONDITION_ECO_SCORE = "2025-02-01";
+/** Fin du dispositif renforcé, sauf prorogation. */
+export const DATE_FIN_ABATTEMENT_ELECTRIQUE = "2027-12-31";
+
+/**
+ * Régimes successifs de l'abattement « véhicule électrique » sur l'avantage en nature.
+ *
+ * L'abattement n'a jamais été un attribut du véhicule : c'est un attribut de sa DATE DE MISE À
+ * DISPOSITION. Un véhicule confié en 2023 relève du régime de 2019 et garde son abattement sans
+ * aucune condition d'éco-score ; le même véhicule confié en 2026 doit figurer sur la liste ADEME
+ * pour y prétendre, faute de quoi il est évalué comme un thermique — sans abattement, quelle que
+ * soit la méthode retenue.
+ */
+export type RegimeAbattementElectrique =
+  | "aucun_non_electrique"
+  | "aucun_hors_periode"
+  | "aucun_eco_score_manquant"
+  | "aucun_ecarte_par_prudence"
+  | "reel_50_sans_condition"
+  | "reel_50_eco_score";
+
+/**
+ * Position retenue sur l'abattement électrique.
+ *
+ * « auto » applique le régime légal déduit de la date et de l'éco-score. « aucun » l'écarte
+ * volontairement : l'arrêté qui institue l'abattement vise les salariés affiliés au régime général,
+ * et son extension à l'évaluation au réel d'un gérant majoritaire — un travailleur non salarié — est
+ * discutée. Ce choix existe pour que la position prudente soit chiffrable sans avoir à mentir sur
+ * l'éco-score du véhicule.
+ */
+export type PositionAbattementElectrique = "auto" | "aucun";
+
+export const POSITIONS_ABATTEMENT_ELECTRIQUE: PositionAbattementElectrique[] = ["auto", "aucun"];
+
+export const LIBELLES_REGIME_ABATTEMENT: Record<RegimeAbattementElectrique, string> = {
+  aucun_non_electrique: "Aucun abattement : le véhicule n'est pas exclusivement électrique.",
+  aucun_hors_periode:
+    "Aucun abattement : la date de mise à disposition est hors de la période ouverte par le dispositif (1er janvier 2020 – 31 décembre 2027).",
+  aucun_eco_score_manquant:
+    "Aucun abattement : mis à disposition à compter du 1er février 2025, le véhicule doit figurer sur la liste ADEME des versions atteignant le score environnemental minimal. À défaut, l'avantage est évalué selon les règles des véhicules thermiques — les frais d'électricité restant, eux, toujours exclus.",
+  aucun_ecarte_par_prudence:
+    "Abattement volontairement écarté : position prudente, l'arrêté qui l'institue visant les salariés affiliés au régime général.",
+  reel_50_sans_condition:
+    "Abattement de 50 % : véhicule mis à disposition avant le 1er février 2025, aucune condition d'éco-score ne s'appliquait alors.",
+  reel_50_eco_score:
+    "Abattement de 50 % (méthode réelle) : véhicule éco-scoré mis à disposition dans la période du dispositif renforcé.",
+};
+
+export interface AbattementElectriqueApplicable {
+  regime: RegimeAbattementElectrique;
+  taux: number;
+  plafond: number;
+}
+
+/** Une date ISO vide (champ non renseigné) vaut « aujourd'hui » : c'est le cas d'usage du simulateur. */
+function dateMiseADispositionEffective(dateIso: string): string {
+  return /^\d{4}-\d{2}-\d{2}/.test(dateIso) ? dateIso.slice(0, 10) : new Date().toISOString().slice(0, 10);
+}
+
+export function resolveAbattementElectrique(inputs: SimulationInputs): AbattementElectriqueApplicable {
+  const aucun = (regime: RegimeAbattementElectrique): AbattementElectriqueApplicable => ({
+    regime,
+    taux: 0,
+    plafond: 0,
+  });
+  if (!inputs.isElectric) return aucun("aucun_non_electrique");
+  if (inputs.positionAbattementElectrique === "aucun") return aucun("aucun_ecarte_par_prudence");
+
+  const date = dateMiseADispositionEffective(inputs.dateMiseADisposition);
+  if (date < DATE_OUVERTURE_ABATTEMENT_ELECTRIQUE || date > DATE_FIN_ABATTEMENT_ELECTRIQUE) {
+    return aucun("aucun_hors_periode");
+  }
+  // Avant le 1er février 2025, aucune condition d'éco-score n'existait : le seul critère était la
+  // motorisation exclusivement électrique.
+  if (date < DATE_CONDITION_ECO_SCORE) {
+    return { regime: "reel_50_sans_condition", taux: TAUX_ABATTEMENT_ELECTRIQUE_REEL, plafond: DEFAULT_ABATTEMENT_CAP };
+  }
+  if (!inputs.isEcoScoreEligible) return aucun("aucun_eco_score_manquant");
+  return { regime: "reel_50_eco_score", taux: TAUX_ABATTEMENT_ELECTRIQUE_REEL, plafond: DEFAULT_ABATTEMENT_CAP };
+}
 export const DEFAULT_TNS_RATE = 0.43;
 export const DEFAULT_CORPORATE_TAX_RATE = 0.25;
 export const DEFAULT_IK_RATE = 0.5;
@@ -204,6 +294,7 @@ const SCHEMA_BROUILLON_VEHICULE: DraftSchema = {
     financingMode: ALL_FINANCING_MODES,
     personalFinancingMode: ALL_FINANCING_MODES,
     modeVersementParticipation: PARTICIPATION_VERSEMENT_MODES,
+    positionAbattementElectrique: POSITIONS_ABATTEMENT_ELECTRIQUE,
   },
   // Taux exprimés en fraction : un 43 relu là où l'on attend 0,43 multiplierait les cotisations
   // par cent sans que rien ne le signale.
@@ -257,6 +348,7 @@ export function createDefaultInputs(): SimulationInputs {
     vehicleOverFiveYears: false,
     isElectric: true,
     isEcoScoreEligible: true,
+    positionAbattementElectrique: "auto",
     co2EmissionsGkm: 0,
     annualVehicleTaxOverride: null,
     tauxDeprecationAnnuel: DEFAULT_DEPRECIATION_RATE_ANNUAL,
@@ -412,6 +504,8 @@ export interface SimulationResults {
   aenPlafonneParEquivalentAchat: boolean; // vrai si le plafond « équivalent achat » a mordu (location courte et chère)
   aenBrut: number;
   abattement: number;
+  /** Régime d'abattement effectivement retenu — sert à expliquer un abattement nul. */
+  regimeAbattementElectrique: RegimeAbattementElectrique;
   aenNetBeforeParticipation: number;
   participationAnnual: number;
   aenNet: number; // après abattement ET participation financière
@@ -756,10 +850,8 @@ function computeSocieteForMode(
   const fuelPrivate = inputs.isElectric ? 0 : inputs.annualFuelPrivateCost;
   const aenBrut = aenBrutFromBase + fuelPrivate;
 
-  let abattement = 0;
-  if (inputs.isElectric && inputs.isEcoScoreEligible) {
-    abattement = Math.min(0.5 * aenBrut, DEFAULT_ABATTEMENT_CAP);
-  }
+  const abattementApplicable = resolveAbattementElectrique(inputs);
+  const abattement = Math.min(abattementApplicable.taux * aenBrut, abattementApplicable.plafond);
   const aenNetBeforeParticipation = Math.max(0, aenBrut - abattement);
 
   const participationAnnual = inputs.monthlyParticipation * 12;
@@ -907,6 +999,7 @@ function computeSocieteForMode(
     aenPlafonneParEquivalentAchat,
     aenBrut,
     abattement,
+    regimeAbattementElectrique: abattementApplicable.regime,
     aenNetBeforeParticipation,
     participationAnnual,
     aenNet,

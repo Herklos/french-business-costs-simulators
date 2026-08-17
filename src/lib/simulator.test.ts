@@ -8,6 +8,8 @@ import {
   CHAMPS_VEHICULE_NON_PERSISTES,
   applyVehicleDraft,
   extractVehicleDraft,
+  DEFAULT_ABATTEMENT_CAP,
+  LIBELLES_REGIME_ABATTEMENT,
 } from "./simulator";
 
 function withFinancingLoa(inputs: SimulationInputs, patch: Partial<SimulationInputs["financing"]["loa"]>): SimulationInputs {
@@ -370,6 +372,91 @@ describe("applyVehicleModel — changement de modèle de véhicule", () => {
     const inputs = createDefaultInputs();
     expect(inputs.totalKmAnnual).toBeLessThanOrEqual(inputs.financing.lld.kmInclusAnnuel);
     expect(inputs.financing.lld.kmReelAnnuel).toBe(inputs.totalKmAnnual);
+  });
+});
+
+/**
+ * L'abattement électrique n'est pas un attribut du véhicule mais de sa DATE DE MISE À DISPOSITION.
+ * Trois régimes se succèdent, et les confondre fait varier l'avantage du simple au double.
+ */
+describe("computeSimulation — abattement véhicule électrique : régime déterminé par la date", () => {
+  function avec(patch: Partial<SimulationInputs>): SimulationInputs {
+    return { ...createDefaultInputs(), isElectric: true, ...patch };
+  }
+  const resultat = (patch: Partial<SimulationInputs>) => computeSimulation(avec(patch));
+
+  it("véhicule éco-scoré confié aujourd'hui : abattement de 50 %, plafonné", () => {
+    const r = resultat({ isEcoScoreEligible: true, dateMiseADisposition: "2026-03-01" });
+    expect(r.regimeAbattementElectrique).toBe("reel_50_eco_score");
+    expect(r.abattement).toBeCloseTo(Math.min(0.5 * r.aenBrut, DEFAULT_ABATTEMENT_CAP), 6);
+    expect(r.abattement).toBeGreaterThan(0);
+  });
+
+  it("véhicule NON éco-scoré confié après le 1er février 2025 : AUCUN abattement", () => {
+    // C'est le cas de la Tesla Model 3, assemblée hors d'Europe : l'avantage est alors évalué selon
+    // les règles des véhicules thermiques, ni 50 % ni 70 %.
+    const r = resultat({ isEcoScoreEligible: false, dateMiseADisposition: "2026-03-01" });
+    expect(r.regimeAbattementElectrique).toBe("aucun_eco_score_manquant");
+    expect(r.abattement).toBe(0);
+  });
+
+  it("véhicule NON éco-scoré confié AVANT le 1er février 2025 : abattement de 50 % malgré tout", () => {
+    // La condition d'éco-score n'existait pas sous l'arrêté du 21 mai 2019 : un véhicule confié dans
+    // cette fenêtre conserve son régime, et l'exclure serait une régression.
+    const r = resultat({ isEcoScoreEligible: false, dateMiseADisposition: "2024-06-01" });
+    expect(r.regimeAbattementElectrique).toBe("reel_50_sans_condition");
+    expect(r.abattement).toBeGreaterThan(0);
+  });
+
+  it("la veille de la bascule et le jour même ne relèvent pas du même régime", () => {
+    expect(resultat({ isEcoScoreEligible: false, dateMiseADisposition: "2025-01-31" }).abattement).toBeGreaterThan(0);
+    expect(resultat({ isEcoScoreEligible: false, dateMiseADisposition: "2025-02-01" }).abattement).toBe(0);
+  });
+
+  it("hors de la période du dispositif, aucun abattement — avant 2020 comme après 2027", () => {
+    for (const date of ["2019-12-31", "2028-01-01"]) {
+      const r = resultat({ isEcoScoreEligible: true, dateMiseADisposition: date });
+      expect(r.regimeAbattementElectrique).toBe("aucun_hors_periode");
+      expect(r.abattement).toBe(0);
+    }
+  });
+
+  it("un véhicule thermique n'a jamais d'abattement, quelle que soit la date", () => {
+    const r = resultat({ isElectric: false, isEcoScoreEligible: true, dateMiseADisposition: "2026-03-01" });
+    expect(r.regimeAbattementElectrique).toBe("aucun_non_electrique");
+    expect(r.abattement).toBe(0);
+  });
+
+  it("la position prudente écarte l'abattement sans avoir à fausser l'éco-score du véhicule", () => {
+    // Le champ d'application de l'arrêté est discuté pour un gérant TNS : la position prudente doit
+    // être chiffrable en tant que telle, et non simulée en mentant sur l'éligibilité du véhicule.
+    const inputs = avec({ isEcoScoreEligible: true, dateMiseADisposition: "2026-03-01" });
+    const prudent = computeSimulation({ ...inputs, positionAbattementElectrique: "aucun" });
+    expect(prudent.regimeAbattementElectrique).toBe("aucun_ecarte_par_prudence");
+    expect(prudent.abattement).toBe(0);
+    // L'éligibilité déclarée du véhicule reste vraie : c'est la position qui change, pas le fait.
+    expect(prudent.aenNet).toBeGreaterThan(computeSimulation(inputs).aenNet);
+  });
+
+  it("le plafond mord : un abattement ne dépasse jamais le plafond annuel, même sur un AEN très élevé", () => {
+    const r = resultat({
+      isEcoScoreEligible: true,
+      dateMiseADisposition: "2026-03-01",
+      vehiclePrice: 150000,
+      privateUsePercent: 100,
+    });
+    expect(r.abattement).toBeCloseTo(DEFAULT_ABATTEMENT_CAP, 6);
+  });
+
+  it("une date de mise à disposition non renseignée retient le régime en vigueur aujourd'hui", () => {
+    const r = resultat({ isEcoScoreEligible: true, dateMiseADisposition: "" });
+    expect(r.regimeAbattementElectrique).toBe("reel_50_eco_score");
+  });
+
+  it("chaque régime possède un libellé explicatif, y compris ceux qui n'accordent rien", () => {
+    for (const regime of Object.keys(LIBELLES_REGIME_ABATTEMENT) as (keyof typeof LIBELLES_REGIME_ABATTEMENT)[]) {
+      expect(LIBELLES_REGIME_ABATTEMENT[regime].length).toBeGreaterThan(20);
+    }
   });
 });
 
