@@ -162,7 +162,7 @@ function buildVehicleExportText(sim: SimulationInputs): string {
     `LLD : 1er loyer ${formatEUR(sim.financing.lld.premierLoyer)}, loyer mensuel ${formatEUR(sim.financing.lld.loyerMensuel)}, durée ${sim.financing.lld.dureeMois} mois, km inclus/an ${sim.financing.lld.kmInclusAnnuel}, dépassement ${sim.financing.lld.coutKmSupplementaire} €/km`,
   );
   push(
-    "Note : le comptant charge le coût d'opportunité sur la totalité du prix pendant toute la durée (capital récupéré en une fois, à la revente — déjà déduit ci-dessous en valeur résiduelle), tandis que le crédit ne facture des intérêts que sur le capital restant dû, dégressif. Un crédit peut donc coûter moins cher qu'un comptant même avec un TAEG supérieur au taux d'opportunité : ce n'est pas une erreur de calcul.",
+    "Note : le comptant charge le coût d'opportunité sur la totalité du prix pendant toute la durée (capital récupéré en une fois, à la revente — déjà déduit ci-dessous en valeur résiduelle), tandis que le crédit ne facture des intérêts que sur le capital restant dû, dégressif, et que ces intérêts sont eux-mêmes déductibles là où le coût d'opportunité ne l'est pas. Un crédit peut donc coûter moins cher qu'un comptant même avec un TAEG supérieur au taux d'opportunité : ce n'est pas une erreur de calcul.",
   );
   push("");
   push("— Résultats AEN (société) —");
@@ -1576,8 +1576,11 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   l'<strong>apport</strong> sort exactement de la même façon, et le <strong>principal</strong> sort plus tard,
                   au fil des mensualités : il n'est donc absent, en moyenne, que depuis la moitié du remboursement. C'est cet
                   étalement — et non un quelconque avantage — qui rend le crédit intéressant, et il se paie en intérêts.
-                  Emprunter au taux exact auquel vous placeriez est ainsi une opération blanche : sa durée ne change rien. Un
-                  crédit moins cher signale un TAEG inférieur à votre taux d'opportunité, ce qui est un arbitrage réel.
+                  Emprunter au taux exact auquel vous placeriez est ainsi une opération blanche avant impôt : sa durée ne
+                  change rien. Après impôt, le crédit garde un léger avantage, car les intérêts versés sont une charge
+                  déductible quand le rendement auquel vous renoncez ne l'est pas — il apparaît sur sa propre ligne de
+                  détail, hors du décaissement. Un crédit nettement moins cher signale, lui, un TAEG inférieur à votre taux
+                  d'opportunité : c'est un arbitrage réel, et c'est ce qui explique qu'un comptant puisse arriver dernier.
                 </p>
               </div>
 

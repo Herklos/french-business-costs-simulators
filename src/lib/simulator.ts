@@ -10,6 +10,7 @@
 // plutôt que d'opposer les deux pockets entre eux.
 
 import { DEFAULT_COUNTRY } from "./countries";
+import { formatPercent } from "./format";
 import {
   type DirigeantStatus,
   type ImpositionSociete,
@@ -532,6 +533,9 @@ export interface SimulationResults {
   reintegrationFiscaleCO2: number; // fraction de l'amortissement/loyer au-delà du plafond, non déductible
   annualVehicleTax: number; // taxes annuelles CO2 + polluants (ex-TVS), 0 si électrique
   financingAnnual: number; // coût annuel du financement seul (mensualités crédit, loyers LOA/LLD, ou coût comptant/opportunité)
+  // Part NON DÉCAISSÉE de `financingAnnual` : rendement auquel renonce le capital immobilisé.
+  // Nulle en LOA/LLD, où rien n'est immobilisé. Cf. `getCoutOpportuniteAnnuel`.
+  coutOpportuniteAnnuel: number;
   valeurResiduelleAnnualisee: number; // valeur résiduelle du véhicule possédé en fin de période (comptant, crédit, LOA option levée) lissée sur la durée, déduite du décaissement — 0 sinon
   optionAchatAnnualisee: number; // levée d'option d'achat LOA lissée sur la durée du contrat, ajoutée au décaissement — 0 hors LOA ou option non levée
   tvaDeductible: number; // TVA récupérée au total (récurrente + option d'achat) — 0 si l'option n'est pas activée
@@ -562,6 +566,8 @@ export interface SimulationResults {
   effectiveIkRatePerKm: number; // barème IK effectivement appliqué (majoré de 20% si électrique)
   ikReimbursement: number;
   personalFinancingAnnual: number;
+  /** Part non décaissée de `personalFinancingAnnual` — cf. `getCoutOpportuniteAnnuel`. */
+  personalCoutOpportuniteAnnuel: number;
   valeurResiduelleAnnualiseePersonnel: number; // valeur résiduelle du véhicule (comptant/crédit, scénario personnel) lissée sur la durée, déduite du coût — 0 sinon
   coutScenarioPersonnel: number; // coût net réellement supporté par le dirigeant (après réception des IK)
   economieImpotIK: number; // économie d'impôt société sur l'IK versée (déductible)
@@ -632,6 +638,25 @@ function getFinancingAnnual(
   if (!found) return 0;
   if (!estAcquisitionDirecte(mode)) return found.coutMensuelEquivalent * 12;
   return found.coutTotal / (getDureeDetentionMois(inputs) / 12);
+}
+
+/**
+ * Part du coût annuel du financement qui n'est PAS un décaissement : le rendement auquel le capital
+ * immobilisé renonce. Elle est isolée pour être affichée à part, car elle décide seule du classement
+ * entre comptant et crédit — un comptant plus cher qu'un crédit à 0,99 % n'est pas une anomalie du
+ * simulateur, c'est l'arbitrage que produit le taux d'opportunité saisi, et il doit être lisible
+ * comme tel plutôt que fondu dans une ligne intitulée « loyers/mensualités ».
+ */
+function getCoutOpportuniteAnnuel(
+  financingResults: FinancingResult[],
+  mode: FinancingMode,
+  inputs: SimulationInputs,
+): number {
+  if (!estAcquisitionDirecte(mode)) return 0;
+  const found = financingResults.find((f) => f.mode === mode);
+  const total = found?.detail.coutOpportunite;
+  if (typeof total !== "number") return 0;
+  return total / (getDureeDetentionMois(inputs) / 12);
 }
 
 /** Coût de LOCATION annuel moyen (hors option d'achat/valeur résiduelle) — cf. FinancingResult.loyerAnnuelMoyen. */
@@ -837,6 +862,7 @@ function computeSocieteForMode(
   const dirigeantStatus = resolveDirigeantStatus(companyTypeConfig, inputs.gerantMajoritaire);
 
   const financingAnnual = getFinancingAnnual(financingResults, mode, inputs);
+  const coutOpportuniteAnnuel = getCoutOpportuniteAnnuel(financingResults, mode, inputs);
   const loyerAnnuelMoyen = getLoyerAnnuelMoyen(financingResults, mode);
   // Offre LLD « tout compris » : entretien et assurance sont déjà dans le loyer. On les neutralise
   // POUR CE SEUL MODE — les champs de saisie sont communs aux quatre modes et restent indispensables
@@ -948,8 +974,13 @@ function computeSocieteForMode(
   // La participation encaissée n'y figure pas : ce n'est pas une moindre charge mais un PRODUIT
   // imposable, traité séparément ci-dessous pour être taxé sur la totalité de son montant (et non
   // sur sa seule quote-part professionnelle, comme le serait une réduction de charge).
+  // Le coût d'opportunité est retiré de `financingAnnual` ici : c'est un rendement auquel on renonce,
+  // pas une somme qui sort du compte. L'inclure dans cette base le rendrait déductible et lui ferait
+  // produire une économie d'impôt que l'administration n'accorde évidemment pas — il est réintégré
+  // plus bas, APRÈS impôt, où il pèse pour son montant plein.
   const companyCashBaseAnnual =
-    financingAnnual +
+    financingAnnual -
+    coutOpportuniteAnnuel +
     optionAchatAnnualisee +
     annualInsurance +
     annualMaintenance +
@@ -986,7 +1017,11 @@ function computeSocieteForMode(
   const coutNetAugmentationParticipation = augmentationBruteParticipation - economieImpotAugmentationParticipation;
 
   const coutNetSociete =
-    companyCashBaseAnnual - economieImpotQuotePartPro - participationNetteSociete + coutNetAugmentationParticipation;
+    companyCashBaseAnnual +
+    coutOpportuniteAnnuel -
+    economieImpotQuotePartPro -
+    participationNetteSociete +
+    coutNetAugmentationParticipation;
 
   const globalCostSociete = coutNetSociete + coutTotalGerantSociete;
 
@@ -1011,6 +1046,7 @@ function computeSocieteForMode(
     reintegrationFiscaleCO2,
     annualVehicleTax,
     financingAnnual,
+    coutOpportuniteAnnuel,
     valeurResiduelleAnnualisee,
     optionAchatAnnualisee,
     tvaDeductible,
@@ -1083,6 +1119,7 @@ function computePersonnelForMode(
   const ikReimbursement = proKmAnnual * effectiveIkRatePerKm;
 
   const personalFinancingAnnual = getFinancingAnnual(financingResults, mode, inputs);
+  const personalCoutOpportuniteAnnuel = getCoutOpportuniteAnnuel(financingResults, mode, inputs);
   // Valeur résiduelle annualisée (véhicule possédé en fin de période) — cf. getResidualValueAnnualized :
   // le dirigeant reste propriétaire du véhicule, sa revente future doit venir en déduction du coût.
   // Nommée différemment de son équivalent côté société (cf. computeSocieteForMode) pour éviter toute
@@ -1121,6 +1158,7 @@ function computePersonnelForMode(
     ikReimbursement,
     valeurResiduelleAnnualiseePersonnel,
     personalFinancingAnnual,
+    personalCoutOpportuniteAnnuel,
     coutScenarioPersonnel,
     economieImpotIK,
     globalCostPersonnel,
@@ -1302,7 +1340,12 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     // correspondante. Le net réellement perçu par le dirigeant sur cette augmentation (après ses
     // propres cotisations/IR) n'est PAS déduit de son coût personnel ci-dessous : ce montage
     // s'ajoute au calcul existant sans le modifier, par simplicité et pour rester lisible.
-    const augmentationSalaireBrute = inputs.compenserMensualiteParAugmentationSalaire ? p.personalFinancingAnnual : 0;
+    // Le salaire compense ce que le dirigeant SORT de sa poche chaque mois. Le coût d'opportunité de
+    // son capital n'est pas un décaissement : l'y inclure gonflerait l'augmentation — et donc les
+    // cotisations dues dessus — d'un montant qu'il n'a jamais à débourser.
+    const augmentationSalaireBrute = inputs.compenserMensualiteParAugmentationSalaire
+      ? p.personalFinancingAnnual - p.personalCoutOpportuniteAnnuel
+      : 0;
     const chargesSurAugmentation = augmentationSalaireBrute * inputs.tnsContributionRate;
     const coutBrutAugmentation = augmentationSalaireBrute + chargesSurAugmentation;
     const economieImpotAugmentation = computeEconomieImpot(inputs, coutBrutAugmentation, tauxIRUtilise);
@@ -1340,7 +1383,18 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "AEN net", value: s.aenNet },
           { label: "Cotisations sociales dirigeant", value: s.cotisationsTNS },
           { label: "IR dirigeant sur l'AEN", value: s.irEstimee },
-          { label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement)`, value: s.financingAnnual },
+          {
+            label: `Financement du véhicule (${FINANCING_LABELS[mode]}${s.coutOpportuniteAnnuel > 0 ? ", décaissement seul" : ", loyers/mensualités uniquement"})`,
+            value: s.financingAnnual - s.coutOpportuniteAnnuel,
+          },
+          ...(s.coutOpportuniteAnnuel > 0
+            ? [
+                {
+                  label: `Coût d'opportunité du capital immobilisé (rendement alternatif de ${formatPercent(inputs.financing.comptant.tauxOpportunite)}, non décaissé)`,
+                  value: s.coutOpportuniteAnnuel,
+                },
+              ]
+            : []),
           ...optionAchatDetail,
           {
             label: chargesIncluses ? "Assurance annuelle (incluse dans le loyer LLD)" : "Assurance annuelle",
@@ -1436,9 +1490,17 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           { label: "Barème IK effectif (€/km)", value: p.effectiveIkRatePerKm },
           { label: "Remboursement IK perçu par le dirigeant", value: p.ikReimbursement },
           {
-            label: `Financement du véhicule (${FINANCING_LABELS[mode]}, loyers/mensualités uniquement, dirigeant)`,
-            value: p.personalFinancingAnnual,
+            label: `Financement du véhicule (${FINANCING_LABELS[mode]}${p.personalCoutOpportuniteAnnuel > 0 ? ", décaissement seul" : ", loyers/mensualités uniquement"}, dirigeant)`,
+            value: p.personalFinancingAnnual - p.personalCoutOpportuniteAnnuel,
           },
+          ...(p.personalCoutOpportuniteAnnuel > 0
+            ? [
+                {
+                  label: `Coût d'opportunité du capital immobilisé (rendement alternatif de ${formatPercent(inputs.financing.comptant.tauxOpportunite)}, non décaissé)`,
+                  value: p.personalCoutOpportuniteAnnuel,
+                },
+              ]
+            : []),
           ...optionAchatDetail,
           {
             label: chargesIncluses ? "Assurance annuelle (incluse dans le loyer LLD)" : "Assurance annuelle (dirigeant)",

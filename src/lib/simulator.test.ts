@@ -582,6 +582,14 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
   const coutOption = (inputs: SimulationInputs, mode: "comptant" | "credit" | "loa" | "lld") =>
     computeSimulation(inputs).allOptions.find((o) => o.owner === "societe" && o.mode === mode)!;
 
+  /**
+   * Coût annuel du financement AVANT impôt. C'est là que vit l'identité économique entre comptant et
+   * crédit : après impôt, les deux modes divergent légitimement, les intérêts d'emprunt étant une
+   * charge déductible quand le rendement auquel renonce le capital immobilisé ne l'est pas.
+   */
+  const coutFinancementAvantImpot = (inputs: SimulationInputs, mode: "comptant" | "credit") =>
+    computeSimulation({ ...inputs, financingMode: mode }).financingAnnual;
+
   it("comptant et crédit sont lissés sur la MÊME durée : celle de détention", () => {
     const inputs = avecFinancement({ detentionMois: 60, creditMois: 72 });
     expect(coutOption(inputs, "comptant").dureeAnnees).toBeCloseTo(5, 6);
@@ -606,7 +614,7 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     expect(coutOption(court, "lld").dureeAnnees).toBeCloseTo(base.financing.lld.dureeMois / 12, 6);
   });
 
-  it("à taux égaux, le comptant n'est JAMAIS plus cher que le crédit — emprunter, c'est payer le prix PLUS des intérêts", () => {
+  it("à taux égaux, le comptant n'est JAMAIS plus cher que le crédit AVANT IMPÔT — emprunter, c'est payer le prix PLUS des intérêts", () => {
     for (const taux of [0, 0.0099, 0.03, 0.06]) {
       for (const detentionMois of [24, 60, 84]) {
         const inputs = avecFinancement({
@@ -615,10 +623,49 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
           creditTaux: taux,
           creditMois: detentionMois,
         });
-        const comptant = coutOption(inputs, "comptant").globalCostAnnual;
-        const credit = coutOption(inputs, "credit").globalCostAnnual;
-        expect(comptant).toBeLessThanOrEqual(credit + 1e-6);
+        expect(coutFinancementAvantImpot(inputs, "comptant")).toBeLessThanOrEqual(
+          coutFinancementAvantImpot(inputs, "credit") + 1e-6,
+        );
       }
+    }
+  });
+
+  it("APRÈS impôt, le crédit à taux égal repasse légèrement devant : les intérêts sont déductibles, le coût d'opportunité non", () => {
+    // Ce n'est pas une entorse à l'identité ci-dessus, c'est la fiscalité qui s'y ajoute : l'État
+    // rembourse une fraction des intérêts versés, jamais du rendement auquel on a renoncé. L'écart
+    // doit donc exister, rester du côté du crédit, et rester borné par l'impôt économisé sur les
+    // seuls intérêts — s'il l'excédait, c'est qu'une charge non décaissée serait devenue déductible.
+    const inputs = avecFinancement({ detentionMois: 60, tauxOpportunite: 0.03, creditTaux: 0.03, creditMois: 60 });
+    const comptant = coutOption(inputs, "comptant").globalCostAnnual;
+    const credit = coutOption(inputs, "credit").globalCostAnnual;
+    expect(credit).toBeLessThan(comptant);
+    // Borne large et volontairement grossière : l'ordre de grandeur seul importe ici, et il doit
+    // rester celui de quelques euros par an face à un coût annuel de plusieurs milliers.
+    expect(comptant - credit).toBeLessThan(comptant * 0.01);
+  });
+
+  it("le coût d'opportunité ne produit aucune économie d'impôt et pèse pour son montant plein", () => {
+    // Régression : il était additionné au décaissement de la société, donc traité comme une charge
+    // déductible. L'État remboursait ainsi une fraction d'un rendement auquel on avait seulement
+    // renoncé — ce qui rendait le comptant artificiellement moins cher qu'il ne l'est.
+    for (const mode of ["comptant", "credit"] as const) {
+      const sans = avecFinancement({ tauxOpportunite: 0, detentionMois: 60, creditMois: 60 });
+      const avec = avecFinancement({ tauxOpportunite: 0.05, detentionMois: 60, creditMois: 60 });
+      const economie = (i: SimulationInputs) =>
+        coutOption(i, mode).detail.find((d) => d.label === "Économie d'impôt société")!.value;
+      const opportunite = (i: SimulationInputs) =>
+        coutOption(i, mode).detail.find((d) => d.label.startsWith("Coût d'opportunité"))?.value ?? 0;
+
+      expect(opportunite(avec)).toBeGreaterThan(0);
+      expect(opportunite(sans)).toBe(0);
+      // L'économie d'impôt ne bouge pas d'un centime : aucune fraction du coût d'opportunité n'est
+      // devenue déductible en chemin.
+      expect(economie(avec)).toBeCloseTo(economie(sans), 6);
+      // Et il est bien compté : le coût global augmente exactement de son montant, ni plus ni moins.
+      expect(coutOption(avec, mode).globalCostAnnual - coutOption(sans, mode).globalCostAnnual).toBeCloseTo(
+        opportunite(avec),
+        6,
+      );
     }
   });
 
@@ -652,9 +699,13 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     // valeur résiduelle. Le crédit long gagnait donc deux fois, sans qu'aucun euro ne soit économisé.
     // Emprunter au taux exact auquel on placerait est une opération blanche : sa durée ne doit rien
     // changer. Ce qui subsiste est l'écart entre l'amortissement réel et son approximation linéaire.
+    // Mesuré avant impôt : après impôt, allonger le crédit accroît les intérêts déductibles, donc
+    // l'économie d'impôt, et la neutralité recherchée ici serait masquée par un effet fiscal réel.
     const cout = (creditMois: number) =>
-      coutOption(avecFinancement({ creditMois, creditTaux: 0.03, tauxOpportunite: 0.03, detentionMois: 96 }), "credit")
-        .globalCostAnnual;
+      coutFinancementAvantImpot(
+        avecFinancement({ creditMois, creditTaux: 0.03, tauxOpportunite: 0.03, detentionMois: 96 }),
+        "credit",
+      );
     // Un amortissement par annuités constantes rembourse le principal un peu plus tard que
     // l'approximation linéaire retenue : le résidu est positif, mais de l'ordre de quelques euros
     // par an sur plus de huit mille — contre plusieurs centaines avant l'alignement.
@@ -710,11 +761,18 @@ describe("computeSimulation — la valeur résiduelle annualisée (comptant/cré
     for (const mode of ["comptant", "credit"] as const) {
       const opt = r.allOptions.find((o) => o.owner === "societe" && o.mode === mode)!;
       const financingLine = opt.detail.find((d) => d.label.startsWith("Financement du véhicule"))!;
+      // Le coût d'opportunité est une ligne à part : non décaissé, mais bien dans le coût du mode.
+      const opportuniteLine = opt.detail.find((d) => d.label.startsWith("Coût d'opportunité"))!;
       const residuLine = opt.detail.find((d) => d.label.includes("Valeur résiduelle annualisée"))!;
       const decaissementLine = opt.detail.find((d) => d.label.startsWith("= Décaissement réel société"))!;
       expect(residuLine.value).toBeGreaterThan(0);
+      expect(opportuniteLine.value).toBeGreaterThan(0);
+      // Le coût d'opportunité n'entre PAS dans le décaissement : rien ne sort du compte.
       const decaissementSansDeduction =
-        financingLine.value + inputs.annualInsurance + inputs.annualMaintenance + opt.detail.find((d) => d.label.includes("Taxes annuelles"))!.value;
+        financingLine.value +
+        inputs.annualInsurance +
+        inputs.annualMaintenance +
+        opt.detail.find((d) => d.label.includes("Taxes annuelles"))!.value;
       expect(decaissementLine.value).toBeCloseTo(decaissementSansDeduction - residuLine.value, 6);
       expect(decaissementLine.value).toBeLessThan(decaissementSansDeduction);
     }
