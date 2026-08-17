@@ -26,13 +26,14 @@ import {
   type FinancingInputs,
   type FinancingMode,
   type FinancingResult,
-  TAUX_OPPORTUNITE_PERSONNEL_DEFAUT,
+  TAUX_OPPORTUNITE_BRUT_DEFAUT,
+  TAUX_OPPORTUNITE_BRUT_PERSONNEL_DEFAUT,
   compareFinancingModes,
   createDefaultFinancingInputs,
 } from "./financing";
 import { estimateAnnualVehicleTax, getPlafondAmortissementDeductible } from "./vehicleTaxes";
 import { type DraftSchema, applyDraft, extractDraft } from "./draft";
-import { computeEconomieImpotIS } from "./corporateTax";
+import { computeEconomieImpotIS, computeImpotSurProduitSociete } from "./corporateTax";
 import { VEHICLE_MODELS, getVehicleModel } from "./vehicleModels";
 import { DEFAULT_DEPRECIATION_RATE_ANNUAL, estimateResidualValue } from "./vehicleDepreciation";
 
@@ -175,7 +176,11 @@ export interface SimulationInputs {
   // deux revenait à confondre deux capitaux qui n'ont ni le même détenteur ni la même fiscalité :
   // un placement de société est imposé à l'IS, un placement personnel au PFU.
   financing: FinancingInputs;
-  tauxOpportunitePersonnel: number; // rendement alternatif NET du patrimoine personnel (0-1/an)
+  // Rendements alternatifs BRUTS (0-1/an) — le taux du support, tel que l'annonce la banque. Le
+  // simulateur en déduit l'impôt lui-même : barème de l'IS pour la société, PFU pour le dirigeant.
+  // `financing.comptant.tauxOpportunite` n'est PAS une saisie : c'est le net dérivé de ces deux-là.
+  tauxOpportuniteBrutSociete: number;
+  tauxOpportuniteBrutPersonnel: number;
 
   // Coût de sortie du résultat de la société vers le patrimoine personnel du dirigeant (PFU 30% par
   // défaut). Sert au point de vue « poche du dirigeant » : une charge supportée par la société est
@@ -313,7 +318,8 @@ const SCHEMA_BROUILLON_VEHICULE: DraftSchema = {
     "tauxDeprecationAnnuel",
     "tauxAnnuel",
     "tauxOpportunite",
-    "tauxOpportunitePersonnel",
+    "tauxOpportuniteBrutSociete",
+    "tauxOpportuniteBrutPersonnel",
   ],
   // Deux absences légitimes : aucune surcharge de taxe annuelle, aucun modèle sélectionné. Le
   // modèle est en outre vérifié contre le registre : un identifiant retiré du code depuis la
@@ -404,7 +410,8 @@ export function createDefaultInputs(): SimulationInputs {
     financingMode: "credit",
     personalFinancingMode: "credit",
     financing: createDefaultFinancingInputs(vehiclePrice),
-    tauxOpportunitePersonnel: TAUX_OPPORTUNITE_PERSONNEL_DEFAUT,
+    tauxOpportuniteBrutSociete: TAUX_OPPORTUNITE_BRUT_DEFAUT,
+    tauxOpportuniteBrutPersonnel: TAUX_OPPORTUNITE_BRUT_PERSONNEL_DEFAUT,
 
     tauxExtractionResultat: DEFAULT_PFU_RATE,
     projectionYears: 5,
@@ -597,6 +604,12 @@ export interface SimulationResults {
   projection: { year: number; cumulSociete: number; cumulPersonnel: number }[];
 
   // Aides à l'achat effectivement déduites du prix (cf. applyPrixNetAchat) — 0 si aucune aide activée.
+  // Rendements alternatifs effectivement retenus, nets de l'impôt propre à chaque détenteur du
+  // capital (cf. resolveTauxOpportuniteNets) — exposés pour que l'écart avec le brut saisi soit
+  // lisible, un taux dérivé en silence étant impossible à contrôler.
+  tauxOpportuniteNetSociete: number;
+  tauxOpportuniteNetPersonnel: number;
+  tauxImpotProduitsFinanciersSociete: number;
   remiseSociete: number;
   remisePersonnel: number;
   prixNetSociete: number; // inputs.vehiclePrice − remiseSociete
@@ -1181,6 +1194,43 @@ function computePersonnelForMode(
  * (loyers constructeur publiés) ne sont volontairement pas modifiées : les aides s'appliquent en
  * pratique à une acquisition comptant/crédit, pas à un contrat de location déjà négocié.
  */
+/**
+ * Taux d'imposition des revenus de placement du dirigeant : PFU de 30 % (12,8 % d'IR + 17,2 % de
+ * prélèvements sociaux). Numériquement égal au taux d'extraction du résultat par défaut, mais sans
+ * rapport avec lui — celui-là frappe un dividende, celui-ci les intérêts d'un placement. Les garder
+ * distincts évite qu'un utilisateur modifiant son taux d'extraction déplace, sans le vouloir, le
+ * rendement net de son épargne.
+ */
+export const TAUX_IMPOT_REVENUS_PLACEMENT = 0.3;
+
+/**
+ * Convertit les rendements alternatifs BRUTS saisis en rendements NETS d'impôt, seuls comparables au
+ * coût d'un véhicule — le coût d'opportunité n'étant pas déductible, lui opposer un rendement brut
+ * lui ferait porter un manque à gagner que le fisc aurait de toute façon prélevé.
+ *
+ * Côté société, l'impôt est calculé par différence sur le barème progressif de l'IS, et non par un
+ * taux forfaitaire : une société à 40 000 € de bénéfice ne paie pas le même impôt sur ses produits
+ * financiers qu'une société à 200 000 €. L'assiette retenue est le rendement brut d'une année sur le
+ * PRIX DU VÉHICULE — approximation assumée : le capital réellement immobilisé est plus faible en
+ * crédit qu'en comptant, si bien qu'un franchissement de la tranche des 42 500 € pourrait, à la
+ * marge, ne pas concerner les deux modes identiquement. Retenir une assiette commune garde un taux
+ * net unique, donc un classement des modes qui ne dépend que d'eux.
+ */
+function resolveTauxOpportuniteNets(
+  inputs: SimulationInputs,
+  tauxIRUtilise: number,
+): { societe: number; personnel: number; tauxImpotSociete: number } {
+  const brutSociete = Math.max(0, inputs.tauxOpportuniteBrutSociete);
+  const produitAnnuel = Math.max(0, inputs.vehiclePrice) * brutSociete;
+  const impot = computeImpotSurProduitSociete(inputs, produitAnnuel, tauxIRUtilise);
+  const tauxImpotSociete = produitAnnuel > 0 ? impot / produitAnnuel : 0;
+  return {
+    societe: brutSociete * (1 - tauxImpotSociete),
+    personnel: Math.max(0, inputs.tauxOpportuniteBrutPersonnel) * (1 - TAUX_IMPOT_REVENUS_PLACEMENT),
+    tauxImpotSociete,
+  };
+}
+
 /** Substitue le rendement alternatif du capital, sans rien changer d'autre au montage. */
 function avecTauxOpportunite(inputs: SimulationInputs, taux: number): SimulationInputs {
   return {
@@ -1257,16 +1307,6 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
   const remiseSociete = inputs.bonusRepriseApplicableSociete ? bonusReprise : 0;
   const remisePersonnel = bonusReprise + Math.max(0, inputs.ceeSelectedAmount);
 
-  const inputsSociete = applyPrixNetAchat(inputs, remiseSociete);
-  // Le scénario personnel décrit le MÊME véhicule financé par un autre capital : celui du dirigeant.
-  // Seul le rendement auquel ce capital renonce change, et il est substitué ici — le taux saisi dans
-  // la carte « Comptant » ne vaut que pour la trésorerie de la société.
-  const inputsPersonnel = avecTauxOpportunite(
-    applyPrixNetAchat(inputs, remisePersonnel),
-    inputs.tauxOpportunitePersonnel,
-  );
-  const financingResultsSociete = compareFinancingModes(inputsSociete.financing);
-  const financingResultsPersonnel = compareFinancingModes(inputsPersonnel.financing);
   // Régime IR (société translucide) : le bénéfice de la société est directement imposé entre les
   // mains du dirigeant (BIC/BNC) — il doit donc être intégré au revenu imposable du foyer pour
   // déterminer le TMI réel, y compris celui appliqué à l'AEN elle-même.
@@ -1280,6 +1320,16 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
       : inputs.personalTaxProfile;
   const resolvedTax = resolvePersonalTaxProfile(personalTaxProfileForCalc);
   const tauxIRUtilise = resolvedTax.tauxUtilise;
+
+  // Les deux scénarios décrivent le MÊME véhicule financé par des capitaux différents : celui de la
+  // société, celui du dirigeant. Ce qui les distingue n'est pas le rendement des supports mais
+  // l'impôt qui le frappe — barème de l'IS d'un côté, PFU de l'autre. Le net dérivé de chacun est
+  // substitué ici, en lieu et place de la valeur d'amorçage portée par les paramètres de financement.
+  const tauxNets = resolveTauxOpportuniteNets(inputs, tauxIRUtilise);
+  const inputsSociete = avecTauxOpportunite(applyPrixNetAchat(inputs, remiseSociete), tauxNets.societe);
+  const inputsPersonnel = avecTauxOpportunite(applyPrixNetAchat(inputs, remisePersonnel), tauxNets.personnel);
+  const financingResultsSociete = compareFinancingModes(inputsSociete.financing);
+  const financingResultsPersonnel = compareFinancingModes(inputsPersonnel.financing);
 
   const societe = computeSocieteForMode(
     inputsSociete,
@@ -1416,7 +1466,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           ...(s.coutOpportuniteAnnuel > 0
             ? [
                 {
-                  label: `Coût d'opportunité de la trésorerie immobilisée (rendement alternatif net de ${formatPercent(inputs.financing.comptant.tauxOpportunite)}, non décaissé)`,
+                  label: `Coût d'opportunité de la trésorerie immobilisée (rendement net de ${formatPercent(tauxNets.societe)}, non décaissé)`,
                   value: s.coutOpportuniteAnnuel,
                 },
               ]
@@ -1522,7 +1572,7 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
           ...(p.personalCoutOpportuniteAnnuel > 0
             ? [
                 {
-                  label: `Coût d'opportunité du capital personnel immobilisé (rendement alternatif net de ${formatPercent(inputs.tauxOpportunitePersonnel)}, non décaissé)`,
+                  label: `Coût d'opportunité du capital personnel immobilisé (rendement net de ${formatPercent(tauxNets.personnel)}, non décaissé)`,
                   value: p.personalCoutOpportuniteAnnuel,
                 },
               ]
@@ -1640,6 +1690,9 @@ export function computeSimulation(inputs: SimulationInputs): SimulationResults {
     seuilPrivateUsePercent,
     anneeTransitionAmortissement,
     projection,
+    tauxOpportuniteNetSociete: tauxNets.societe,
+    tauxOpportuniteNetPersonnel: tauxNets.personnel,
+    tauxImpotProduitsFinanciersSociete: tauxNets.tauxImpotSociete,
     remiseSociete,
     remisePersonnel,
     prixNetSociete: inputsSociete.vehiclePrice,

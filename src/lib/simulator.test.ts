@@ -555,19 +555,19 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
 
   function avecFinancement(patch: {
     detentionMois?: number;
-    tauxOpportunite?: number;
+    tauxOpportuniteBrut?: number;
     apport?: number;
     creditMois?: number;
     creditTaux?: number;
   }): SimulationInputs {
     return {
       ...base,
+      tauxOpportuniteBrutSociete: patch.tauxOpportuniteBrut ?? base.tauxOpportuniteBrutSociete,
       financing: {
         ...base.financing,
         comptant: {
           ...base.financing.comptant,
           dureeDetentionMois: patch.detentionMois ?? base.financing.comptant.dureeDetentionMois,
-          tauxOpportunite: patch.tauxOpportunite ?? base.financing.comptant.tauxOpportunite,
         },
         credit: {
           ...base.financing.credit,
@@ -589,6 +589,14 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
    */
   const coutFinancementAvantImpot = (inputs: SimulationInputs, mode: "comptant" | "credit") =>
     computeSimulation({ ...inputs, financingMode: mode }).financingAnnual;
+
+  /**
+   * Rendement NET effectivement retenu côté société pour un brut donné. Les tests d'identité entre
+   * comptant et crédit doivent comparer le TAEG à ce net, et non au brut saisi : c'est lui qui
+   * chiffre le coût d'opportunité, l'impôt sur les produits financiers ayant déjà été prélevé.
+   */
+  const netSociete = (brut: number) =>
+    computeSimulation({ ...base, tauxOpportuniteBrutSociete: brut }).tauxOpportuniteNetSociete;
 
   it("comptant et crédit sont lissés sur la MÊME durée : celle de détention", () => {
     const inputs = avecFinancement({ detentionMois: 60, creditMois: 72 });
@@ -615,12 +623,12 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
   });
 
   it("à taux égaux, le comptant n'est JAMAIS plus cher que le crédit AVANT IMPÔT — emprunter, c'est payer le prix PLUS des intérêts", () => {
-    for (const taux of [0, 0.0099, 0.03, 0.06]) {
+    for (const brut of [0, 0.0099, 0.03, 0.06]) {
       for (const detentionMois of [24, 60, 84]) {
         const inputs = avecFinancement({
           detentionMois,
-          tauxOpportunite: taux,
-          creditTaux: taux,
+          tauxOpportuniteBrut: brut,
+          creditTaux: netSociete(brut),
           creditMois: detentionMois,
         });
         expect(coutFinancementAvantImpot(inputs, "comptant")).toBeLessThanOrEqual(
@@ -635,7 +643,7 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     // rembourse une fraction des intérêts versés, jamais du rendement auquel on a renoncé. L'écart
     // doit donc exister, rester du côté du crédit, et rester borné par l'impôt économisé sur les
     // seuls intérêts — s'il l'excédait, c'est qu'une charge non décaissée serait devenue déductible.
-    const inputs = avecFinancement({ detentionMois: 60, tauxOpportunite: 0.03, creditTaux: 0.03, creditMois: 60 });
+    const inputs = avecFinancement({ detentionMois: 60, tauxOpportuniteBrut: 0.03, creditTaux: netSociete(0.03), creditMois: 60 });
     const comptant = coutOption(inputs, "comptant").globalCostAnnual;
     const credit = coutOption(inputs, "credit").globalCostAnnual;
     expect(credit).toBeLessThan(comptant);
@@ -649,8 +657,8 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     // déductible. L'État remboursait ainsi une fraction d'un rendement auquel on avait seulement
     // renoncé — ce qui rendait le comptant artificiellement moins cher qu'il ne l'est.
     for (const mode of ["comptant", "credit"] as const) {
-      const sans = avecFinancement({ tauxOpportunite: 0, detentionMois: 60, creditMois: 60 });
-      const avec = avecFinancement({ tauxOpportunite: 0.05, detentionMois: 60, creditMois: 60 });
+      const sans = avecFinancement({ tauxOpportuniteBrut: 0, detentionMois: 60, creditMois: 60 });
+      const avec = avecFinancement({ tauxOpportuniteBrut: 0.05, detentionMois: 60, creditMois: 60 });
       const economie = (i: SimulationInputs) =>
         coutOption(i, mode).detail.find((d) => d.label === "Économie d'impôt société")!.value;
       const opportunite = (i: SimulationInputs) =>
@@ -673,8 +681,9 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     // Régression : un champ unique servait les deux scénarios. Les produits financiers d'une société
     // sont imposés à l'IS, ceux du dirigeant au PFU — un rendement net commun aux deux n'existe pas.
     const inputs: SimulationInputs = {
-      ...avecFinancement({ tauxOpportunite: 0.04, detentionMois: 60, creditMois: 60 }),
-      tauxOpportunitePersonnel: 0,
+      ...avecFinancement({ detentionMois: 60, creditMois: 60 }),
+      tauxOpportuniteBrutSociete: 0.04,
+      tauxOpportuniteBrutPersonnel: 0,
       financingMode: "comptant",
       personalFinancingMode: "comptant",
     };
@@ -691,10 +700,62 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     expect(r.personalCoutOpportuniteAnnuel).toBe(0);
   });
 
+  it("les taux saisis sont BRUTS : le simulateur en déduit l'impôt propre à chaque détenteur", () => {
+    const r = computeSimulation({
+      ...base,
+      tauxOpportuniteBrutSociete: 0.04,
+      tauxOpportuniteBrutPersonnel: 0.04,
+    });
+    // Côté dirigeant, un PFU de 30 % : 4 % bruts ne laissent que 2,8 %.
+    expect(r.tauxOpportuniteNetPersonnel).toBeCloseTo(0.04 * 0.7, 9);
+    // Côté société, l'IS — dont le taux dépend du bénéfice, et n'a donc aucune raison d'égaler le PFU.
+    expect(r.tauxImpotProduitsFinanciersSociete).toBeGreaterThan(0);
+    expect(r.tauxOpportuniteNetSociete).toBeCloseTo(0.04 * (1 - r.tauxImpotProduitsFinanciersSociete), 9);
+    expect(r.tauxOpportuniteNetSociete).toBeLessThan(0.04);
+  });
+
+  it("l'impôt société sur les produits financiers suit le barème progressif de l'IS, pas un forfait", () => {
+    // Une société sous le seuil du taux réduit ne paie pas sur ses produits financiers ce que paie
+    // une société largement au-dessus : un taux forfaitaire ferait disparaître cet écart, et avec
+    // lui la dépendance du classement du comptant au niveau réel de bénéfice.
+    const avec = (benefice: number) =>
+      computeSimulation({
+        ...base,
+        impositionSociete: "IS",
+        eligibleTauxReduitPME: true,
+        beneficeAvantChargePrevisionnel: benefice,
+        tauxOpportuniteBrutSociete: 0.04,
+      });
+    const petite = avec(10000);
+    const grosse = avec(300000);
+    expect(petite.tauxImpotProduitsFinanciersSociete).toBeCloseTo(0.15, 6);
+    expect(grosse.tauxImpotProduitsFinanciersSociete).toBeCloseTo(base.corporateTaxRate, 6);
+    // Moins imposée sur son placement, la petite société renonce à davantage en immobilisant sa
+    // trésorerie : son coût d'opportunité net est le plus élevé des deux.
+    expect(petite.tauxOpportuniteNetSociete).toBeGreaterThan(grosse.tauxOpportuniteNetSociete);
+  });
+
+  it("un produit financier est taxé sur les tranches AU-DESSUS du bénéfice, non sur celles du dessous", () => {
+    // Le symétrique d'une charge déductible serait faux : à 42 000 € de bénéfice, une charge économise
+    // 15 %, tandis qu'un produit franchit le seuil et se taxe en partie à 25 %.
+    const r = computeSimulation({
+      ...base,
+      impositionSociete: "IS",
+      eligibleTauxReduitPME: true,
+      beneficeAvantChargePrevisionnel: 42000,
+      vehiclePrice: 40000,
+      tauxOpportuniteBrutSociete: 0.05, // 2 000 € de produit : 500 € sous le seuil, 1 500 € au-dessus
+    });
+    const attendu = (500 * 0.15 + 1500 * base.corporateTaxRate) / 2000;
+    expect(r.tauxImpotProduitsFinanciersSociete).toBeCloseTo(attendu, 6);
+    expect(r.tauxImpotProduitsFinanciersSociete).toBeGreaterThan(0.15);
+  });
+
   it("le taux personnel pilote le scénario personnel, et lui seul", () => {
     const construire = (tauxPersonnel: number): SimulationInputs => ({
-      ...avecFinancement({ tauxOpportunite: 0.02, detentionMois: 60, creditMois: 60 }),
-      tauxOpportunitePersonnel: tauxPersonnel,
+      ...avecFinancement({ detentionMois: 60, creditMois: 60 }),
+      tauxOpportuniteBrutSociete: 0.02,
+      tauxOpportuniteBrutPersonnel: tauxPersonnel,
       financingMode: "comptant",
       personalFinancingMode: "comptant",
     });
@@ -709,7 +770,7 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
 
   it("à taux nuls des deux côtés, comptant et crédit convergent exactement — quel que soit l'apport", () => {
     for (const apport of [0, 5000, 10000, 42784]) {
-      const inputs = avecFinancement({ tauxOpportunite: 0, creditTaux: 0, apport, creditMois: 60, detentionMois: 60 });
+      const inputs = avecFinancement({ tauxOpportuniteBrut: 0, creditTaux: 0, apport, creditMois: 60, detentionMois: 60 });
       expect(coutOption(inputs, "credit").globalCostAnnual).toBeCloseTo(
         coutOption(inputs, "comptant").globalCostAnnual,
         6,
@@ -741,7 +802,7 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     // l'économie d'impôt, et la neutralité recherchée ici serait masquée par un effet fiscal réel.
     const cout = (creditMois: number) =>
       coutFinancementAvantImpot(
-        avecFinancement({ creditMois, creditTaux: 0.03, tauxOpportunite: 0.03, detentionMois: 96 }),
+        avecFinancement({ creditMois, creditTaux: netSociete(0.03), tauxOpportuniteBrut: 0.03, detentionMois: 96 }),
         "credit",
       );
     // Un amortissement par annuités constantes rembourse le principal un peu plus tard que
@@ -758,7 +819,7 @@ describe("computeSimulation — comparabilité des modes d'acquisition (lissage 
     // taux : emprunter à 1 % ce qu'on placerait à 3 % rapporte, et d'autant plus longtemps qu'on
     // rembourse tard. C'est un arbitrage financier authentique, pas un biais du modèle.
     const cout = (creditMois: number) =>
-      coutOption(avecFinancement({ creditMois, creditTaux: 0.01, tauxOpportunite: 0.03, detentionMois: 96 }), "credit")
+      coutOption(avecFinancement({ creditMois, creditTaux: 0.01, tauxOpportuniteBrut: 0.03, detentionMois: 96 }), "credit")
         .globalCostAnnual;
     expect(cout(96)).toBeLessThan(cout(24));
   });

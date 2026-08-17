@@ -19,8 +19,8 @@ import {
 } from "../lib/simulator";
 import { getCompanyType, resolveDirigeantStatus } from "../lib/companyTypes";
 import {
-  TAUX_OPPORTUNITE_DEFAUT,
-  TAUX_OPPORTUNITE_PERSONNEL_DEFAUT,
+  TAUX_OPPORTUNITE_BRUT_DEFAUT,
+  TAUX_OPPORTUNITE_BRUT_PERSONNEL_DEFAUT,
   createDefaultFinancingInputs,
   getTauxUsureApplicable,
   type FinancingMode,
@@ -158,7 +158,10 @@ function buildVehicleExportText(sim: SimulationInputs): string {
   push("");
   push("— Modes de financement (paramètres, hypothèses) —");
   push(
-    `Détention du véhicule : ${sim.financing.comptant.dureeDetentionMois} mois (commune au comptant et au crédit, qui portent sur le même véhicule), taux d'opportunité net ${formatPercent(sim.financing.comptant.tauxOpportunite)}/an côté trésorerie société et ${formatPercent(sim.tauxOpportunitePersonnel)}/an côté patrimoine personnel`,
+    `Détention du véhicule : ${sim.financing.comptant.dureeDetentionMois} mois (commune au comptant et au crédit, qui portent sur le même véhicule)`,
+  );
+  push(
+    `Taux d'opportunité du capital : société ${formatPercent(sim.tauxOpportuniteBrutSociete)} brut → ${formatPercent(r.tauxOpportuniteNetSociete)} net (IS ${formatPercent(r.tauxImpotProduitsFinanciersSociete)} sur les produits financiers) · dirigeant ${formatPercent(sim.tauxOpportuniteBrutPersonnel)} brut → ${formatPercent(r.tauxOpportuniteNetPersonnel)} net (PFU 30 %)`,
   );
   push(`Crédit : apport ${formatEUR(sim.financing.credit.apport)}, TAEG ${formatPercent(sim.financing.credit.tauxAnnuel, 3)}, durée de remboursement ${sim.financing.credit.dureeMois} mois`);
   push(
@@ -1566,27 +1569,37 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
               <div className="financing-card">
                 <h4>Comptant</h4>
                 <Field
-                  label="Taux d'opportunité — trésorerie de la société (%/an, net)"
-                  hint="Ce que rapporterait la trésorerie de la société si elle ne finançait pas le véhicule, NET d'impôt : ses produits financiers sont du résultat ordinaire, imposés à l'IS comme le reste. Si cet argent dort sur un compte courant, la réponse honnête est 0."
+                  label="Taux d'opportunité — trésorerie de la société (%/an, BRUT)"
+                  hint="Le taux du support, tel que l'annonce la banque. L'impôt est déduit automatiquement ci-dessous. Si cet argent dort sur un compte courant, la réponse honnête est 0."
                 >
                   <ResetableNumberInput
                     step="0.005"
-                    value={inputs.financing.comptant.tauxOpportunite}
-                    defaultValue={TAUX_OPPORTUNITE_DEFAUT}
-                    onChange={(v) => updateFinancing("comptant", { tauxOpportunite: v })}
+                    value={inputs.tauxOpportuniteBrutSociete}
+                    defaultValue={TAUX_OPPORTUNITE_BRUT_DEFAUT}
+                    onChange={(v) => update("tauxOpportuniteBrutSociete", v)}
                   />
                 </Field>
+                <p className="field__hint">
+                  → <strong>{formatPercent(results.tauxOpportuniteNetSociete, 2)} net</strong> retenu, après{" "}
+                  {formatPercent(results.tauxImpotProduitsFinanciersSociete, 1)} d'impôt. Les produits financiers d'une
+                  société sont du résultat ordinaire : ils suivent le barème progressif de l'IS, et ce taux dépend donc du
+                  bénéfice prévisionnel saisi plus haut — ce n'est pas un forfait.
+                </p>
                 <Field
-                  label="Taux d'opportunité — patrimoine personnel (%/an, net)"
-                  hint="Même question pour l'argent du dirigeant, dans le scénario d'achat personnel. Net également, mais d'un PFU de 30 % et non de l'IS : un placement à 3 % bruts ne laisse que 2,1 %. Ce ne sont ni le même argent ni la même fiscalité — d'où deux champs."
+                  label="Taux d'opportunité — patrimoine personnel (%/an, BRUT)"
+                  hint="Même question pour l'argent du dirigeant, dans le scénario d'achat personnel. Ce ne sont ni le même argent ni la même fiscalité que côté société — d'où deux champs."
                 >
                   <ResetableNumberInput
                     step="0.005"
-                    value={inputs.tauxOpportunitePersonnel}
-                    defaultValue={TAUX_OPPORTUNITE_PERSONNEL_DEFAUT}
-                    onChange={(v) => update("tauxOpportunitePersonnel", v)}
+                    value={inputs.tauxOpportuniteBrutPersonnel}
+                    defaultValue={TAUX_OPPORTUNITE_BRUT_PERSONNEL_DEFAUT}
+                    onChange={(v) => update("tauxOpportuniteBrutPersonnel", v)}
                   />
                 </Field>
+                <p className="field__hint">
+                  → <strong>{formatPercent(results.tauxOpportuniteNetPersonnel, 2)} net</strong> retenu, après un PFU de
+                  30 % (12,8 % d'IR + 17,2 % de prélèvements sociaux) sur les revenus de placement.
+                </p>
                 <p className="field__hint">
                   Ces taux ne concernent pas que le comptant : ils chiffrent ce que rapporterait tout capital qui n'a pas
                   financé le véhicule. Payé comptant, le prix entier sort au premier jour et n'est récupéré qu'à la revente — d'où un
@@ -1605,7 +1618,9 @@ export function VehicleSimulatorPage({ initialShareData }: { initialShareData?: 
                   de cette somme ? » Elle dort sur le compte pro → <strong>0</strong>. Elle évite un découvert ou un prêt →
                   le taux de ce prêt. Elle part sur un support de trésorerie → son rendement <strong>net d'impôt</strong>.
                   Les valeurs par défaut sont volontairement basses : la trésorerie d'une petite structure est rarement
-                  rémunérée, et elle est captive — l'en sortir coûte un PFU ou des cotisations.
+                  rémunérée, et elle est captive — l'en sortir coûte un PFU ou des cotisations. C'est bien le rendement
+                  <strong> net</strong> qui compte : le coût d'opportunité n'étant pas déductible, lui opposer un rendement
+                  brut ferait porter au véhicule un manque à gagner que le fisc aurait de toute façon prélevé.
                 </p>
               </div>
 

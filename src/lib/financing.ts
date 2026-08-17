@@ -23,31 +23,36 @@ export function getTauxUsureApplicable(montantEmprunte: number): number {
 
 /** Rendement alternatif du capital immobilisé, commun au comptant et à l'apport d'un crédit. */
 /**
- * Rendement alternatif par défaut de la trésorerie de la SOCIÉTÉ, exprimé NET d'impôt.
+ * Rendement alternatif par défaut de la trésorerie de la SOCIÉTÉ, exprimé BRUT — c'est le taux du
+ * support, tel qu'il est affiché par la banque. Le simulateur en déduit lui-même l'impôt : les
+ * produits financiers d'une société sont du résultat ordinaire, taxés au barème de l'IS comme le
+ * reste (cf. `computeImpotSurProduitSociete`).
  *
- * Bas à dessein : les produits financiers d'une société à l'IS sont du résultat ordinaire, imposés
- * comme le reste — 2 % bruts ne valent que ~1,5 % nets. Et la trésorerie d'une petite structure dort
- * le plus souvent sur un compte courant non rémunéré, quand elle n'est pas simplement captive : la
- * sortir coûte un PFU ou des cotisations. Une hypothèse généreuse ici pénaliserait le comptant sans
- * que rien ne le signale, alors que c'est ce seul paramètre qui décide de son classement.
+ * Bas à dessein : la trésorerie d'une petite structure dort le plus souvent sur un compte courant
+ * non rémunéré, quand elle n'est pas simplement captive — l'en sortir coûte un PFU ou des
+ * cotisations. Ce seul paramètre décidant du classement du comptant, une hypothèse généreuse le
+ * pénaliserait sans que rien ne le signale.
  */
-export const TAUX_OPPORTUNITE_DEFAUT = 0.015;
+export const TAUX_OPPORTUNITE_BRUT_DEFAUT = 0.02;
 
 /**
- * Équivalent pour le patrimoine PERSONNEL du dirigeant, également NET : un placement à 3 % bruts ne
- * laisse que ~2,1 % après un PFU de 30 %. Distinct du taux société parce que ce ne sont ni le même
- * argent, ni la même fiscalité — les confondre revenait à chiffrer deux immobilisations différentes
- * avec un rendement unique.
+ * Équivalent BRUT pour le patrimoine PERSONNEL du dirigeant, dont le simulateur déduit un PFU de
+ * 30 %. Distinct du taux société non par le niveau du rendement, mais par l'impôt qui le frappe :
+ * PFU d'un côté, barème de l'IS de l'autre. Les confondre revenait à chiffrer deux immobilisations
+ * différentes avec un rendement net unique, qui n'existe pour aucune des deux.
  */
-export const TAUX_OPPORTUNITE_PERSONNEL_DEFAUT = 0.02;
+export const TAUX_OPPORTUNITE_BRUT_PERSONNEL_DEFAUT = 0.03;
 
 export interface ComptantParams {
   prixTTC: number;
   dureeDetentionMois: number;
-  // Rendement alternatif NET du capital immobilisé (0-1/an), pour chiffrer le coût d'opportunité.
-  // Net, car le coût d'opportunité n'est pas déductible : le comparer à un rendement brut ferait
-  // porter au véhicule un manque à gagner que le fisc aurait de toute façon prélevé. Le simulateur
-  // injecte ici un taux différent selon le détenteur du capital — cf. `tauxOpportunitePersonnel`.
+  // Rendement alternatif NET d'impôt du capital immobilisé (0-1/an), pour chiffrer le coût
+  // d'opportunité. Net, car ce coût n'est pas déductible : le comparer à un rendement brut ferait
+  // porter au véhicule un manque à gagner que le fisc aurait de toute façon prélevé.
+  //
+  // VALEUR DÉRIVÉE : `computeSimulation` la recalcule et la substitue avant tout appel, à partir du
+  // taux BRUT saisi et de la fiscalité du détenteur du capital — société ou dirigeant, qui ne sont
+  // imposés ni au même barème ni sur la même assiette. Ne pas la lire comme une saisie utilisateur.
   tauxOpportunite: number;
 }
 
@@ -93,7 +98,8 @@ export interface FinancingInputs {
 // simulator.ts), en remplacement de l'estimation générique ci-dessous.
 export function createDefaultFinancingInputs(prixTTC: number): FinancingInputs {
   return {
-    comptant: { prixTTC, dureeDetentionMois: 60, tauxOpportunite: TAUX_OPPORTUNITE_DEFAUT },
+    // Valeur d'amorçage seulement : `computeSimulation` substitue le taux NET dérivé du brut saisi.
+    comptant: { prixTTC, dureeDetentionMois: 60, tauxOpportunite: TAUX_OPPORTUNITE_BRUT_DEFAUT },
     credit: {
       prixTTC,
       apport: prixTTC * 0.1,

@@ -64,3 +64,32 @@ export function computeEconomieImpotSociete(ctx: CompanyTaxContext, chargeDeduct
   }
   return chargeDeductible * tauxIRUtilise;
 }
+
+/**
+ * Impôt dû sur un PRODUIT supplémentaire (produits financiers, subvention...), par différence sur le
+ * barème progressif.
+ *
+ * Ce n'est pas le symétrique de `computeEconomieImpotIS` : une charge fait DESCENDRE le bénéfice et
+ * s'impute donc sur les tranches situées SOUS lui, tandis qu'un produit le fait MONTER et se taxe
+ * sur celles situées AU-DESSUS. Une société à 40 000 € de bénéfice économise 15 % sur une charge et
+ * paie 25 % sur la fraction d'un produit qui la porte au-delà de 42 500 € : réutiliser la fonction
+ * « charge » sous-estimerait l'impôt, et donc surestimerait le rendement net d'un placement.
+ */
+export function computeImpotSurProduitIS(
+  beneficeAvantProduit: number,
+  produit: number,
+  eligibleTauxReduit: boolean,
+  tauxNormal: number,
+): number {
+  const isAvant = computeIS(beneficeAvantProduit, eligibleTauxReduit, tauxNormal);
+  const isApres = computeIS(beneficeAvantProduit + Math.max(0, produit), eligibleTauxReduit, tauxNormal);
+  return Math.max(0, isApres - isAvant);
+}
+
+/** Idem, quel que soit le régime — IS au barème progressif, ou IR au taux marginal du foyer. */
+export function computeImpotSurProduitSociete(ctx: CompanyTaxContext, produit: number, tauxIRUtilise: number): number {
+  if (ctx.impositionSociete === "IS") {
+    return computeImpotSurProduitIS(ctx.beneficeAvantChargePrevisionnel, produit, ctx.eligibleTauxReduitPME, ctx.corporateTaxRate);
+  }
+  return Math.max(0, produit) * tauxIRUtilise;
+}
